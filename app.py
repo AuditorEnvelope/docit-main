@@ -15,6 +15,14 @@ def verify_sig(secret, payload_body, signature):
     mac = hmac.new(secret.encode(), msg=payload_body, digestmod=hashlib.sha256)
     return hmac.compare_digest(mac.hexdigest(), sig)
 
+@app.get("/")
+async def root():
+    return {
+        "service": "DocAI webhook",
+        "status": "ok",
+        "webhook_path": "/webhook"
+    }
+
 @app.post("/webhook")
 async def webhook(request: Request, x_hub_signature_256: str = Header(None), x_github_event: str = Header(None)):
     body = await request.body()

@@ -39,6 +39,7 @@ def handle_push_event(payload):
         docs_dir = Path(tmpdir) / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
 
+        generated_files = []
         for f in changed_files:
             # only handle relevant extensions
             if any(f.endswith(ext) for ext in [".py", ".js", ".ts", ".go", ".java", ".rs", ".cpp", ".c"]):
@@ -53,6 +54,29 @@ def handle_push_event(payload):
                 with open(target, "w", encoding="utf-8") as out:
                     out.write(md)
                 print("Wrote doc for", f, "->", target)
+                generated_files.append(target.name)
+
+        # Ensure GitBook Git Sync has an entry point and navigation
+        if generated_files:
+            # README.md acts as root page
+            readme_path = docs_dir / "README.md"
+            readme_content = (
+                "# Project Docs\n\n"
+                "This documentation is generated automatically by DocAI from recent commits.\n\n"
+                "See the sidebar for individual module/pages.\n"
+            )
+            with open(readme_path, "w", encoding="utf-8") as fh:
+                fh.write(readme_content)
+            # SUMMARY.md builds sidebar in GitBook Git Sync
+            summary_path = docs_dir / "SUMMARY.md"
+            # Sort for stability
+            generated_files.sort()
+            lines = ["# Summary\n", "\n", "* [Home](README.md)\n"]
+            for name in generated_files:
+                title = name.replace("__", "/").replace(".md", "")
+                lines.append(f"* [{title}]({name})\n")
+            with open(summary_path, "w", encoding="utf-8") as fh:
+                fh.writelines(lines)
 
         # commit & push back
         run_cmd("git config user.email 'docai@bots.local' && git config user.name 'docai-bot'", cwd=tmpdir)
