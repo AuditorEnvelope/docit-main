@@ -86,3 +86,64 @@ def handle_push_event(payload):
         print("Docs committed and pushed.")
     finally:
         shutil.rmtree(tmpdir)
+
+
+def rebuild_all_for_repo(repo_full: str, installation_id: int):
+    """Generate docs for all supported files in a repository and push to docs/.
+
+    Intended for first-time seeding or manual rebuilds.
+    """
+    token = get_installation_token(installation_id)
+    tmpdir = tempfile.mkdtemp(prefix="docai_full_")
+    try:
+        clone_repo_via_token(repo_full, token, tmpdir)
+
+        docs_dir = Path(tmpdir) / "docs"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+
+        supported_exts = [".py", ".js", ".ts", ".go", ".java", ".rs", ".cpp", ".c"]
+        generated_files = []
+
+        for path in Path(tmpdir).rglob("*"):
+            if path.is_file() and any(str(path).endswith(ext) for ext in supported_exts):
+                rel = path.relative_to(tmpdir).as_posix()
+                try:
+                    with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                        code = fh.read()
+                except Exception as e:
+                    print("skip unreadable:", rel, e)
+                    continue
+                md = generate_doc_for_file(rel, code)
+                target = docs_dir / (rel.replace("/", "__") + ".md")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with open(target, "w", encoding="utf-8") as out:
+                    out.write(md)
+                print("Wrote doc for", rel, "->", target)
+                generated_files.append(target.name)
+
+        if generated_files:
+            readme_path = docs_dir / "README.md"
+            readme_content = (
+                "# Project Docs\n\n"
+                "This documentation is generated automatically by DocAI.\n\n"
+                "Use the sidebar to navigate pages.\n"
+            )
+            with open(readme_path, "w", encoding="utf-8") as fh:
+                fh.write(readme_content)
+
+            summary_path = docs_dir / "SUMMARY.md"
+            generated_files.sort()
+            lines = ["# Summary\n", "\n", "* [Home](README.md)\n"]
+            for name in generated_files:
+                title = name.replace("__", "/").replace(".md", "")
+                lines.append(f"* [{title}]({name})\n")
+            with open(summary_path, "w", encoding="utf-8") as fh:
+                fh.writelines(lines)
+
+        run_cmd("git config user.email 'docai@bots.local' && git config user.name 'docai-bot'", cwd=tmpdir)
+        run_cmd("git add docs || true", cwd=tmpdir)
+        run_cmd("git commit -m 'docs: full rebuild by DocAI' || echo 'no changes'", cwd=tmpdir)
+        run_cmd(f"git push https://x-access-token:{token}@github.com/{repo_full}.git HEAD:main", cwd=tmpdir)
+        print("Full docs committed and pushed.")
+    finally:
+        shutil.rmtree(tmpdir)
