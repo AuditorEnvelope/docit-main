@@ -6,7 +6,12 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
-MODEL = "gemini-1.5-pro"
+
+# Use a safe default that exists in current google-generativeai releases.
+# Allow override via env GEMINI_MODEL; fallback to flash if pro-latest is unavailable.
+DEFAULT_MODEL = "gemini-1.5-pro-latest"
+FALLBACK_MODEL = "gemini-1.5-flash-latest"
+MODEL = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
 
 MAX_CHARS = 12000
 
@@ -26,10 +31,26 @@ Produce:
 Output a single markdown doc.
 """
 
-def generate_doc_for_file(filename, code):
-    prompt = make_prompt(filename, code)
-    model = genai.GenerativeModel(MODEL)
+def _try_generate(model_name, prompt):
+    model = genai.GenerativeModel(model_name)
     resp = model.generate_content(prompt)
-    # response may be .text or nested
-    text = getattr(resp, "text", None) or str(resp)
-    return text
+    return getattr(resp, "text", None) or str(resp)
+
+
+def generate_doc_for_file(filename, code):
+    """Generate markdown docs. Never raise; return a fallback doc on error."""
+    prompt = make_prompt(filename, code)
+    try:
+        return _try_generate(MODEL, prompt)
+    except Exception as e1:
+        # Retry with a known fast fallback model
+        try:
+            return _try_generate(FALLBACK_MODEL, prompt)
+        except Exception as e2:
+            # Final fallback: emit a minimal doc so the pipeline continues
+            return (
+                f"# {filename}\n\n"
+                f"_Automatic doc generation failed._\n\n"
+                f"Error: {type(e2).__name__}: {e2}\n\n"
+                f"## Code (truncated)\n\n````\n{code[:1000]}\n````\n"
+            )

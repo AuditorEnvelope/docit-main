@@ -29,6 +29,8 @@ def handle_push_event(payload):
         print("No changed files in push, skipping.")
         return
 
+    print("Changed files in push:", sorted(list(changed_files)))
+
     # get token for this installation
     token = get_installation_token(installation_id)
 
@@ -39,10 +41,12 @@ def handle_push_event(payload):
         docs_dir = Path(tmpdir) / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
 
+        supported_exts = [".py", ".js", ".ts", ".go", ".java", ".rs", ".cpp", ".c"]
         generated_files = []
+        considered_files = []
         for f in changed_files:
             # only handle relevant extensions
-            if any(f.endswith(ext) for ext in [".py", ".js", ".ts", ".go", ".java", ".rs", ".cpp", ".c"]):
+            if any(f.endswith(ext) for ext in supported_exts):
                 abs_path = Path(tmpdir) / f
                 if not abs_path.exists(): 
                     print("file missing:", f); continue
@@ -55,6 +59,9 @@ def handle_push_event(payload):
                     out.write(md)
                 print("Wrote doc for", f, "->", target)
                 generated_files.append(target.name)
+                considered_files.append(f)
+            else:
+                print("Skipping unsupported file (no matching extension):", f)
 
         # Ensure GitBook Git Sync has an entry point and navigation
         if generated_files:
@@ -77,6 +84,9 @@ def handle_push_event(payload):
                 lines.append(f"* [{title}]({name})\n")
             with open(summary_path, "w", encoding="utf-8") as fh:
                 fh.writelines(lines)
+
+        if not generated_files:
+            print("No supported changed files produced docs. Nothing new to commit under docs/.")
 
         # commit & push back
         run_cmd("git config user.email 'docai@bots.local' && git config user.name 'docai-bot'", cwd=tmpdir)
