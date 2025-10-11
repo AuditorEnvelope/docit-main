@@ -160,7 +160,7 @@ def analyze_push_change(payload, repo_dir, changed_files):
     
     try:
         prompt = f"You are DocAI analyzing code changes. {context}"
-        model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         resp = model.generate_content(prompt)
         result = getattr(resp, "text", None) or str(resp)
         

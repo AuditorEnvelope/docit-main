@@ -9,8 +9,8 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 # Use a safe default that exists in current google-generativeai releases.
 # Allow override via env GEMINI_MODEL; fallback to flash if pro-latest is unavailable.
-DEFAULT_MODEL = "gemini-1.5-pro-latest"
-FALLBACK_MODEL = "gemini-1.5-flash-latest"
+DEFAULT_MODEL = "gemini-1.5-pro"
+FALLBACK_MODEL = "gemini-1.5-flash"
 MODEL = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
 
 MAX_CHARS = 12000
