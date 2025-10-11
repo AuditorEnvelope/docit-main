@@ -24,7 +24,6 @@ def handle_push_event(payload):
     for commit in payload.get("commits", []):
         changed_files.update(commit.get("added", []))
         changed_files.update(commit.get("modified", []))
-        removed_files = commit.get("removed", [])
 
     if not changed_files:
         print("No changed files in push, skipping.")
@@ -53,39 +52,44 @@ def handle_push_event(payload):
         except Exception as e:
             print("Warning: failed to checkout pushed ref/sha:", ref, after_sha, e)
 
+        # Check if we've already processed this exact push (same SHA and same files)
+        if has_already_processed_push(tmpdir, after_sha, changed_files):
+            print(f"Push {after_sha} with these files already processed; skipping.")
+            return
+
         # NEW: Analyze the entire change, not individual files
-        change_summary = analyze_push_change(payload, tmpdir, changed_files, removed_files)
+        change_summary = analyze_push_change(payload, tmpdir, changed_files)
         
         if not change_summary["is_significant"]:
             print("Change not significant enough for documentation:", change_summary["reason"])
             return
 
-        # Generate single MD for the entire change
+        # Generate ONE MD for the entire change (not per webhook call)
         changes_dir = Path(tmpdir) / "changes"
         changes_dir.mkdir(parents=True, exist_ok=True)
         
-        ts = datetime.datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")
-        change_file = changes_dir / f"{ts}-{change_summary['type']}.md"
+        # Use commit SHA as filename to ensure uniqueness per actual change
+        change_file = changes_dir / f"{after_sha}-{change_summary['type']}.md"
         
         with open(change_file, "w", encoding="utf-8") as fh:
             fh.write(f"# {change_summary['title']}\n\n")
             fh.write(f"**Type:** {change_summary['type']}\n")
             fh.write(f"**Date:** {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
-            fh.write(f"**Commit:** {after_sha}\n\n")
+            fh.write(f"**Commit:** {after_sha}\n")
+            fh.write(f"**Branch:** {ref}\n\n")
             fh.write(f"## Summary\n{change_summary['summary']}\n\n")
             fh.write(f"## Files Changed\n")
             for f in sorted(changed_files):
                 fh.write(f"- {f}\n")
-            if removed_files:
-                fh.write(f"\n## Files Removed\n")
-                for f in sorted(removed_files):
-                    fh.write(f"- {f}\n")
             fh.write(f"\n## Technical Details\n{change_summary['details']}\n")
 
         print(f"Wrote change documentation: {change_file}")
 
         # Update changes/README.md with all changes
-        update_changes_readme(changes_dir, change_summary, ts)
+        update_changes_readme(changes_dir, change_summary, after_sha)
+
+        # Mark this push as processed
+        mark_push_processed(tmpdir, after_sha, changed_files)
 
         # commit & push back
         run_cmd("git config user.email 'docai@bots.local' && git config user.name 'docai-bot'", cwd=tmpdir)
@@ -98,7 +102,33 @@ def handle_push_event(payload):
         shutil.rmtree(tmpdir)
 
 
-def analyze_push_change(payload, repo_dir, changed_files, removed_files):
+def has_already_processed_push(repo_dir, sha, changed_files):
+    """Check if we've already processed this exact push."""
+    try:
+        # Check git log for this SHA
+        run_cmd("git log -n 20 --pretty=format:%s > .gitlog.tmp", cwd=repo_dir)
+        with open(Path(repo_dir)/".gitlog.tmp", "r", encoding="utf-8", errors="ignore") as fh:
+            subjects = fh.read()
+        if f"[sha:{sha}]" in subjects:
+            return True
+        
+        # Also check if a file with this SHA already exists
+        changes_dir = Path(repo_dir) / "changes"
+        if changes_dir.exists():
+            for f in changes_dir.glob(f"{sha}-*.md"):
+                return True
+    except Exception as e:
+        print("Warning: could not check if push already processed:", e)
+    return False
+
+
+def mark_push_processed(repo_dir, sha, changed_files):
+    """Mark this push as processed to prevent duplicates."""
+    # The commit itself with [sha:xxx] serves as the marker
+    pass
+
+
+def analyze_push_change(payload, repo_dir, changed_files):
     """Use LLM to analyze the entire push and determine if it's significant."""
     # Get commit message and recent context
     commits = payload.get("commits", [])
