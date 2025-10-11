@@ -59,6 +59,19 @@ def handle_push_event(payload):
         docs_dir = Path(tmpdir) / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
 
+        # Idempotency guard: if we've already committed for this SHA, skip.
+        try:
+            if after_sha:
+                # Look for our marker in recent history
+                run_cmd("git log -n 50 --pretty=format:%s > .gitlog.tmp", cwd=tmpdir)
+                with open(Path(tmpdir)/".gitlog.tmp", "r", encoding="utf-8", errors="ignore") as fh:
+                    subjects = fh.read()
+                if f"[sha:{after_sha}]" in subjects:
+                    print("This push SHA already processed; skipping duplicate run:", after_sha)
+                    return
+        except Exception as e:
+            print("Warning: could not check duplicate SHA in history:", e)
+
         supported_exts = [".py", ".js", ".ts", ".go", ".java", ".rs", ".cpp", ".c"]
         generated_files = []  # list of generated doc filenames
         generated_pairs = []  # (source_path, doc_filename)
@@ -127,27 +140,27 @@ def handle_push_event(payload):
             import datetime
             log_path = docs_dir / "DOC_AI_RUN_LOG.md"
             ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-            with open(log_path, "a", encoding="utf-8") as fh:
-                fh.write(f"\n\n## Run {ts}\n")
-                fh.write(f"Repo: {repo_full}  Ref: {ref}  After: {after_sha}\n\n")
-                if generated_pairs:
-                    fh.write("### Generated/Updated\n")
-                    for src, doc in sorted(generated_pairs):
-                        fh.write(f"- {src} -> {doc}\n")
-                if removed_pairs:
-                    fh.write("\n### Removed\n")
-                    for src, doc in sorted(removed_pairs):
-                        fh.write(f"- {src} (removed) -> {doc}\n")
-                if not generated_pairs and not removed_pairs:
-                    fh.write("No supported changes.\n")
+            if generated_pairs or removed_pairs:
+                with open(log_path, "a", encoding="utf-8") as fh:
+                    fh.write(f"\n\n## Run {ts}\n")
+                    fh.write(f"Repo: {repo_full}  Ref: {ref}  After: {after_sha}\n\n")
+                    if generated_pairs:
+                        fh.write("### Generated/Updated\n")
+                        for src, doc in sorted(generated_pairs):
+                            fh.write(f"- {src} -> {doc}\n")
+                    if removed_pairs:
+                        fh.write("\n### Removed\n")
+                        for src, doc in sorted(removed_pairs):
+                            fh.write(f"- {src} (removed) -> {doc}\n")
         except Exception as e:
             print("Warning: failed to append DOC_AI_RUN_LOG.md:", e)
 
         # commit & push back
         run_cmd("git config user.email 'docai@bots.local' && git config user.name 'docai-bot'", cwd=tmpdir)
         run_cmd("git add docs || true", cwd=tmpdir)
-        commit_msg = f"docs: {len(generated_pairs)} updated, {removed_count} removed by DocAI"
-        run_cmd(f"git commit -m '{commit_msg}' || echo 'no changes'", cwd=tmpdir)
+        # Only commit when there are staged changes; include SHA marker for idempotency
+        commit_msg = f"docs: {len(generated_pairs)} updated, {removed_count} removed by DocAI [sha:{after_sha}]"
+        run_cmd(f"sh -lc 'git diff --cached --quiet && echo no changes || git commit -m " + repr(commit_msg) + "'", cwd=tmpdir)
         run_cmd(f"git push https://x-access-token:{token}@github.com/{repo_full}.git HEAD:main", cwd=tmpdir)
         print("Docs committed and pushed.")
     finally:
