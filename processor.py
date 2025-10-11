@@ -20,16 +20,20 @@ def handle_push_event(payload):
     installation = payload.get("installation", {})
     installation_id = installation.get("id")
     changed_files = set()
+    removed_files = set()
     # get list of changed files from commits
     for commit in payload.get("commits", []):
         changed_files.update(commit.get("added", []))
         changed_files.update(commit.get("modified", []))
+        removed_files.update(commit.get("removed", []))
 
     if not changed_files:
         print("No changed files in push, skipping.")
         return
 
     print("Changed files in push:", sorted(list(changed_files)))
+    if removed_files:
+        print("Removed files in push:", sorted(list(removed_files)))
 
     # get token for this installation
     token = get_installation_token(installation_id)
@@ -37,6 +41,20 @@ def handle_push_event(payload):
     tmpdir = tempfile.mkdtemp(prefix="docai_")
     try:
         clone_repo_via_token(repo_full, token, tmpdir)
+
+        # Checkout the exact ref/commit from the push for correctness on branches
+        ref = payload.get("ref")  # e.g., refs/heads/feature-x
+        after_sha = payload.get("after")  # commit SHA after push
+        try:
+            if ref:
+                run_cmd(f"git fetch origin {ref}", cwd=tmpdir)
+            if after_sha:
+                run_cmd(f"git checkout --detach {after_sha}", cwd=tmpdir)
+            elif ref and ref.startswith("refs/heads/"):
+                branch = ref.split("/", 2)[-1]
+                run_cmd(f"git checkout {branch}", cwd=tmpdir)
+        except Exception as e:
+            print("Warning: failed to checkout pushed ref/sha:", ref, after_sha, e)
 
         docs_dir = Path(tmpdir) / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
@@ -63,30 +81,42 @@ def handle_push_event(payload):
             else:
                 print("Skipping unsupported file (no matching extension):", f)
 
-        # Ensure GitBook Git Sync has an entry point and navigation
-        if generated_files:
-            # README.md acts as root page
-            readme_path = docs_dir / "README.md"
-            readme_content = (
-                "# Project Docs\n\n"
-                "This documentation is generated automatically by DocAI from recent commits.\n\n"
-                "See the sidebar for individual module/pages.\n"
-            )
-            with open(readme_path, "w", encoding="utf-8") as fh:
-                fh.write(readme_content)
-            # SUMMARY.md builds sidebar in GitBook Git Sync
-            summary_path = docs_dir / "SUMMARY.md"
-            # Sort for stability
-            generated_files.sort()
-            lines = ["# Summary\n", "\n", "* [Home](README.md)\n"]
-            for name in generated_files:
-                title = name.replace("__", "/").replace(".md", "")
-                lines.append(f"* [{title}]({name})\n")
-            with open(summary_path, "w", encoding="utf-8") as fh:
-                fh.writelines(lines)
+        # Remove docs for removed files
+        removed_count = 0
+        for f in removed_files:
+            if any(f.endswith(ext) for ext in supported_exts):
+                target = docs_dir / (f.replace("/", "__") + ".md")
+                if target.exists():
+                    try:
+                        target.unlink()
+                        removed_count += 1
+                        print("Removed doc for deleted file:", f, "->", target)
+                    except Exception as e:
+                        print("Failed to remove doc for", f, e)
 
-        if not generated_files:
-            print("No supported changed files produced docs. Nothing new to commit under docs/.")
+        # Always (re)build README.md and SUMMARY.md from current docs directory
+        all_pages = [p.name for p in docs_dir.glob("*.md") if p.name not in ("README.md", "SUMMARY.md")]
+        all_pages.sort()
+
+        readme_path = docs_dir / "README.md"
+        readme_content = (
+            "# Project Docs\n\n"
+            "This documentation is generated automatically by DocAI from repository changes.\n\n"
+            "Use the sidebar to navigate individual pages.\n"
+        )
+        with open(readme_path, "w", encoding="utf-8") as fh:
+            fh.write(readme_content)
+
+        summary_path = docs_dir / "SUMMARY.md"
+        lines = ["# Summary\n", "\n", "* [Home](README.md)\n"]
+        for name in all_pages:
+            title = name.replace("__", "/").replace(".md", "")
+            lines.append(f"* [{title}]({name})\n")
+        with open(summary_path, "w", encoding="utf-8") as fh:
+            fh.writelines(lines)
+
+        if not generated_files and removed_count == 0:
+            print("No supported changes produced docs and no deletions. Commit may be a no-op.")
 
         # commit & push back
         run_cmd("git config user.email 'docai@bots.local' && git config user.name 'docai-bot'", cwd=tmpdir)
