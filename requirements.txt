@@ -4,5 +4,7 @@ PyJWT
 PyGithub
 python-dotenv
 google-generativeai
+groq
+openai
 requests
 gitpython

@@ -1,7 +1,7 @@
 # app.py
 import hmac, hashlib, os, json
 from fastapi import FastAPI, Header, Request, HTTPException
-from processor import handle_push_event
+from smart_processor import handle_push_event
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -34,3 +34,7 @@ async def webhook(request: Request, x_hub_signature_256: str = Header(None), x_g
         # offload processing (simple: run sync handler but consider queue in prod)
         handle_push_event(payload)
     return {"status": "ok"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

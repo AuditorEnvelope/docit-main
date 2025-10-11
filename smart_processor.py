@@ -1,0 +1,582 @@
+# smart_processor.py - Enhanced smart documentation agent
+import os, subprocess, tempfile, shutil, datetime, json
+from github_app import get_installation_token
+from llm_provider_v2 import get_rotator
+from pathlib import Path
+import re
+
+def run_cmd(cmd, cwd=None):
+    print("RUN:", cmd)
+    subprocess.run(cmd, shell=True, check=True, cwd=cwd)
+
+def clone_repo_via_token(repo_full_name, token, target_dir):
+    url = f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
+    run_cmd(f"git clone --depth 1 {url} {target_dir}")
+
+def handle_push_event(payload):
+    """Enhanced push event handler with smart analysis"""
+    repo = payload.get("repository", {})
+    repo_full = repo.get("full_name")
+    installation = payload.get("installation", {})
+    installation_id = installation.get("id")
+    
+    # Get changed files
+    changed_files = set()
+    removed_files = set()
+    for commit in payload.get("commits", []):
+        changed_files.update(commit.get("added", []))
+        changed_files.update(commit.get("modified", []))
+        removed_files.update(commit.get("removed", []))
+
+    if not changed_files:
+        print("No changed files in push, skipping.")
+        return
+
+    print(f"📁 Changed files: {len(changed_files)} files")
+    print(f"🗑️  Removed files: {len(removed_files)} files")
+
+    # Skip DocAI's own commits
+    commits = payload.get("commits", [])
+    if commits:
+        last_commit = commits[-1]
+        author = last_commit.get("author", {}).get("name", "")
+        if author == "docai-bot" or "docai@bots.local" in last_commit.get("author", {}).get("email", ""):
+            print(f"⏭️  Skipping DocAI's own commit from {author}")
+            return
+
+    token = get_installation_token(installation_id)
+    tmpdir = tempfile.mkdtemp(prefix="docai_smart_")
+    
+    try:
+        clone_repo_via_token(repo_full, token, tmpdir)
+        
+        # Checkout the exact commit
+        ref = payload.get("ref")
+        after_sha = payload.get("after")
+        if after_sha:
+            run_cmd(f"git checkout --detach {after_sha}", cwd=tmpdir)
+        
+        # Smart analysis of the change
+        analysis = smart_analyze_change(payload, tmpdir, changed_files, removed_files)
+        
+        if not analysis["is_significant"]:
+            print(f"❌ Change not significant: {analysis['reason']}")
+            return
+        
+        print(f"✅ Significant change detected: {analysis['title']}")
+        
+        # Generate comprehensive documentation
+        generate_smart_documentation(tmpdir, analysis, after_sha, ref)
+        
+        # Commit and push
+        commit_and_push_changes(tmpdir, analysis, after_sha, token, repo_full)
+        
+    finally:
+        shutil.rmtree(tmpdir)
+
+def smart_analyze_change(payload, repo_dir, changed_files, removed_files):
+    """Comprehensive analysis of the entire change impact"""
+    
+    # Get git diff for context
+    diff_context = get_git_diff_context(repo_dir, changed_files)
+    
+    # Get commit messages and context
+    commits = payload.get("commits", [])
+    commit_messages = [commit.get("message", "") for commit in commits]
+    
+    # Analyze file patterns to understand change type
+    file_analysis = analyze_file_patterns(changed_files, removed_files)
+    
+    # Get codebase context for major changes
+    codebase_context = ""
+    if file_analysis["is_major_change"]:
+        codebase_context = get_codebase_context(repo_dir, changed_files)
+    
+    # Create comprehensive analysis prompt
+    analysis_prompt = f"""
+You are DocAI, an expert code analysis AI. Analyze this code change comprehensively.
+
+REPOSITORY CONTEXT:
+- Repository: {payload.get("repository", {}).get("full_name", "unknown")}
+- Branch: {payload.get("ref", "unknown")}
+- Commit SHA: {payload.get("after", "unknown")}
+
+COMMIT MESSAGES:
+{chr(10).join(f"- {msg}" for msg in commit_messages)}
+
+FILE CHANGES:
+Changed files ({len(changed_files)}):
+{chr(10).join(f"- {f}" for f in sorted(changed_files))}
+
+Removed files ({len(removed_files)}):
+{chr(10).join(f"- {f}" for f in sorted(removed_files))}
+
+FILE PATTERN ANALYSIS:
+{json.dumps(file_analysis, indent=2)}
+
+GIT DIFF CONTEXT:
+{diff_context}
+
+CODEBASE CONTEXT (for major changes):
+{codebase_context}
+
+ANALYSIS REQUIREMENTS:
+1. Determine the TYPE of change (feature, bug_fix, refactor, breaking_change, security, performance, etc.)
+2. Assess SIGNIFICANCE (1-10 scale) - only document 7+ significant changes
+3. Identify the MAIN PURPOSE and impact
+4. Understand which parts of the system are affected
+5. Determine what documentation needs updating
+
+Respond in JSON format:
+{{
+    "type": "feature|bug_fix|refactor|breaking_change|security|performance|chore|docs",
+    "significance": 8,
+    "is_significant": true,
+    "title": "Add OAuth2 Authentication System",
+    "summary": "Implemented comprehensive OAuth2 authentication with JWT tokens, user management, and role-based access control",
+    "impact_scope": ["authentication", "user_management", "api_security"],
+    "affected_components": ["auth/", "api/middleware/", "database/schemas/"],
+    "breaking_changes": false,
+    "new_features": ["OAuth2 login", "JWT tokens", "Role-based access"],
+    "technical_details": "Detailed technical implementation...",
+    "documentation_needs": {{
+        "update_readme": true,
+        "create_changelog": true,
+        "update_api_docs": true,
+        "create_migration_guide": false
+    }},
+    "reason": "Major authentication feature affecting core system security"
+}}
+"""
+
+    try:
+        rotator = get_rotator()
+        result = rotator.generate_with_rotation(analysis_prompt)
+        
+        if result:
+            # Parse JSON response
+            json_match = re.search(r'\{.*\}', result, re.DOTALL)
+            if json_match:
+                analysis = json.loads(json_match.group())
+                return analysis
+    except Exception as e:
+        print(f"❌ Analysis failed: {e}")
+    
+    # Fallback analysis
+    return {
+        "type": "unknown",
+        "significance": 5,
+        "is_significant": len(changed_files) > 10,  # Heuristic: many files = significant
+        "title": f"Code changes in {len(changed_files)} files",
+        "summary": f"Modified {len(changed_files)} files, removed {len(removed_files)} files",
+        "impact_scope": ["general"],
+        "affected_components": list(changed_files)[:5],
+        "breaking_changes": False,
+        "new_features": [],
+        "technical_details": f"Files changed: {', '.join(sorted(changed_files))}",
+        "documentation_needs": {
+            "update_readme": False,
+            "create_changelog": True,
+            "update_api_docs": False,
+            "create_migration_guide": False
+        },
+        "reason": "Fallback analysis due to LLM failure"
+    }
+
+def analyze_file_patterns(changed_files, removed_files):
+    """Analyze file patterns to understand change type"""
+    patterns = {
+        "auth": ["auth", "login", "jwt", "oauth", "session", "user"],
+        "api": ["api", "endpoint", "route", "controller"],
+        "database": ["migration", "schema", "model", "db"],
+        "frontend": ["component", "page", "view", "ui", "css", "jsx"],
+        "config": ["config", "env", "docker", "yaml", "json"],
+        "test": ["test", "spec", "mock"],
+        "docs": ["readme", "docs", "changelog", "guide"]
+    }
+    
+    detected_patterns = []
+    for pattern, keywords in patterns.items():
+        for file in changed_files:
+            if any(keyword in file.lower() for keyword in keywords):
+                detected_patterns.append(pattern)
+                break
+    
+    # Determine if it's a major change
+    major_indicators = [
+        len(changed_files) > 20,
+        "auth" in detected_patterns,
+        "database" in detected_patterns,
+        any("config" in f for f in changed_files),
+        len(removed_files) > 5
+    ]
+    
+    return {
+        "detected_patterns": list(set(detected_patterns)),
+        "is_major_change": any(major_indicators),
+        "file_count": len(changed_files),
+        "removed_count": len(removed_files)
+    }
+
+def get_git_diff_context(repo_dir, changed_files):
+    """Get git diff for changed files"""
+    try:
+        # Get diff for changed files
+        files_str = " ".join(f'"{f}"' for f in changed_files if not f.startswith("docs/"))
+        if files_str:
+            result = subprocess.run(
+                f"git diff HEAD~1 -- {files_str}",
+                shell=True, cwd=repo_dir, capture_output=True, text=True
+            )
+            return result.stdout[:5000]  # Limit size
+    except Exception as e:
+        print(f"Warning: Could not get git diff: {e}")
+    return ""
+
+def get_codebase_context(repo_dir, changed_files):
+    """Get broader codebase context for major changes"""
+    try:
+        # Get project structure
+        structure = subprocess.run(
+            "find . -type f -name '*.py' -o -name '*.js' -o -name '*.ts' | head -20",
+            shell=True, cwd=repo_dir, capture_output=True, text=True
+        ).stdout
+        
+        # Get package.json or requirements.txt for context
+        package_info = ""
+        for file in ["package.json", "requirements.txt", "pyproject.toml"]:
+            if os.path.exists(os.path.join(repo_dir, file)):
+                with open(os.path.join(repo_dir, file), 'r') as f:
+                    package_info += f"\n{file}:\n{f.read()[:1000]}\n"
+        
+        return f"Project structure:\n{structure}\n\nPackage info:\n{package_info}"
+    except Exception as e:
+        print(f"Warning: Could not get codebase context: {e}")
+    return ""
+
+def generate_smart_documentation(repo_dir, analysis, commit_sha, ref):
+    """Generate comprehensive documentation based on analysis"""
+    
+    # Create docs directory structure - everything goes in docs/
+    docs_dir = Path(repo_dir) / "docs"
+    changes_dir = docs_dir / "changes"  # Move changes inside docs
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    changes_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 1. Create detailed change documentation
+    create_change_documentation(changes_dir, analysis, commit_sha, ref)
+    
+    # 2. Update main README if needed
+    if analysis["documentation_needs"]["update_readme"]:
+        update_main_readme(repo_dir, analysis)
+    
+    # 3. Update changelog
+    if analysis["documentation_needs"]["create_changelog"]:
+        update_changelog(repo_dir, analysis, commit_sha)
+    
+    # 4. Create API documentation if needed
+    if analysis["documentation_needs"]["update_api_docs"]:
+        create_api_documentation(docs_dir, analysis)
+    
+    # 5. Create migration guide for breaking changes
+    if analysis["documentation_needs"]["create_migration_guide"]:
+        create_migration_guide(docs_dir, analysis)
+    
+    # 6. Update SUMMARY.md for GitBook navigation
+    update_summary_md(docs_dir, analysis, commit_sha)
+
+def create_change_documentation(changes_dir, analysis, commit_sha, ref):
+    """Create detailed change documentation"""
+    
+    # Generate comprehensive change description
+    change_prompt = f"""
+Create comprehensive documentation for this code change:
+
+CHANGE ANALYSIS:
+{json.dumps(analysis, indent=2)}
+
+Create a detailed markdown document that includes:
+1. **Overview**: Clear summary of what changed and why
+2. **Impact**: What parts of the system are affected
+3. **New Features**: What new functionality was added
+4. **Breaking Changes**: Any breaking changes and migration steps
+5. **Technical Details**: Implementation specifics
+6. **Usage Examples**: How to use new features
+7. **Testing**: How to test the changes
+8. **Migration Guide**: If applicable, steps to migrate
+
+Make it professional, detailed, and useful for developers.
+"""
+
+    try:
+        rotator = get_rotator()
+        detailed_doc = rotator.generate_with_rotation(change_prompt)
+        
+        if detailed_doc:
+            # Save detailed documentation
+            change_file = changes_dir / f"{commit_sha}-{analysis['type']}.md"
+            with open(change_file, "w", encoding="utf-8") as f:
+                f.write(f"# {analysis['title']}\n\n")
+                f.write(f"**Type:** {analysis['type']}  \n")
+                f.write(f"**Significance:** {analysis['significance']}/10  \n")
+                f.write(f"**Date:** {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}  \n")
+                f.write(f"**Commit:** {commit_sha}  \n")
+                f.write(f"**Branch:** {ref}  \n\n")
+                f.write(detailed_doc)
+            
+            print(f"📝 Created detailed change documentation: {change_file}")
+        else:
+            # Fallback documentation
+            create_fallback_change_doc(changes_dir, analysis, commit_sha, ref)
+            
+    except Exception as e:
+        print(f"❌ Failed to create detailed documentation: {e}")
+        create_fallback_change_doc(changes_dir, analysis, commit_sha, ref)
+
+def create_fallback_change_doc(changes_dir, analysis, commit_sha, ref):
+    """Create fallback change documentation"""
+    change_file = changes_dir / f"{commit_sha}-{analysis['type']}.md"
+    with open(change_file, "w", encoding="utf-8") as f:
+        f.write(f"# {analysis['title']}\n\n")
+        f.write(f"**Type:** {analysis['type']}  \n")
+        f.write(f"**Significance:** {analysis['significance']}/10  \n")
+        f.write(f"**Date:** {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}  \n")
+        f.write(f"**Commit:** {commit_sha}  \n")
+        f.write(f"**Branch:** {ref}  \n\n")
+        f.write(f"## Summary\n{analysis['summary']}\n\n")
+        f.write(f"## Impact Scope\n{', '.join(analysis['impact_scope'])}\n\n")
+        f.write(f"## Affected Components\n{', '.join(analysis['affected_components'])}\n\n")
+        f.write(f"## Technical Details\n{analysis['technical_details']}\n")
+
+def update_main_readme(repo_dir, analysis):
+    """Update main README with new features"""
+    readme_path = Path(repo_dir) / "README.md"
+    
+    if not readme_path.exists():
+        return
+    
+    try:
+        with open(readme_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # Add new features section if it's a major feature
+        if analysis["type"] == "feature" and analysis["significance"] >= 8:
+            new_section = f"""
+## 🆕 Recent Updates
+
+### {analysis['title']}
+{analysis['summary']}
+
+**New Features:**
+{chr(10).join(f"- {feature}" for feature in analysis.get('new_features', []))}
+
+*Added on {datetime.datetime.utcnow().strftime('%Y-%m-%d')}*
+"""
+            
+            # Insert after the main title/description
+            if "# " in content:
+                lines = content.split('\n')
+                insert_index = 0
+                for i, line in enumerate(lines):
+                    if line.startswith("# ") and i > 0:
+                        insert_index = i + 1
+                        break
+                lines.insert(insert_index, new_section)
+                content = '\n'.join(lines)
+            
+            with open(readme_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            
+            print("📝 Updated main README with new features")
+            
+    except Exception as e:
+        print(f"❌ Failed to update README: {e}")
+
+def update_changelog(repo_dir, analysis, commit_sha):
+    """Update CHANGELOG.md"""
+    changelog_path = Path(repo_dir) / "CHANGELOG.md"
+    
+    # Create changelog if it doesn't exist
+    if not changelog_path.exists():
+        with open(changelog_path, "w", encoding="utf-8") as f:
+            f.write("# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n")
+    
+    try:
+        with open(changelog_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # Add new entry
+        today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+        entry = f"""
+## [{today}] - {analysis['title']}
+
+### {analysis['type'].title()}
+- {analysis['summary']}
+
+### Details
+- **Significance:** {analysis['significance']}/10
+- **Commit:** {commit_sha}
+- **Impact:** {', '.join(analysis['impact_scope'])}
+
+"""
+        
+        # Insert after the header
+        lines = content.split('\n')
+        insert_index = 2  # After "# Changelog" and empty line
+        lines.insert(insert_index, entry)
+        
+        with open(changelog_path, "w", encoding="utf-8") as f:
+            f.write('\n'.join(lines))
+        
+        print("📝 Updated CHANGELOG.md")
+        
+    except Exception as e:
+        print(f"❌ Failed to update CHANGELOG: {e}")
+
+def create_api_documentation(docs_dir, analysis):
+    """Create API documentation for new features"""
+    if analysis["type"] not in ["feature", "api"]:
+        return
+    
+    api_doc_path = docs_dir / "api.md"
+    
+    try:
+        api_prompt = f"""
+Create API documentation for this change:
+
+{json.dumps(analysis, indent=2)}
+
+Focus on:
+1. New API endpoints
+2. Request/response formats
+3. Authentication requirements
+4. Usage examples
+5. Error handling
+
+Create comprehensive API documentation.
+"""
+        
+        rotator = get_rotator()
+        api_doc = rotator.generate_with_rotation(api_prompt)
+        
+        if api_doc:
+            with open(api_doc_path, "w", encoding="utf-8") as f:
+                f.write(f"# API Documentation\n\n")
+                f.write(f"*Updated: {datetime.datetime.utcnow().strftime('%Y-%m-%d')}*\n\n")
+                f.write(api_doc)
+            
+            print("📝 Created API documentation")
+            
+    except Exception as e:
+        print(f"❌ Failed to create API documentation: {e}")
+
+def create_migration_guide(docs_dir, analysis):
+    """Create migration guide for breaking changes"""
+    if not analysis.get("breaking_changes", False):
+        return
+    
+    migration_path = docs_dir / "migration-guide.md"
+    
+    try:
+        migration_prompt = f"""
+Create a migration guide for this breaking change:
+
+{json.dumps(analysis, indent=2)}
+
+Include:
+1. What changed and why
+2. Step-by-step migration instructions
+3. Code examples (before/after)
+4. Common issues and solutions
+5. Rollback instructions
+
+Create a comprehensive migration guide.
+"""
+        
+        rotator = get_rotator()
+        migration_doc = rotator.generate_with_rotation(migration_prompt)
+        
+        if migration_doc:
+            with open(migration_path, "w", encoding="utf-8") as f:
+                f.write(f"# Migration Guide\n\n")
+                f.write(f"*Updated: {datetime.datetime.utcnow().strftime('%Y-%m-%d')}*\n\n")
+                f.write(migration_doc)
+            
+            print("📝 Created migration guide")
+            
+    except Exception as e:
+        print(f"❌ Failed to create migration guide: {e}")
+
+def update_summary_md(docs_dir, analysis, commit_sha):
+    """Update SUMMARY.md for GitBook navigation"""
+    summary_path = docs_dir / "SUMMARY.md"
+    
+    try:
+        # Read existing SUMMARY.md or create new one
+        if summary_path.exists():
+            with open(summary_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        else:
+            content = "# Table of Contents\n\n"
+        
+        # Add new change entry if it's significant
+        if analysis["significance"] >= 7:
+            change_entry = f"* [{analysis['title']}](changes/{commit_sha}-{analysis['type']}.md)\n"
+            
+            # Find the Changes section or create it
+            if "## Changes" in content:
+                # Insert after the Changes header
+                lines = content.split('\n')
+                for i, line in enumerate(lines):
+                    if line.strip() == "## Changes":
+                        lines.insert(i + 1, change_entry)
+                        break
+                content = '\n'.join(lines)
+            else:
+                # Add Changes section
+                content += f"\n## Changes\n\n{change_entry}\n"
+        
+        # Write updated SUMMARY.md
+        with open(summary_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        
+        print("📝 Updated SUMMARY.md for GitBook navigation")
+        
+    except Exception as e:
+        print(f"❌ Failed to update SUMMARY.md: {e}")
+
+def commit_and_push_changes(repo_dir, analysis, commit_sha, token, repo_full):
+    """Commit and push all documentation changes"""
+    
+    try:
+        # Configure git
+        run_cmd("git config user.email 'docai@bots.local' && git config user.name 'docai-bot'", cwd=repo_dir)
+        
+        # Add all documentation files (changes is now inside docs/)
+        run_cmd("git add docs/ README.md CHANGELOG.md || true", cwd=repo_dir)
+        
+        # Create commit message
+        commit_msg = f"docs: {analysis['type']} - {analysis['title']} [sha:{commit_sha}]"
+        
+        # Commit
+        run_cmd(f"git commit -m '{commit_msg}' || echo 'no changes'", cwd=repo_dir)
+        
+        # Push
+        run_cmd(f"git push https://x-access-token:{token}@github.com/{repo_full}.git HEAD:main", cwd=repo_dir)
+        
+        print("✅ Documentation changes committed and pushed")
+        
+    except Exception as e:
+        print(f"❌ Failed to commit/push changes: {e}")
+
+# Backward compatibility
+def has_already_processed_push(repo_dir, sha, changed_files):
+    """Check if push already processed"""
+    try:
+        run_cmd("git log -n 20 --pretty=format:%s > .gitlog.tmp", cwd=repo_dir)
+        with open(Path(repo_dir)/".gitlog.tmp", "r", encoding="utf-8", errors="ignore") as fh:
+            subjects = fh.read()
+        return f"[sha:{sha}]" in subjects
+    except Exception as e:
+        print(f"Warning: could not check if push already processed: {e}")
+    return False

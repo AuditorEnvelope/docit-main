@@ -1,7 +1,7 @@
 # processor.py
-import os, subprocess, tempfile, shutil, datetime, google.generativeai as genai
+import os, subprocess, tempfile, shutil, datetime
 from github_app import get_installation_token
-from llm_provider import generate_doc_for_file
+from llm_provider_v2 import generate_doc_for_file, get_rotator
 from pathlib import Path
 
 def run_cmd(cmd, cwd=None):
@@ -20,16 +20,29 @@ def handle_push_event(payload):
     installation = payload.get("installation", {})
     installation_id = installation.get("id")
     changed_files = set()
+    removed_files = set()
     # get list of changed files from commits
     for commit in payload.get("commits", []):
         changed_files.update(commit.get("added", []))
         changed_files.update(commit.get("modified", []))
+        removed_files.update(commit.get("removed", []))
 
     if not changed_files:
         print("No changed files in push, skipping.")
         return
 
     print("Changed files in push:", sorted(list(changed_files)))
+    if removed_files:
+        print("Removed files in push:", sorted(list(removed_files)))
+
+    # NEW: Skip if this push is from DocAI itself
+    commits = payload.get("commits", [])
+    if commits:
+        last_commit = commits[-1]
+        author = last_commit.get("author", {}).get("name", "")
+        if author == "docai-bot" or "docai@bots.local" in last_commit.get("author", {}).get("email", ""):
+            print(f"Skipping DocAI's own commit from {author}")
+            return
 
     # get token for this installation
     token = get_installation_token(installation_id)
@@ -58,7 +71,7 @@ def handle_push_event(payload):
             return
 
         # NEW: Analyze the entire change, not individual files
-        change_summary = analyze_push_change(payload, tmpdir, changed_files)
+        change_summary = analyze_push_change(payload, tmpdir, changed_files, removed_files)
         
         if not change_summary["is_significant"]:
             print("Change not significant enough for documentation:", change_summary["reason"])
@@ -81,6 +94,10 @@ def handle_push_event(payload):
             fh.write(f"## Files Changed\n")
             for f in sorted(changed_files):
                 fh.write(f"- {f}\n")
+            if removed_files:
+                fh.write(f"\n## Files Removed\n")
+                for f in sorted(removed_files):
+                    fh.write(f"- {f}\n")
             fh.write(f"\n## Technical Details\n{change_summary['details']}\n")
 
         print(f"Wrote change documentation: {change_file}")
@@ -117,6 +134,12 @@ def has_already_processed_push(repo_dir, sha, changed_files):
         if changes_dir.exists():
             for f in changes_dir.glob(f"{sha}-*.md"):
                 return True
+                
+        # NEW: Skip if this push is from DocAI itself
+        if "docs:" in subjects and "docai@bots.local" in subjects:
+            print(f"Skipping DocAI's own commit: {sha}")
+            return True
+            
     except Exception as e:
         print("Warning: could not check if push already processed:", e)
     return False
@@ -128,7 +151,7 @@ def mark_push_processed(repo_dir, sha, changed_files):
     pass
 
 
-def analyze_push_change(payload, repo_dir, changed_files):
+def analyze_push_change(payload, repo_dir, changed_files, removed_files):
     """Use LLM to analyze the entire push and determine if it's significant."""
     # Get commit message and recent context
     commits = payload.get("commits", [])
@@ -160,9 +183,13 @@ def analyze_push_change(payload, repo_dir, changed_files):
     
     try:
         prompt = f"You are DocAI analyzing code changes. {context}"
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        resp = model.generate_content(prompt)
-        result = getattr(resp, "text", None) or str(resp)
+        
+        # Use the new LLM rotator system
+        rotator = get_rotator()
+        result = rotator.generate_with_rotation(prompt)
+        
+        if not result:
+            raise Exception("All LLM providers failed")
         
         # Simple JSON parsing (in production, use proper JSON parsing)
         import re
