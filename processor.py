@@ -1,5 +1,5 @@
 # processor.py
-import os, subprocess, tempfile, shutil
+import os, subprocess, tempfile, shutil, datetime, google.generativeai as genai
 from github_app import get_installation_token
 from llm_provider import generate_doc_for_file
 from pathlib import Path
@@ -20,20 +20,17 @@ def handle_push_event(payload):
     installation = payload.get("installation", {})
     installation_id = installation.get("id")
     changed_files = set()
-    removed_files = set()
     # get list of changed files from commits
     for commit in payload.get("commits", []):
         changed_files.update(commit.get("added", []))
         changed_files.update(commit.get("modified", []))
-        removed_files.update(commit.get("removed", []))
+        removed_files = commit.get("removed", [])
 
     if not changed_files:
         print("No changed files in push, skipping.")
         return
 
     print("Changed files in push:", sorted(list(changed_files)))
-    if removed_files:
-        print("Removed files in push:", sorted(list(removed_files)))
 
     # get token for this installation
     token = get_installation_token(installation_id)
@@ -56,115 +53,129 @@ def handle_push_event(payload):
         except Exception as e:
             print("Warning: failed to checkout pushed ref/sha:", ref, after_sha, e)
 
-        docs_dir = Path(tmpdir) / "docs"
-        docs_dir.mkdir(parents=True, exist_ok=True)
+        # NEW: Analyze the entire change, not individual files
+        change_summary = analyze_push_change(payload, tmpdir, changed_files, removed_files)
+        
+        if not change_summary["is_significant"]:
+            print("Change not significant enough for documentation:", change_summary["reason"])
+            return
 
-        # Idempotency guard: if we've already committed for this SHA, skip.
-        try:
-            if after_sha:
-                # Look for our marker in recent history
-                run_cmd("git log -n 50 --pretty=format:%s > .gitlog.tmp", cwd=tmpdir)
-                with open(Path(tmpdir)/".gitlog.tmp", "r", encoding="utf-8", errors="ignore") as fh:
-                    subjects = fh.read()
-                if f"[sha:{after_sha}]" in subjects:
-                    print("This push SHA already processed; skipping duplicate run:", after_sha)
-                    return
-        except Exception as e:
-            print("Warning: could not check duplicate SHA in history:", e)
+        # Generate single MD for the entire change
+        changes_dir = Path(tmpdir) / "changes"
+        changes_dir.mkdir(parents=True, exist_ok=True)
+        
+        ts = datetime.datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")
+        change_file = changes_dir / f"{ts}-{change_summary['type']}.md"
+        
+        with open(change_file, "w", encoding="utf-8") as fh:
+            fh.write(f"# {change_summary['title']}\n\n")
+            fh.write(f"**Type:** {change_summary['type']}\n")
+            fh.write(f"**Date:** {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+            fh.write(f"**Commit:** {after_sha}\n\n")
+            fh.write(f"## Summary\n{change_summary['summary']}\n\n")
+            fh.write(f"## Files Changed\n")
+            for f in sorted(changed_files):
+                fh.write(f"- {f}\n")
+            if removed_files:
+                fh.write(f"\n## Files Removed\n")
+                for f in sorted(removed_files):
+                    fh.write(f"- {f}\n")
+            fh.write(f"\n## Technical Details\n{change_summary['details']}\n")
 
-        supported_exts = [".py", ".js", ".ts", ".go", ".java", ".rs", ".cpp", ".c"]
-        generated_files = []  # list of generated doc filenames
-        generated_pairs = []  # (source_path, doc_filename)
-        considered_files = []
-        for f in changed_files:
-            # only handle relevant extensions
-            if any(f.endswith(ext) for ext in supported_exts):
-                abs_path = Path(tmpdir) / f
-                if not abs_path.exists(): 
-                    print("file missing:", f); continue
-                with open(abs_path, "r", encoding="utf-8", errors="ignore") as fh:
-                    code = fh.read()
-                md = generate_doc_for_file(f, code)
-                target = docs_dir / (f.replace("/", "__") + ".md")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with open(target, "w", encoding="utf-8") as out:
-                    out.write(md)
-                print("Wrote doc for", f, "->", target)
-                generated_files.append(target.name)
-                generated_pairs.append((f, target.name))
-                considered_files.append(f)
-            else:
-                print("Skipping unsupported file (no matching extension):", f)
+        print(f"Wrote change documentation: {change_file}")
 
-        # Remove docs for removed files
-        removed_count = 0
-        removed_pairs = []  # (source_path, doc_filename)
-        for f in removed_files:
-            if any(f.endswith(ext) for ext in supported_exts):
-                target = docs_dir / (f.replace("/", "__") + ".md")
-                if target.exists():
-                    try:
-                        target.unlink()
-                        removed_count += 1
-                        print("Removed doc for deleted file:", f, "->", target)
-                        removed_pairs.append((f, target.name))
-                    except Exception as e:
-                        print("Failed to remove doc for", f, e)
-
-        # Always (re)build README.md and SUMMARY.md from current docs directory
-        all_pages = [p.name for p in docs_dir.glob("*.md") if p.name not in ("README.md", "SUMMARY.md")]
-        all_pages.sort()
-
-        readme_path = docs_dir / "README.md"
-        readme_content = (
-            "# Project Docs\n\n"
-            "This documentation is generated automatically by DocAI from repository changes.\n\n"
-            "Use the sidebar to navigate individual pages.\n"
-        )
-        with open(readme_path, "w", encoding="utf-8") as fh:
-            fh.write(readme_content)
-
-        summary_path = docs_dir / "SUMMARY.md"
-        lines = ["# Summary\n", "\n", "* [Home](README.md)\n"]
-        for name in all_pages:
-            title = name.replace("__", "/").replace(".md", "")
-            lines.append(f"* [{title}]({name})\n")
-        with open(summary_path, "w", encoding="utf-8") as fh:
-            fh.writelines(lines)
-
-        if not generated_files and removed_count == 0:
-            print("No supported changes produced docs and no deletions. Commit may be a no-op.")
-
-        # Append a run summary to a changelog for visibility
-        try:
-            import datetime
-            log_path = docs_dir / "DOC_AI_RUN_LOG.md"
-            ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-            if generated_pairs or removed_pairs:
-                with open(log_path, "a", encoding="utf-8") as fh:
-                    fh.write(f"\n\n## Run {ts}\n")
-                    fh.write(f"Repo: {repo_full}  Ref: {ref}  After: {after_sha}\n\n")
-                    if generated_pairs:
-                        fh.write("### Generated/Updated\n")
-                        for src, doc in sorted(generated_pairs):
-                            fh.write(f"- {src} -> {doc}\n")
-                    if removed_pairs:
-                        fh.write("\n### Removed\n")
-                        for src, doc in sorted(removed_pairs):
-                            fh.write(f"- {src} (removed) -> {doc}\n")
-        except Exception as e:
-            print("Warning: failed to append DOC_AI_RUN_LOG.md:", e)
+        # Update changes/README.md with all changes
+        update_changes_readme(changes_dir, change_summary, ts)
 
         # commit & push back
         run_cmd("git config user.email 'docai@bots.local' && git config user.name 'docai-bot'", cwd=tmpdir)
-        run_cmd("git add docs || true", cwd=tmpdir)
-        # Only commit when there are staged changes; include SHA marker for idempotency
-        commit_msg = f"docs: {len(generated_pairs)} updated, {removed_count} removed by DocAI [sha:{after_sha}]"
-        run_cmd(f"sh -lc 'git diff --cached --quiet && echo no changes || git commit -m " + repr(commit_msg) + "'", cwd=tmpdir)
+        run_cmd("git add changes || true", cwd=tmpdir)
+        commit_msg = f"docs: {change_summary['type']} - {change_summary['title']} [sha:{after_sha}]"
+        run_cmd(f"git commit -m '{commit_msg}' || echo 'no changes'", cwd=tmpdir)
         run_cmd(f"git push https://x-access-token:{token}@github.com/{repo_full}.git HEAD:main", cwd=tmpdir)
-        print("Docs committed and pushed.")
+        print("Change docs committed and pushed.")
     finally:
         shutil.rmtree(tmpdir)
+
+
+def analyze_push_change(payload, repo_dir, changed_files, removed_files):
+    """Use LLM to analyze the entire push and determine if it's significant."""
+    # Get commit message and recent context
+    commits = payload.get("commits", [])
+    commit_msg = commits[-1].get("message", "") if commits else ""
+    
+    # Get diff context (simplified - could be enhanced with git diff)
+    context = f"""
+    Commit message: {commit_msg}
+    Files changed: {', '.join(changed_files)}
+    Files removed: {', '.join(removed_files)}
+    
+    Analyze this code change and determine:
+    1. What type of change is this? (feature, bug_fix, refactor, test, chore, docs)
+    2. Is it significant enough to document? (major features, bug fixes, API changes)
+    3. What is the main purpose/title of this change?
+    4. Provide a summary of what was implemented/changed
+    5. Technical details about the implementation
+    
+    Respond in JSON format:
+    {{
+        "type": "feature|bug_fix|refactor|test|chore|docs",
+        "is_significant": true|false,
+        "reason": "brief explanation if not significant",
+        "title": "short descriptive title",
+        "summary": "2-3 sentence summary of the change",
+        "details": "technical implementation details"
+    }}
+    """
+    
+    try:
+        prompt = f"You are DocAI analyzing code changes. {context}"
+        model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        resp = model.generate_content(prompt)
+        result = getattr(resp, "text", None) or str(resp)
+        
+        # Simple JSON parsing (in production, use proper JSON parsing)
+        import re
+        json_match = re.search(r'\{.*\}', result, re.DOTALL)
+        if json_match:
+            # Basic eval for demo - use json.loads in production
+            result = eval(json_match.group())
+            return result
+    except Exception as e:
+        print("Error analyzing change:", e)
+    
+    # Fallback if LLM fails
+    return {
+        "type": "unknown",
+        "is_significant": True,
+        "reason": "LLM analysis failed, defaulting to significant",
+        "title": f"Code change in {len(changed_files)} files",
+        "summary": f"Modified {len(changed_files)} files. Removed {len(removed_files)} files.",
+        "details": f"Files: {', '.join(changed_files)}"
+    }
+
+
+def update_changes_readme(changes_dir, change_summary, timestamp):
+    """Update changes/README.md with list of all changes."""
+    readme_path = changes_dir / "README.md"
+    
+    # Get existing changes
+    existing_changes = []
+    if readme_path.exists():
+        with open(readme_path, "r", encoding="utf-8") as fh:
+            content = fh.read()
+            # Simple parsing - look for existing entries
+            import re
+            existing_changes = re.findall(r'- \d{4}-\d{2}-\d{2}.*?\n', content)
+    
+    # Add new change at the top
+    new_entry = f"- {timestamp} - {change_summary['type']}: {change_summary['title']}\n"
+    all_changes = [new_entry] + existing_changes[:10]  # Keep last 10
+    
+    readme_content = "# Changes\n\nRecent changes documented by DocAI:\n\n" + "".join(all_changes)
+    
+    with open(readme_path, "w", encoding="utf-8") as fh:
+        fh.write(readme_content)
 
 
 def rebuild_all_for_repo(repo_full: str, installation_id: int):
