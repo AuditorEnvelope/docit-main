@@ -8,6 +8,8 @@ export interface RepoDocumentation {
   api?: string;
   architecture?: string;
   workflow?: string;
+  architectureVersions: Array<{ version: string; fileName: string }>;
+  workflowVersions: Array<{ version: string; fileName: string }>;
   changes: Array<{
     content: string;
     fileName: string;
@@ -28,11 +30,17 @@ export async function loadRepoDocumentation(
       api: docs.api,
       architecture: docs.architecture,
       workflow: docs.workflow,
+      architectureVersions: docs.architectureVersions || [],
+      workflowVersions: docs.workflowVersions || [],
       changes: docs.changes || [],
     };
   } catch (error) {
     console.error(`Error loading docs for ${repoName}:`, error);
-    return { changes: [] };
+    return { 
+      architectureVersions: [],
+      workflowVersions: [],
+      changes: [] 
+    };
   }
 }
 

@@ -243,6 +243,8 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
   changelog?: string;
   architecture?: string;
   workflow?: string;
+  architectureVersions: Array<{ version: string; fileName: string }>;
+  workflowVersions: Array<{ version: string; fileName: string }>;
   changes: Array<{ content: string; fileName: string }>;
 }> {
   try {
@@ -255,8 +257,12 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
       changelog?: string;
       architecture?: string;
       workflow?: string;
+      architectureVersions: Array<{ version: string; fileName: string }>;
+      workflowVersions: Array<{ version: string; fileName: string }>;
       changes: Array<{ content: string; fileName: string }>;
     } = {
+      architectureVersions: [],
+      workflowVersions: [],
       changes: [],
     };
 
@@ -312,6 +318,14 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
       docs.changes.push({ content, fileName: `changes/${fileName}` });
     }
 
+    // Fetch README.md from root (primary source for summary)
+    if (!docs.readme) {
+      const rootReadme = await fetchFileFromGitHub(repo, "README.md");
+      if (rootReadme) {
+        docs.readme = rootReadme;
+      }
+    }
+
     // Also check for CHANGELOG.md in root folder (DocAI creates it there)
     if (!docs.changelog) {
       const rootChangelog = await fetchFileFromGitHub(repo, "CHANGELOG.md");
@@ -336,10 +350,50 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
       }
     }
 
+    // Fetch architecture versions from docs/architecture/
+    const archFiles = await listDirectoryContents(repo, "docs/architecture");
+    for (const fileName of archFiles) {
+      const match = fileName.match(/^v(\d+)-architecture\.md$/);
+      if (match) {
+        docs.architectureVersions.push({
+          version: `v${match[1]}`,
+          fileName: `architecture/${fileName}`
+        });
+      }
+    }
+    // Sort versions in descending order (v2, v1)
+    docs.architectureVersions.sort((a, b) => {
+      const aNum = parseInt(a.version.substring(1));
+      const bNum = parseInt(b.version.substring(1));
+      return bNum - aNum;
+    });
+
+    // Fetch workflow versions from docs/workflow/
+    const workflowFiles = await listDirectoryContents(repo, "docs/workflow");
+    for (const fileName of workflowFiles) {
+      const match = fileName.match(/^v(\d+)-workflow\.md$/);
+      if (match) {
+        docs.workflowVersions.push({
+          version: `v${match[1]}`,
+          fileName: `workflow/${fileName}`
+        });
+      }
+    }
+    // Sort versions in descending order (v2, v1)
+    docs.workflowVersions.sort((a, b) => {
+      const aNum = parseInt(a.version.substring(1));
+      const bNum = parseInt(b.version.substring(1));
+      return bNum - aNum;
+    });
+
     return docs;
   } catch (error) {
     console.error(`Failed to fetch docs from ${repo}:`, error);
-    return { changes: [] };
+    return { 
+      architectureVersions: [],
+      workflowVersions: [],
+      changes: [] 
+    };
   }
 }
 

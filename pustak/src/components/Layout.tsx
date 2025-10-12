@@ -17,7 +17,7 @@ import {
   Code,
   History,
 } from "lucide-react";
-import { Sidebar } from "./Sidebar";
+import { EnhancedSidebar } from "./EnhancedSidebar";
 import { SearchModal } from "./SearchModal";
 
 interface LayoutProps {
@@ -56,7 +56,7 @@ export function Layout({ children }: LayoutProps) {
         lg:translate-x-0
       `}
       >
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+        <EnhancedSidebar onClose={() => setSidebarOpen(false)} />
       </div>
 
       {/* Main content */}

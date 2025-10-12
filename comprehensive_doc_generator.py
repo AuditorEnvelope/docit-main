@@ -415,9 +415,23 @@ Create detailed architecture documentation that includes:
 # Architecture v{version}
 
 ## System Overview
-- High-level architecture diagram (describe in text)
+- High-level architecture diagram (MUST include ASCII/text diagram)
 - Core components and their relationships
 - Data flow
+
+**IMPORTANT**: You MUST include an ASCII art diagram showing the system architecture.
+Use boxes, arrows, and clear labels. Example format:
+```
++-------------------+      HTTP      +-------------------+
+|     Frontend      |<-------------->|     Backend       |
++-------------------+                +-------------------+
+                                             |
+                                             | Database
+                                             v
+                                     +-------------------+
+                                     |     Database      |
+                                     +-------------------+
+```
 
 ## Component Details
 ### [Component 1]
@@ -512,13 +526,31 @@ Create detailed workflow documentation that includes:
 
 # Workflow v{version}
 
+**IMPORTANT**: You MUST include workflow diagrams using ASCII art or flowchart notation.
+Example format:
+```
+Developer → Create Branch → Code → Test → PR → Review → Merge → Deploy
+                                                  ↓
+                                              Feedback
+                                                  ↓
+                                              Fix Issues
+```
+
 ## Development Workflow
 ### Setup
 1. Clone repository
 2. Install dependencies
 3. Configure environment
 
-### Development Process
+### Development Process (with diagram)
+```
+[Start] → [Create Branch] → [Code] → [Test] → [PR] → [Review] → [Merge]
+                                         ↓                ↓
+                                      [Failed]        [Changes]
+                                         ↓                ↓
+                                      [Fix] ←----------[Fix]
+```
+
 1. Create feature branch
 2. Implement changes
 3. Write tests

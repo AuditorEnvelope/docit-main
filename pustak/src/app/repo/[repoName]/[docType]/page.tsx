@@ -53,6 +53,14 @@ export default async function RepoPage({ params }: RepoPageProps) {
   // Load documentation from GitHub
   const githubDocs = await loadRepoDocumentation(repoName);
   const lastUpdated = new Date();
+  
+  // Debug: Log what we got
+  console.log(`[${repoName}] Loaded docs:`, {
+    hasReadme: !!githubDocs?.readme,
+    readmeLength: githubDocs?.readme?.length || 0,
+    hasSummary: !!githubDocs?.summary,
+    summaryLength: githubDocs?.summary?.length || 0,
+  });
 
   // Check if docs are available
   const hasDocs = !!(
@@ -242,6 +250,38 @@ export default async function RepoPage({ params }: RepoPageProps) {
               </a>
             </div>
           </div>
+
+          {/* Version Links for Architecture and Workflow */}
+          {(docType === "architecture" || docType === "workflow") && (
+            <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                {docType === "architecture" ? "Architecture" : "Workflow"} Versions
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {docType === "architecture" && githubDocs?.architectureVersions.map((v) => (
+                  <Link
+                    key={v.version}
+                    href={`/repo/${repoName}/${docType}/${v.version}`}
+                    className="px-3 py-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded-md text-sm text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                  >
+                    {v.version.toUpperCase()}
+                  </Link>
+                ))}
+                {docType === "workflow" && githubDocs?.workflowVersions.map((v) => (
+                  <Link
+                    key={v.version}
+                    href={`/repo/${repoName}/${docType}/${v.version}`}
+                    className="px-3 py-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 rounded-md text-sm text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                  >
+                    {v.version.toUpperCase()}
+                  </Link>
+                ))}
+              </div>
+              <p className="text-xs text-blue-700 dark:text-blue-300 mt-2">
+                Click a version to view its documentation
+              </p>
+            </div>
+          )}
 
           <div className="mt-8 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-8">
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
