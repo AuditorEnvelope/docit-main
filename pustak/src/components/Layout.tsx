@@ -13,7 +13,7 @@ import {
   GitBranch,
   Clock,
   FileText,
-  Architecture,
+  Building2,
   Code,
   History,
 } from "lucide-react";

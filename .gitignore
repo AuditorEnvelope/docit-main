@@ -226,12 +226,17 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Next.js (Pustak frontend)
+pustak/.next/
+pustak/out/
+pustak/build/
+pustak/.turbo/
+pustak/*.tsbuildinfo
+
 # Local development
 local/
 dev/
 scratch/
 test_output/
-
-
 
 docai-env

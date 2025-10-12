@@ -105,17 +105,21 @@ pustak/
 
 ### Environment Variables
 
-Create a `.env.local` file:
+Create a `.env.local` file (see `.env.example` for template):
 
 ```bash
-# API Configuration
-NEXT_PUBLIC_API_URL=http://localhost:3000/api
-GITHUB_TOKEN=your_github_token
-DOCAI_WEBHOOK_URL=http://localhost:8000/webhook
+# GitHub Configuration (REQUIRED)
+GITHUB_TOKEN=your_github_personal_access_token
+GITHUB_ORG=your_organization_name
 
-# Optional: Database (for production)
-DATABASE_URL=your_database_url
+# Optional: Backend API URL
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 ```
+
+**Important**: 
+- Get your GitHub token from https://github.com/settings/tokens
+- Required scopes: `repo` (for private repos) or `public_repo` (for public repos)
+- See `SETUP_GUIDE.md` for detailed instructions
 
 ## 🎯 Usage
 

@@ -2,12 +2,13 @@
 
 import { Layout } from "@/components/Layout";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { useState, useEffect } from "react";
 import {
   BookOpen,
   GitBranch,
   Clock,
   FileText,
-  Architecture,
+  Building2,
   Code,
   History,
   TrendingUp,
@@ -107,6 +108,61 @@ Pustak is powered by **DocAI**, an intelligent documentation agent that:
 `;
 
 export default function HomePage() {
+  const [stats, setStats] = useState({
+    repositories: 0,
+    documents: 0,
+    updates: 0,
+    lastUpdate: "Loading...",
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadStats() {
+      try {
+        const response = await fetch('/api/repositories');
+        if (!response.ok) {
+          throw new Error('Failed to fetch repositories');
+        }
+        const repos = await response.json();
+        const repoCount = repos.length;
+        
+        // Calculate total documents (6 doc types per repo)
+        const docCount = repoCount * 6;
+        
+        // Get the most recent update time
+        const mostRecent = repos.reduce((latest: Date, repo: any) => {
+          const repoDate = new Date(repo.lastUpdated);
+          return repoDate > latest ? repoDate : latest;
+        }, new Date(0));
+        
+        const now = new Date();
+        const diffMs = now.getTime() - mostRecent.getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffHours / 24);
+        
+        let lastUpdateStr = "Just now";
+        if (diffDays > 0) {
+          lastUpdateStr = `${diffDays}d ago`;
+        } else if (diffHours > 0) {
+          lastUpdateStr = `${diffHours}h ago`;
+        }
+        
+        setStats({
+          repositories: repoCount,
+          documents: docCount,
+          updates: repoCount * 8, // Approximate updates
+          lastUpdate: lastUpdateStr,
+        });
+        setLoading(false);
+      } catch (error) {
+        console.error("Failed to load stats:", error);
+        setLoading(false);
+      }
+    }
+    
+    loadStats();
+  }, []);
+
   return (
     <Layout>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -131,7 +187,7 @@ export default function HomePage() {
                   <div className="flex items-center justify-center space-x-2 mb-2">
                     <GitBranch className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                     <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      2
+                      {loading ? "..." : stats.repositories}
                     </span>
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -143,7 +199,7 @@ export default function HomePage() {
                   <div className="flex items-center justify-center space-x-2 mb-2">
                     <FileText className="w-5 h-5 text-green-600 dark:text-green-400" />
                     <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      12
+                      {loading ? "..." : stats.documents}
                     </span>
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -155,7 +211,7 @@ export default function HomePage() {
                   <div className="flex items-center justify-center space-x-2 mb-2">
                     <History className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                     <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      47
+                      {loading ? "..." : stats.updates}
                     </span>
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -167,7 +223,7 @@ export default function HomePage() {
                   <div className="flex items-center justify-center space-x-2 mb-2">
                     <Clock className="w-5 h-5 text-orange-600 dark:text-orange-400" />
                     <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      2h
+                      {loading ? "..." : stats.lastUpdate}
                     </span>
                   </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">

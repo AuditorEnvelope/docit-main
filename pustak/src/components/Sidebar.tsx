@@ -6,7 +6,7 @@ import {
   ChevronRight,
   ChevronDown,
   FileText,
-  Architecture,
+  Building2,
   Code,
   History,
   GitBranch,
@@ -24,13 +24,15 @@ interface RepoData {
   name: string;
   fullName: string;
   lastUpdated: string;
+  description: string;
+  hasDocs: boolean;
   docs: {
-    summary?: string;
-    architecture?: string;
-    workflow?: string;
-    api?: string;
-    changes?: string;
-    changelog?: string;
+    summary: string;
+    architecture: string;
+    workflow: string;
+    api: string;
+    changes: string;
+    changelog: string;
   };
 }
 
@@ -40,40 +42,41 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate fetching repos - in real app, this would be an API call
-    const mockRepos: RepoData[] = [
-      {
-        name: "hivemind-poc",
-        fullName: "AuditorEnvelope/hivemind-poc",
-        lastUpdated: "2024-01-15T10:30:00Z",
-        docs: {
-          summary: "Hivemind POC Documentation",
-          architecture: "System Architecture",
-          workflow: "Development Workflow",
-          api: "API Documentation",
-          changes: "Recent Changes",
-          changelog: "Changelog",
-        },
-      },
-      {
-        name: "doc-ai",
-        fullName: "AuditorEnvelope/doc-ai",
-        lastUpdated: "2024-01-15T09:15:00Z",
-        docs: {
-          summary: "DocAI Documentation",
-          architecture: "Agent Architecture",
-          workflow: "Documentation Workflow",
-          api: "API Reference",
-          changes: "Change Log",
-          changelog: "Version History",
-        },
-      },
-    ];
+    // Load repositories from API route (server-side)
+    const loadRepos = async () => {
+      try {
+        const response = await fetch('/api/repositories');
+        if (!response.ok) {
+          throw new Error('Failed to fetch repositories');
+        }
+        
+        const repos = await response.json();
 
-    setTimeout(() => {
-      setRepos(mockRepos);
-      setLoading(false);
-    }, 1000);
+        const reposData: RepoData[] = repos.map((repo: any) => ({
+          name: repo.name,
+          fullName: repo.fullName,
+          lastUpdated: repo.lastUpdated,
+          description: repo.description,
+          hasDocs: repo.hasLocalDocs,
+          docs: {
+            summary: "Summary",
+            architecture: "Architecture",
+            workflow: "Workflow",
+            api: "API Documentation",
+            changes: "Recent Changes",
+            changelog: "Changelog",
+          },
+        }));
+
+        setRepos(reposData);
+        setLoading(false);
+      } catch (error) {
+        console.error("Failed to load repositories:", error);
+        setLoading(false);
+      }
+    };
+
+    loadRepos();
   }, []);
 
   const toggleRepo = (repoName: string) => {
@@ -87,7 +90,8 @@ export function Sidebar({ onClose }: SidebarProps) {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       hour: "2-digit",
@@ -100,7 +104,7 @@ export function Sidebar({ onClose }: SidebarProps) {
       case "summary":
         return <Home className="w-4 h-4" />;
       case "architecture":
-        return <Architecture className="w-4 h-4" />;
+        return <Building2 className="w-4 h-4" />;
       case "workflow":
         return <GitBranch className="w-4 h-4" />;
       case "api":
@@ -116,31 +120,34 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   if (loading) {
     return (
-      <div className="h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700">
+      <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <BookOpen className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-              <span className="font-semibold text-gray-900 dark:text-gray-100">
-                Pustak
-              </span>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Pustak
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Documentation Platform
+                </p>
+              </div>
             </div>
             <button
               onClick={onClose}
-              className="lg:hidden p-1 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+              className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
-        <div className="p-4">
-          <div className="animate-pulse space-y-3">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="space-y-2">
-                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
-                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
-              </div>
-            ))}
+        <div className="flex-1 p-4 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Loading repositories...
+            </p>
           </div>
         </div>
       </div>
@@ -148,65 +155,64 @@ export function Sidebar({ onClose }: SidebarProps) {
   }
 
   return (
-    <div className="h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col">
-      {/* Header */}
+    <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <BookOpen className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            <span className="font-semibold text-gray-900 dark:text-gray-100">
-              Pustak
-            </span>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Pustak
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Documentation Platform
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="lg:hidden p-1 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+            className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          Documentation Platform
-        </p>
       </div>
 
-      {/* Repositories */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-4">
-          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">
-            Repositories ({repos.length})
-          </h3>
+      <nav className="flex-1 p-4 overflow-y-auto">
+        <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+          Repositories ({repos.length})
+        </h3>
 
-          <div className="space-y-2">
-            {repos.map((repo) => (
-              <div
-                key={repo.name}
-                className="border border-gray-200 dark:border-gray-700 rounded-lg"
+        <div className="space-y-2">
+          {repos.map((repo) => (
+            <div
+              key={repo.name}
+              className="border border-gray-200 dark:border-gray-700 rounded-lg"
+            >
+              <button
+                onClick={() => toggleRepo(repo.name)}
+                className="flex items-center justify-between w-full p-3 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors rounded-lg"
               >
-                <button
-                  onClick={() => toggleRepo(repo.name)}
-                  className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                >
-                  <div className="flex items-center space-x-2">
-                    <GitBranch className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                    <span className="font-medium text-gray-900 dark:text-gray-100">
-                      {repo.name}
-                    </span>
-                  </div>
-                  {expandedRepos.has(repo.name) ? (
-                    <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                  )}
-                </button>
+                <div className="flex items-center space-x-2">
+                  <GitBranch className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  <span className="font-medium">{repo.name}</span>
+                </div>
+                {expandedRepos.has(repo.name) ? (
+                  <ChevronDown className="w-4 h-4" />
+                ) : (
+                  <ChevronRight className="w-4 h-4" />
+                )}
+              </button>
 
-                {expandedRepos.has(repo.name) && (
-                  <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-                    <div className="p-2">
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                        Updated {formatDate(repo.lastUpdated)}
-                      </p>
+              {expandedRepos.has(repo.name) && (
+                <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                  <div className="p-3 text-xs text-gray-500 dark:text-gray-400">
+                    <p className="mb-2">{repo.description}</p>
+                    <p className="mb-2">
+                      Updated {formatDate(repo.lastUpdated)}
+                    </p>
 
+                    {repo.hasDocs ? (
                       <div className="space-y-1">
                         {Object.entries(repo.docs).map(
                           ([docType, docTitle]) => (
@@ -221,21 +227,21 @@ export function Sidebar({ onClose }: SidebarProps) {
                           )
                         )}
                       </div>
-                    </div>
+                    ) : (
+                      <p className="text-yellow-600 dark:text-yellow-400">
+                        No documentation yet. DocAI will generate it soon!
+                      </p>
+                    )}
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
-      </div>
+      </nav>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          <span>Powered by DocAI</span>
-          <span>v1.0.0</span>
-        </div>
+      <div className="p-4 border-t border-gray-200 dark:border-gray-700 text-center text-xs text-gray-500 dark:text-gray-400">
+        Powered by DocAI v1.0.0
       </div>
     </div>
   );

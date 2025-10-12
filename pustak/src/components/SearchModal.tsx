@@ -37,7 +37,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
       content: "OAuth2 authentication with JWT tokens...",
       type: "api",
       repo: "hivemind-poc",
-      lastUpdated: "2024-01-15T10:30:00Z",
+      lastUpdated: new Date().toISOString(),
     },
     {
       id: "2",
@@ -45,7 +45,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
       content: "Microservices architecture with Redis...",
       type: "architecture",
       repo: "hivemind-poc",
-      lastUpdated: "2024-01-15T09:15:00Z",
+      lastUpdated: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     },
     {
       id: "3",
@@ -53,7 +53,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
       content: "Added new authentication features...",
       type: "changes",
       repo: "doc-ai",
-      lastUpdated: "2024-01-15T08:45:00Z",
+      lastUpdated: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
     },
   ];
 
