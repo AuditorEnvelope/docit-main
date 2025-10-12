@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-12] - Refactor and Test Codebase
+
+### Refactor
+- Refactored codebase for improved maintainability, readability, and test coverage, including updates to documentation and API routes
+
+### Details
+- **Significance:** 8/10
+- **Commit:** cb0c52f3d2f7fc22698a9f2d085b882d0991f804
+- **Impact:** comprehensive_doc_generator, pustak, api, docs
+
+
+
 ## [2025-10-12] - Enhanced Rich Markdown Rendering in Pustak
 
 ### Feature
