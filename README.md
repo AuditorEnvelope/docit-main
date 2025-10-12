@@ -1,151 +1,168 @@
+# DocAI Smart 🤖
 
-## 🆕 Recent Updates
+AI-powered documentation platform that automatically generates and maintains comprehensive documentation for your repositories.
 
-### Enhanced Rich Markdown Rendering in Pustak
-Implemented enhanced Markdown rendering capabilities within the Pustak application, significantly improving the visual presentation, readability, and functionality of documentation content displayed to users.
+## 🚀 Features
 
-**New Features:**
-- Rich Markdown rendering
-- Improved content presentation
-- Potential support for advanced Markdown features (e.g., syntax highlighting, tables)
+- **Automatic Documentation Generation**: Generates comprehensive docs from code changes
+- **Multi-LLM Support**: Works with OpenAI, Google Gemini, and Groq
+- **Smart Change Detection**: Analyzes commits and generates relevant documentation
+- **Version Control**: Tracks documentation versions (v1, v2, etc.)
+- **Beautiful UI**: Pustak - GitBook-style documentation viewer
+- **GitHub Integration**: Automatic webhook processing
 
-*Added on 2025-10-12*
+## 📁 Project Structure
 
-# DocAI Smart
-## Overview
-DocAI Smart is a comprehensive documentation and code generation project designed to streamline the process of creating and maintaining high-quality documentation and code artifacts. This project aims to solve the problem of inefficient and error-prone documentation and code generation by providing a robust and reliable toolset. Key features and capabilities of DocAI Smart include:
-
-* Automated documentation generation
-* Code generation utilities
-* Integration with popular development tools and services
-* Support for multiple programming languages, including Python, JavaScript, and TypeScript
-
-## Architecture
-The high-level system design of DocAI Smart consists of the following main components:
-
-* **Documentation Generator**: Responsible for generating comprehensive documentation based on project code and configuration
-* **Code Generation Utility**: Provides functionality for generating code artifacts, such as boilerplate code and templates
-* **API**: Exposes key endpoints and interfaces for interacting with the system
-
-The technology stack used in DocAI Smart includes:
-
-* **FastAPI**: A modern, fast (high-performance), web framework for building APIs
-* **Uvicorn**: A lightning-fast ASGI server
-* **PyJWT**: A Python library for working with JSON Web Tokens
-* **PyGithub**: A Python library for interacting with the GitHub API
-* **Python-Dotenv**: A library for loading environment variables from a .env file
-* **Google-GenerativeAI**: A library for interacting with Google's Generative AI services
-* **Groq**: A library for working with Groq, a high-performance computing platform
-* **OpenAI**: A library for interacting with OpenAI's API
-* **Requests**: A library for making HTTP requests
-* **GitPython**: A library for interacting with Git repositories
-
-## Getting Started
-### Prerequisites
-Before getting started with DocAI Smart, ensure you have the following prerequisites installed:
-
-* Python 3.8 or later
-* pip 20.0 or later
-* Git 2.25 or later
-* A code editor or IDE of your choice
-
-### Installation
-To install DocAI Smart, follow these steps:
-
-1. Clone the repository: `git clone https://github.com/your-username/docai_smart.git`
-2. Navigate to the project directory: `cd docai_smart`
-3. Install dependencies: `pip install -r requirements.txt`
-4. Start the development server: `uvicorn main:app --host 0.0.0.0 --port 8000`
-
-### Quick Start
-To get started with DocAI Smart, follow these steps:
-
-1. Create a new project: `python create_project.py --name my_project`
-2. Generate documentation: `python generate_docs.py --project my_project`
-3. Explore the generated documentation: `open docs/index.html`
-
-## Usage
-### Basic Usage Examples
-Here are some basic usage examples for DocAI Smart:
-
-* Generate documentation for a project: `python generate_docs.py --project my_project`
-* Generate code artifacts: `python generate_code.py --project my_project`
-* Interact with the API: `curl http://localhost:8000/docs`
-
-### Common Workflows
-Here are some common workflows for using DocAI Smart:
-
-* Create a new project and generate documentation
-* Generate code artifacts and integrate them into your project
-* Use the API to interact with the system and retrieve generated documentation and code artifacts
-
-### Configuration Options
-DocAI Smart provides several configuration options, including:
-
-* `project_name`: The name of the project
-* `output_dir`: The directory where generated documentation and code artifacts will be saved
-* `template_dir`: The directory containing templates for generated code artifacts
-
-## Project Structure
-The project structure for DocAI Smart is as follows:
 ```
-/
-├── src/
-│   ├── main.py
-│   ├── generate_docs.py
-│   ├── generate_code.py
-│   └── ...
-├── docs/
-│   ├── index.html
-│   ├── ...
-├── pustak/
-│   ├── public/
+doc_ai/
+├── src/                          # Source code
+│   ├── app.py                    # Main FastAPI application
+│   ├── github_app.py             # GitHub webhook handler
+│   ├── processor.py              # Basic documentation processor
+│   ├── smart_processor.py        # Smart change analyzer
+│   ├── comprehensive_doc_generator.py  # Comprehensive doc generator
+│   ├── llm_provider_v2.py        # Multi-LLM provider
+│   └── pustak_integration.py     # Pustak integration
+├── pustak/                       # Documentation viewer (Next.js)
 │   ├── src/
-│   └── ...
-├── .git/
-│   ├── objects/
-│   ├── info/
-│   ├── logs/
-│   ├── hooks/
-│   ├── refs/
-│   └── ...
-├── requirements.txt
-└── ...
+│   │   ├── app/                  # Next.js app router
+│   │   ├── components/           # React components
+│   │   └── lib/                  # Utilities and API clients
+│   └── public/                   # Static assets
+├── docs/                         # Generated documentation
+│   ├── SUMMARY.md                # Navigation structure
+│   ├── api.md                    # API documentation
+│   ├── architecture/             # Architecture docs (versioned)
+│   ├── workflow/                 # Workflow docs (versioned)
+│   └── changes/                  # Change documentation
+├── CHANGELOG.md                  # Project changelog
+├── DEPLOYMENT_GUIDE.md           # Deployment instructions
+├── QUICK_START_GUIDE.md          # Quick start guide
+└── requirements.txt              # Python dependencies
 ```
 
-## API Overview
-The API for DocAI Smart provides several key endpoints and interfaces, including:
+## 🏃 Quick Start
 
-* **GET /docs**: Retrieves generated documentation for a project
-* **POST /generate**: Generates documentation and code artifacts for a project
-* **GET /code**: Retrieves generated code artifacts for a project
+### Prerequisites
 
-## Development
-### How to Contribute
-To contribute to DocAI Smart, follow these steps:
+- Python 3.8+
+- Node.js 18+
+- GitHub account with API token
 
-1. Fork the repository: `git fork https://github.com/your-username/docai_smart.git`
-2. Create a new branch: `git branch my_feature`
-3. Make changes and commit: `git commit -m "My feature"`
-4. Open a pull request: `git push origin my_feature`
+### 1. Setup Backend (DocAI)
 
-### Development Setup
-To set up a development environment for DocAI Smart, follow these steps:
+```bash
+# Clone repository
+git clone https://github.com/AuditorEnvelope/doc_ai.git
+cd doc_ai
 
-1. Install dependencies: `pip install -r requirements.txt`
-2. Start the development server: `uvicorn main:app --host 0.0.0.0 --port 8000`
-3. Use a code editor or IDE to make changes to the codebase
+# Create virtual environment
+python -m venv docai-env
+source docai-env/bin/activate  # On Windows: docai-env\Scripts\activate
 
-### Testing
-To test DocAI Smart, follow these steps:
+# Install dependencies
+pip install -r requirements.txt
 
-1. Run unit tests: `python -m unittest discover -s tests`
-2. Run integration tests: `python -m unittest discover -s tests/integration`
+# Configure environment
+cp .env.example .env
+# Edit .env with your API keys:
+# - GITHUB_TOKEN
+# - GITHUB_ORG
+# - OPENAI_API_KEY (or GOOGLE_API_KEY, or GROQ_API_KEY)
 
-## Documentation
-For detailed documentation on DocAI Smart, please visit the [project documentation](https://github.com/your-username/docai_smart/tree/main/docs).
+# Start server
+cd src
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
 
-## License & Contact
-DocAI Smart is licensed under the [MIT License](https://github.com/your-username/docai_smart/blob/main/LICENSE).
+### 2. Setup Frontend (Pustak)
 
-For questions, issues, or contributions, please contact the maintainers at [your-email@example.com](mailto:your-email@example.com).
+```bash
+# In a new terminal
+cd pustak
+
+# Install dependencies
+npm install
+
+# Configure environment
+cp .env.example .env.local
+# Edit .env.local with:
+# - GITHUB_TOKEN
+# - GITHUB_ORG
+
+# Start development server
+npm run dev
+```
+
+Visit http://localhost:3000 to view your documentation!
+
+## 🔧 Configuration
+
+### Environment Variables
+
+**Backend (.env)**:
+```env
+GITHUB_TOKEN=your_github_token
+GITHUB_ORG=your_org_name
+GITHUB_WEBHOOK_SECRET=your_webhook_secret
+
+# Choose one LLM provider:
+OPENAI_API_KEY=your_openai_key
+# OR
+GOOGLE_API_KEY=your_gemini_key
+# OR
+GROQ_API_KEY=your_groq_key
+```
+
+**Frontend (pustak/.env.local)**:
+```env
+GITHUB_TOKEN=your_github_token
+GITHUB_ORG=your_org_name
+```
+
+## 📖 How It Works
+
+1. **Commit Detection**: GitHub webhook triggers on push events
+2. **Change Analysis**: Smart processor analyzes commit changes
+3. **Documentation Generation**: LLM generates comprehensive docs
+4. **Version Management**: Tracks versions (v1, v2, etc.)
+5. **Display**: Pustak renders beautiful documentation
+
+## 🎨 Pustak Features
+
+- **Multi-Repository Support**: View docs for multiple repos
+- **Version Navigation**: Browse different documentation versions
+- **Dark/Light Theme**: Beautiful UI with theme support
+- **Markdown Rendering**: Rich markdown with syntax highlighting
+- **Search**: Quick search across documentation
+- **Responsive**: Works on all devices
+
+## 📚 Documentation
+
+- [Quick Start Guide](QUICK_START_GUIDE.md) - Get started quickly
+- [Deployment Guide](DEPLOYMENT_GUIDE.md) - Deploy to production
+- [API Documentation](docs/api.md) - API endpoints
+- [Architecture](docs/architecture/current.md) - System architecture
+- [Workflow](docs/workflow/current.md) - Development workflow
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📝 License
+
+MIT License - see LICENSE file for details
+
+## 🙏 Acknowledgments
+
+- Built with FastAPI, Next.js, and TailwindCSS
+- Powered by OpenAI, Google Gemini, and Groq
+- Inspired by GitBook
+
+---
+
+**Made with ❤️ by the DocAI team**
