@@ -5,6 +5,8 @@
 * [processor.py](processor.py.md)
 
 ## Changes
+* [Major Refactor of Pustak Documentation Handling Logic](changes/7e2d81e7595dab40e7301af2a7b9a2c8d9a9a5c4-refactor.md)
+
 * [Add Pustak documentation platform with DocAI integration](changes/2044f79a907d3b53a993ef36c17fcb3ee5895369-feature.md)
 
 

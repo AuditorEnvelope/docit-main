@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-12] - Major Refactor of Pustak Documentation Handling Logic
+
+### Refactor
+- This commit represents a significant refactoring of the 'Pustak' component, which appears to be a dedicated documentation viewing and browsing application built with Next.js (TypeScript/React). The refactor overhauls its internal logic, structure, and potentially its interaction with data sources, aiming to improve maintainability, functionality, and user experience for accessing repository documentation.
+
+### Details
+- **Significance:** 8/10
+- **Commit:** 7e2d81e7595dab40e7301af2a7b9a2c8d9a9a5c4
+- **Impact:** frontend_application, documentation_rendering, api_integration, developer_experience
+
+
+
 ## [2025-10-12] - Add Pustak documentation platform with DocAI integration
 
 ### Feature
