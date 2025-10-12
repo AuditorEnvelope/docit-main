@@ -1,3 +1,16 @@
+
+## 🆕 Recent Updates
+
+### Enhanced Rich Markdown Rendering in Pustak
+Implemented enhanced Markdown rendering capabilities within the Pustak application, significantly improving the visual presentation, readability, and functionality of documentation content displayed to users.
+
+**New Features:**
+- Rich Markdown rendering
+- Improved content presentation
+- Potential support for advanced Markdown features (e.g., syntax highlighting, tables)
+
+*Added on 2025-10-12*
+
 # DocAI Smart
 ## Overview
 DocAI Smart is a comprehensive documentation and code generation project designed to streamline the process of creating and maintaining high-quality documentation and code artifacts. This project aims to solve the problem of inefficient and error-prone documentation and code generation by providing a robust and reliable toolset. Key features and capabilities of DocAI Smart include:

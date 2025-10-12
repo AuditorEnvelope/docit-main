@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-12] - Enhanced Rich Markdown Rendering in Pustak
+
+### Feature
+- Implemented enhanced Markdown rendering capabilities within the Pustak application, significantly improving the visual presentation, readability, and functionality of documentation content displayed to users.
+
+### Details
+- **Significance:** 8/10
+- **Commit:** 103e459b233fb846d955fef06d7d3602c7b83024
+- **Impact:** user_experience, frontend_rendering, content_display
+
+
+
 ## [2025-10-12] - Fix issues in comprehensive code and Markdown generation
 
 ### Bug_Fix

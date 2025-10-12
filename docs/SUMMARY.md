@@ -3,6 +3,7 @@
 * [Home](README.md)
 
 ## Architecture
+* [V2 Architecture](architecture/v2-architecture.md)
 * [V1 Architecture](architecture/v1-architecture.md)
 
 ## Workflow
@@ -12,8 +13,9 @@
 * [API Documentation](api.md)
 
 ## Changes
-* [Fix issues in comprehensive code and Markdown generation](changes/ec9d42b08ebedf160c19ce7db9a789c7716ed705-bug_fix.md)
+* [Enhanced Rich Markdown Rendering in Pustak](changes/103e459b233fb846d955fef06d7d3602c7b83024-feature.md)
 
+* [Bug_Fix](changes/ec9d42b08ebedf160c19ce7db9a789c7716ed705-bug_fix.md)
 * [Bug_Fix](changes/a6eb74bb0d2dd7f41f9f74ceca6d7c17a4279e7c-bug_fix.md)
 * [Refactor](changes/7e2d81e7595dab40e7301af2a7b9a2c8d9a9a5c4-refactor.md)
 * [Feature](changes/6f4aa000b16c9add03efe474003dd2d7fa0363b7-feature.md)
