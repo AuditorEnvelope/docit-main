@@ -119,7 +119,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
       break;
     case "changelog":
       content = githubDocs?.changelog || "# No Changelog Available";
-      fileName = "docs/CHANGELOG.md";
+      fileName = "CHANGELOG.md (root) or docs/CHANGELOG.md";
       title = "Changelog";
       break;
     case "changes":
