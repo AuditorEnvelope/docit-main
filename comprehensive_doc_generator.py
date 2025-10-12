@@ -158,12 +158,19 @@ QUALITY CRITERIA:
 Respond with ONLY a number 0-10, nothing else.
 """
         
-        response = rotator.generate(quality_prompt, max_tokens=10, temperature=0.3)
-        llm_score = float(response.strip())
-        
-        # Average heuristic and LLM scores
-        final_score = (score + llm_score) / 2
-        return min(10, max(0, final_score))
+        response = rotator.generate_with_rotation(quality_prompt)
+        if response:
+            try:
+                llm_score = float(response.strip())
+                # Average heuristic and LLM scores
+                final_score = (score + llm_score) / 2
+                return min(10, max(0, final_score))
+            except ValueError:
+                print(f"Warning: Could not parse LLM score: {response}")
+                return score
+        else:
+            print("Warning: LLM returned no response for quality assessment")
+            return score
         
     except Exception as e:
         print(f"Warning: LLM quality assessment failed: {e}")
@@ -355,7 +362,11 @@ Make it professional, clear, and comprehensive. Use proper markdown formatting.
     
     try:
         print("🔄 Generating comprehensive summary with LLM...")
-        summary_content = rotator.generate(summary_prompt, max_tokens=3000, temperature=0.7)
+        summary_content = rotator.generate_with_rotation(summary_prompt)
+        
+        if not summary_content or len(summary_content.strip()) < 100:
+            print("❌ LLM returned insufficient content for summary")
+            return
         
         # Save to both docs/SUMMARY.md and root README.md
         summary_file = docs_dir / "SUMMARY.md"
@@ -370,6 +381,8 @@ Make it professional, clear, and comprehensive. Use proper markdown formatting.
             
     except Exception as e:
         print(f"❌ Failed to generate summary: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def generate_versioned_architecture(repo_dir, docs_dir, analysis, versioning):
@@ -448,7 +461,11 @@ Make it technical, detailed, and professional.
     
     try:
         print(f"🔄 Generating architecture v{version} with LLM...")
-        arch_content = rotator.generate(arch_prompt, max_tokens=4000, temperature=0.7)
+        arch_content = rotator.generate_with_rotation(arch_prompt)
+        
+        if not arch_content or len(arch_content.strip()) < 100:
+            print("❌ LLM returned insufficient content for architecture")
+            return
         
         # Save versioned file
         arch_file = arch_dir / f"v{version}-architecture.md"
@@ -462,6 +479,8 @@ Make it technical, detailed, and professional.
         
     except Exception as e:
         print(f"❌ Failed to generate architecture: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def generate_versioned_workflow(repo_dir, docs_dir, analysis, versioning):
@@ -545,7 +564,11 @@ Make it practical, step-by-step, and easy to follow.
     
     try:
         print(f"🔄 Generating workflow v{version} with LLM...")
-        workflow_content = rotator.generate(workflow_prompt, max_tokens=4000, temperature=0.7)
+        workflow_content = rotator.generate_with_rotation(workflow_prompt)
+        
+        if not workflow_content or len(workflow_content.strip()) < 100:
+            print("❌ LLM returned insufficient content for workflow")
+            return
         
         # Save versioned file
         workflow_file = workflow_dir / f"v{version}-workflow.md"
@@ -559,6 +582,8 @@ Make it practical, step-by-step, and easy to follow.
         
     except Exception as e:
         print(f"❌ Failed to generate workflow: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def generate_api_documentation(repo_dir, docs_dir, analysis):
@@ -645,7 +670,11 @@ Make it clear, complete, and developer-friendly.
     
     try:
         print("🔄 Generating API documentation with LLM...")
-        api_content = rotator.generate(api_prompt, max_tokens=4000, temperature=0.7)
+        api_content = rotator.generate_with_rotation(api_prompt)
+        
+        if not api_content or len(api_content.strip()) < 100:
+            print("❌ LLM returned insufficient content for API docs")
+            return
         
         api_file = docs_dir / "api.md"
         api_file.write_text(api_content)
@@ -653,6 +682,8 @@ Make it clear, complete, and developer-friendly.
         
     except Exception as e:
         print(f"❌ Failed to generate API docs: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def analyze_full_codebase(repo_dir):
