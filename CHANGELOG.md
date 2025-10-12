@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-12] - Integration of Vision Intelligence Capabilities
+
+### Feature
+- This commit introduces 'Vision Intelligence' to the Lekhak AI system, enabling it to process visual data (images) using an external LLAVA integration and generate comprehensive documentation based on visual understanding. This new capability is integrated into the core processing, documentation generation, and frontend display.
+
+### Details
+- **Significance:** 8/10
+- **Commit:** 0f09e5e0f44f595d7c2bc0e8863ecc45c314cb05
+- **Impact:** ai_core_logic, documentation_generation, frontend_presentation, external_service_integration
+
+
+
 ## [2025-10-12] - Fix Markdown Rendering Issue
 
 ### Bug_Fix
