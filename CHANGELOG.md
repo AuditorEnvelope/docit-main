@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-12] - Integrate GitHub as a Documentation Source for Pustak
+
+### Feature
+- Implemented the capability for the Pustak application to fetch and display documentation directly from GitHub repositories, introducing dynamic routing and dedicated GitHub API interaction logic. This enables Pustak to serve as a comprehensive front-end for GitHub-hosted documentation.
+
+### Details
+- **Significance:** 8/10
+- **Commit:** 6f4aa000b16c9add03efe474003dd2d7fa0363b7
+- **Impact:** documentation_loading, external_integrations, frontend_routing, data_fetching, content_management
+
+
+
 ## [2025-10-12] - Major Refactor of Pustak Documentation Handling Logic
 
 ### Refactor
