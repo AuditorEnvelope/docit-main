@@ -241,6 +241,8 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
   summary?: string;
   api?: string;
   changelog?: string;
+  architecture?: string;
+  workflow?: string;
   changes: Array<{ content: string; fileName: string }>;
 }> {
   try {
@@ -251,6 +253,8 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
       summary?: string;
       api?: string;
       changelog?: string;
+      architecture?: string;
+      workflow?: string;
       changes: Array<{ content: string; fileName: string }>;
     } = {
       changes: [],
@@ -272,6 +276,10 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
         docs.api = content;
       } else if (lowerFileName === "changelog.md") {
         docs.changelog = content;
+      } else if (lowerFileName === "architecture.md") {
+        docs.architecture = content;
+      } else if (lowerFileName === "workflow.md") {
+        docs.workflow = content;
       } else if (fileName.endsWith(".md")) {
         // Skip DocAI run logs and internal files (only if filename indicates it's a log)
         if (lowerFileName.includes("docai_run_log") || 
@@ -309,6 +317,22 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
       const rootChangelog = await fetchFileFromGitHub(repo, "CHANGELOG.md");
       if (rootChangelog) {
         docs.changelog = rootChangelog;
+      }
+    }
+
+    // Fetch architecture from docs/architecture/current.md
+    if (!docs.architecture) {
+      const archCurrent = await fetchFileFromGitHub(repo, "docs/architecture/current.md");
+      if (archCurrent) {
+        docs.architecture = archCurrent;
+      }
+    }
+
+    // Fetch workflow from docs/workflow/current.md
+    if (!docs.workflow) {
+      const workflowCurrent = await fetchFileFromGitHub(repo, "docs/workflow/current.md");
+      if (workflowCurrent) {
+        docs.workflow = workflowCurrent;
       }
     }
 

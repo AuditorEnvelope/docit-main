@@ -108,8 +108,8 @@ export default async function RepoPage({ params }: RepoPageProps) {
 
   switch (docType) {
     case "summary":
-      content = githubDocs?.summary || githubDocs?.readme || "# No Summary Available";
-      fileName = "docs/SUMMARY.md or docs/README.md";
+      content = githubDocs?.readme || githubDocs?.summary || "# No Summary Available";
+      fileName = "README.md or docs/SUMMARY.md";
       title = "Summary";
       break;
     case "api":
@@ -133,13 +133,13 @@ export default async function RepoPage({ params }: RepoPageProps) {
       title = "Recent Changes";
       break;
     case "architecture":
-      content = githubDocs?.summary || "# No Architecture Documentation Available";
-      fileName = "docs/architecture.md";
+      content = githubDocs?.architecture || "# No Architecture Documentation Available";
+      fileName = "docs/architecture/current.md";
       title = "Architecture";
       break;
     case "workflow":
-      content = githubDocs?.readme || "# No Workflow Documentation Available";
-      fileName = "docs/workflow.md";
+      content = githubDocs?.workflow || "# No Workflow Documentation Available";
+      fileName = "docs/workflow/current.md";
       title = "Workflow";
       break;
     default:

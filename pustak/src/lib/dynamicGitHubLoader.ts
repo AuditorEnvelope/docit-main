@@ -6,6 +6,8 @@ export interface RepoDocumentation {
   changelog?: string;
   summary?: string;
   api?: string;
+  architecture?: string;
+  workflow?: string;
   changes: Array<{
     content: string;
     fileName: string;
@@ -24,6 +26,8 @@ export async function loadRepoDocumentation(
       changelog: docs.changelog,
       summary: docs.summary,
       api: docs.api,
+      architecture: docs.architecture,
+      workflow: docs.workflow,
       changes: docs.changes || [],
     };
   } catch (error) {
