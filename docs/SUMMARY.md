@@ -5,6 +5,8 @@
 * [processor.py](processor.py.md)
 
 ## Changes
+* [Fix Markdown Rendering Issue](changes/a6eb74bb0d2dd7f41f9f74ceca6d7c17a4279e7c-bug_fix.md)
+
 * [Integrate GitHub as a Documentation Source for Pustak](changes/6f4aa000b16c9add03efe474003dd2d7fa0363b7-feature.md)
 
 * [Major Refactor of Pustak Documentation Handling Logic](changes/7e2d81e7595dab40e7301af2a7b9a2c8d9a9a5c4-refactor.md)

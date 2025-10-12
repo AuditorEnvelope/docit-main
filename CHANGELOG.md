@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-12] - Fix Markdown Rendering Issue
+
+### Bug_Fix
+- Resolved markdown rendering problem by updating the MarkdownRenderer component and related API functionality
+
+### Details
+- **Significance:** 8/10
+- **Commit:** a6eb74bb0d2dd7f41f9f74ceca6d7c17a4279e7c
+- **Impact:** markdown_rendering, frontend, api
+
+
+
 ## [2025-10-12] - Integrate GitHub as a Documentation Source for Pustak
 
 ### Feature
