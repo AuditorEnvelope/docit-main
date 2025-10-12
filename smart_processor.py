@@ -4,6 +4,11 @@ from github_app import get_installation_token
 from llm_provider_v2 import get_rotator
 from pathlib import Path
 import re
+from comprehensive_doc_generator import (
+    check_documentation_quality,
+    generate_comprehensive_documentation,
+    analyze_architectural_impact
+)
 
 def run_cmd(cmd, cwd=None):
     print("RUN:", cmd)
@@ -263,6 +268,11 @@ def generate_smart_documentation(repo_dir, analysis, commit_sha, ref):
     docs_dir.mkdir(parents=True, exist_ok=True)
     changes_dir.mkdir(parents=True, exist_ok=True)
     
+    # NEW: Check documentation quality and generate comprehensive docs if needed
+    print("🔍 Checking documentation quality...")
+    changed_files = get_changed_files_from_analysis(analysis)
+    generate_comprehensive_documentation(repo_dir, analysis, changed_files)
+    
     # 1. Create detailed change documentation
     create_change_documentation(changes_dir, analysis, commit_sha, ref)
     
@@ -284,6 +294,11 @@ def generate_smart_documentation(repo_dir, analysis, commit_sha, ref):
     
     # 6. Update SUMMARY.md for GitBook navigation
     update_summary_md(docs_dir, analysis, commit_sha)
+
+
+def get_changed_files_from_analysis(analysis):
+    """Extract changed files list from analysis"""
+    return analysis.get("affected_components", [])
 
 def create_change_documentation(changes_dir, analysis, commit_sha, ref):
     """Create detailed change documentation"""

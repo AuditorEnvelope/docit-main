@@ -189,7 +189,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
   return (
     <Layout>
       <div className="flex-1 p-8">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <Link
