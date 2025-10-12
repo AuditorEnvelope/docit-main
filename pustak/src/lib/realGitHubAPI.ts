@@ -141,7 +141,9 @@ export async function fetchFileFromGitHub(
 
     // Decode base64 content
     if (fileData.encoding === "base64" && fileData.content) {
-      return Buffer.from(fileData.content, "base64").toString("utf-8");
+      // Remove newlines from base64 content (GitHub API adds them)
+      const base64Content = fileData.content.replace(/\n/g, '');
+      return Buffer.from(base64Content, "base64").toString("utf-8");
     }
 
     return fileData.content || null;
@@ -271,9 +273,35 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
       } else if (lowerFileName === "changelog.md") {
         docs.changelog = content;
       } else if (fileName.endsWith(".md")) {
+        // Skip DocAI run logs and internal files (only if filename indicates it's a log)
+        if (lowerFileName.includes("docai_run_log") || 
+            lowerFileName.includes("run_log") ||
+            lowerFileName === "doc_ai_run_log.md") {
+          continue; // Skip DocAI internal logs
+        }
         // All other markdown files go to changes
         docs.changes.push({ content, fileName });
       }
+    }
+
+    // Also fetch from docs/changes/ subdirectory
+    const changesFiles = await listDirectoryContents(repo, "docs/changes");
+    for (const fileName of changesFiles) {
+      const content = await fetchFileFromGitHub(repo, `docs/changes/${fileName}`);
+      
+      if (!content) continue;
+
+      const lowerFileName = fileName.toLowerCase();
+      
+      // Skip DocAI run logs
+      if (lowerFileName.includes("docai_run_log") || 
+          lowerFileName.includes("run_log") ||
+          lowerFileName === "doc_ai_run_log.md") {
+        continue;
+      }
+      
+      // Add to changes array
+      docs.changes.push({ content, fileName: `changes/${fileName}` });
     }
 
     // Also check for CHANGELOG.md in root folder (DocAI creates it there)

@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import {
   tomorrow,
-  vscDarkPlus,
+  tomorrow as tomorrowNight,
 } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useTheme } from "next-themes";
 
@@ -52,12 +52,12 @@ export function MarkdownRenderer({
 
   const components = {
     h1: ({ children }: any) => (
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-8 mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-8 mb-6 pb-3 border-b-2 border-blue-500 dark:border-blue-400">
         {children}
       </h1>
     ),
     h2: ({ children }: any) => (
-      <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mt-6 mb-3">
+      <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mt-8 mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
         {children}
       </h2>
     ),
@@ -81,23 +81,33 @@ export function MarkdownRenderer({
         {children}
       </h6>
     ),
-    p: ({ children }: any) => (
-      <p className="text-gray-700 dark:text-gray-300 leading-7 mb-4">
-        {children}
-      </p>
-    ),
+    p: ({ children }: any) => {
+      // Check if this is a metadata line (e.g., **Type:** feature)
+      const childText = children?.toString() || '';
+      const isMetadata = childText.match(/^\*\*[A-Z][a-z]+:\*\*/);
+      
+      return (
+        <p className={`leading-7 mb-4 ${
+          isMetadata 
+            ? 'text-gray-600 dark:text-gray-400 text-sm font-medium' 
+            : 'text-gray-700 dark:text-gray-300'
+        }`}>
+          {children}
+        </p>
+      );
+    },
     ul: ({ children }: any) => (
-      <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 mb-4 space-y-1">
+      <ul className="list-disc list-outside ml-6 text-gray-700 dark:text-gray-300 mb-4 space-y-2">
         {children}
       </ul>
     ),
     ol: ({ children }: any) => (
-      <ol className="list-decimal list-inside text-gray-700 dark:text-gray-300 mb-4 space-y-1">
+      <ol className="list-decimal list-outside ml-6 text-gray-700 dark:text-gray-300 mb-4 space-y-2">
         {children}
       </ol>
     ),
     li: ({ children }: any) => (
-      <li className="text-gray-700 dark:text-gray-300">{children}</li>
+      <li className="text-gray-700 dark:text-gray-300 leading-relaxed pl-2">{children}</li>
     ),
     blockquote: ({ children }: any) => (
       <blockquote className="border-l-4 border-blue-500 pl-4 my-4 italic text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 py-2 rounded-r">
