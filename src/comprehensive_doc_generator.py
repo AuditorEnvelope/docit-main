@@ -301,15 +301,17 @@ def generate_comprehensive_summary(repo_dir, docs_dir, analysis):
     rotator = get_rotator()
     
     summary_prompt = f"""
-You are DocAI, an expert technical writer. Create a comprehensive README/Summary for this repository.
+You are DocAI, an expert technical writer analyzing THIS SPECIFIC REPOSITORY.
 
-CODEBASE ANALYSIS:
+ACTUAL CODEBASE ANALYSIS (USE THIS DATA ONLY):
 {json.dumps(codebase_analysis, indent=2)}
 
 RECENT CHANGES:
 {json.dumps(analysis, indent=2)}
 
-Create a professional, comprehensive README.md that includes:
+CRITICAL: Document ONLY what exists in the codebase analysis above. NO generic templates.
+
+Create a README based on ACTUAL code:
 
 # [Project Name]
 
@@ -399,78 +401,50 @@ def generate_versioned_architecture(repo_dir, docs_dir, analysis, versioning):
     rotator = get_rotator()
     
     arch_prompt = f"""
-You are DocAI, an expert system architect. Create comprehensive architecture documentation.
+You are DocAI, an expert system architect analyzing THIS SPECIFIC CODEBASE.
 
 VERSION: v{version}
 REASON FOR NEW VERSION: {versioning.get('architecture_change_reason', 'Initial documentation')}
 
-CODEBASE ANALYSIS:
+ACTUAL CODEBASE ANALYSIS (USE THIS DATA ONLY):
 {json.dumps(arch_analysis, indent=2)}
 
 RECENT CHANGES:
 {json.dumps(analysis, indent=2)}
 
-Create detailed architecture documentation that includes:
+CRITICAL INSTRUCTIONS:
+1. ONLY document what EXISTS in the codebase analysis above
+2. DO NOT invent components that don't exist
+3. DO NOT use generic examples (no "Frontend", "API Gateway" unless they actually exist)
+4. USE the actual file names, classes, and functions from the analysis
+5. If you see FastAPI in the analysis, document FastAPI (not Flask/Express)
+6. If you see PostgreSQL, document PostgreSQL (not MySQL/MongoDB)
+
+Create documentation based ONLY on the actual codebase:
 
 # Architecture v{version}
 
 ## System Overview
-- High-level architecture diagram (MUST include ASCII/text diagram)
-- Core components and their relationships
-- Data flow
+[Create ASCII diagram showing ACTUAL components from the analysis - use real file/service names]
 
-**IMPORTANT**: You MUST include an ASCII art diagram showing the system architecture.
-Use boxes, arrows, and clear labels. Example format:
-```
-+-------------------+      HTTP      +-------------------+
-|     Frontend      |<-------------->|     Backend       |
-+-------------------+                +-------------------+
-                                             |
-                                             | Database
-                                             v
-                                     +-------------------+
-                                     |     Database      |
-                                     +-------------------+
-```
+## Actual Components Found
+[List ONLY the components that exist in the codebase analysis]
 
-## Component Details
-### [Component 1]
-- Purpose
-- Responsibilities
-- Interfaces
-- Dependencies
+### [Real Component Name from Analysis]
+- Purpose: [Based on actual code]
+- Key Files: [Actual file paths]
+- Dependencies: [From actual imports/requirements]
 
-### [Component 2]
-...
+## Actual Technology Stack
+[List ONLY technologies found in the analysis - no guessing]
 
-## Technology Stack
-- Languages and frameworks
-- Databases and storage
-- External services
-- Infrastructure
+## Design Patterns Detected
+[ONLY patterns actually found in the code]
 
-## Design Patterns
-- Patterns used
-- Why they were chosen
+## Current Architecture
+[Describe how the ACTUAL system works based on the code]
 
-## Scalability & Performance
-- How the system scales
-- Performance considerations
-
-## Security Architecture
-- Authentication/Authorization
-- Data protection
-- Security measures
-
-## Deployment Architecture
-- Deployment model
-- Infrastructure requirements
-
-## Future Considerations
-- Planned improvements
-- Known limitations
-
-Make it technical, detailed, and professional.
+BE SPECIFIC. USE REAL DATA. NO GENERIC TEMPLATES.
 """
     
     try:
@@ -627,15 +601,17 @@ def generate_api_documentation(repo_dir, docs_dir, analysis):
     rotator = get_rotator()
     
     api_prompt = f"""
-You are DocAI, an expert API documentation writer. Create comprehensive API documentation.
+You are DocAI, an expert API documentation writer analyzing THIS SPECIFIC API.
 
-API ANALYSIS:
+ACTUAL API ANALYSIS (USE THIS DATA ONLY):
 {json.dumps(api_analysis, indent=2)}
 
 RECENT CHANGES:
 {json.dumps(analysis, indent=2)}
 
-Create detailed API documentation that includes:
+CRITICAL: Document ONLY the actual API endpoints found in the analysis. NO generic examples.
+
+Create API documentation based on ACTUAL endpoints:
 
 # API Documentation
 

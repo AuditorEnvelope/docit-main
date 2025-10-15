@@ -1,42 +1,22 @@
 """
-Lekhak AI - Production Main Application
-Integrates all services: Webhooks, Commit Bus, Doc Generation, RAG, Overlays, Subscriptions
+Lekhak AI - Main API Server
+Handles GitHub webhooks and stores events in commit bus for processing
 """
 
 import os
 import hmac
 import hashlib
 import json
-from fastapi import FastAPI, Header, Request, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-import asyncio
+import uvicorn
 
-# Import existing services
+# Import services
+from commit_bus import CommitBusService
+from subscription_service import SubscriptionService
+from overlay_service import OverlayService
 from smart_processor import handle_push_event as legacy_handle_push
-
-# Import new services (optional - graceful degradation)
-try:
-    from commit_bus import CommitBusService
-    from event_consumer import EventConsumer
-    HAS_COMMIT_BUS = True
-except ImportError:
-    HAS_COMMIT_BUS = False
-    print("⚠️  Commit Bus not available (missing dependencies)")
-
-try:
-    from subscription_service import SubscriptionService
-    HAS_SUBSCRIPTIONS = True
-except ImportError:
-    HAS_SUBSCRIPTIONS = False
-    print("⚠️  Subscriptions not available (missing database)")
-
-try:
-    from overlay_service import OverlayService
-    HAS_OVERLAYS = True
-except ImportError:
-    HAS_OVERLAYS = False
-    print("⚠️  Overlays not available (missing database)")
 
 load_dotenv()
 
