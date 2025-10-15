@@ -101,10 +101,14 @@ class GitHubSync:
                 "patch": file.get("patch", "")
             })
         
-        # Parse timestamp to datetime object (timezone-aware)
+        # Parse timestamp to datetime object (convert to naive for database)
         timestamp_str = author_data.get("date")
         if timestamp_str:
+            # Parse the timestamp
             timestamp = date_parser.parse(timestamp_str)
+            # Convert to naive datetime (remove timezone info for database)
+            if timestamp.tzinfo is not None:
+                timestamp = timestamp.replace(tzinfo=None)
         else:
             timestamp = datetime.now()
         
