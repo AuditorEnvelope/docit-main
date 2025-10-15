@@ -1,5 +1,5 @@
 """
-Lekhak Ki - Complete Integration
+lekhak ai - Complete Integration
 Connects all services: Commit Bus → Doc Generator → Indexer → Agent
 """
 
@@ -20,7 +20,7 @@ from subscription_service import SubscriptionService
 
 class LekhakKiPipeline:
     """
-    Complete Lekhak Ki Pipeline
+    Complete lekhak ai Pipeline
     
     Flow:
     1. Receive commit event
@@ -41,7 +41,7 @@ class LekhakKiPipeline:
         self.overlay_service = OverlayService(self.db_url)
         self.subscription_service = SubscriptionService(self.db_url)
         
-        print("🚀 Lekhak Ki Pipeline initialized")
+        print("🚀 lekhak ai Pipeline initialized")
     
     async def init(self):
         """Initialize all services"""
@@ -224,7 +224,7 @@ if __name__ == "__main__":
                 print(f"Unknown command: {command}")
                 print("Available commands: process, query")
         else:
-            print("Lekhak Ki Pipeline")
+            print("lekhak ai Pipeline")
             print("Commands:")
             print("  process <repo_id> <commit_sha>  - Process a commit")
             print("  query '<question>'               - Query the agent")

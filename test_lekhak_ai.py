@@ -1,5 +1,5 @@
 """
-Lekhak Ki - Complete Test Suite
+lekhak ai - Complete Test Suite
 Tests all 5 days of implementation
 """
 
@@ -20,7 +20,7 @@ from subscription_service import SubscriptionService, Plan
 from datetime import datetime
 
 class LekhakKiTests:
-    """Complete test suite for Lekhak Ki"""
+    """Complete test suite for lekhak ai"""
     
     def __init__(self):
         self.db_url = os.getenv("DATABASE_URL", "postgresql://localhost/lekhak_ai")
@@ -221,7 +221,7 @@ class LekhakKiTests:
     async def run_all_tests(self):
         """Run all tests"""
         print(f"\n{'='*60}")
-        print("🧪 LEKHAK KI - COMPLETE TEST SUITE")
+        print("🧪 lekhak ai - COMPLETE TEST SUITE")
         print(f"{'='*60}")
         
         await self.test_day1_commit_bus()

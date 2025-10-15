@@ -1,8 +1,8 @@
-# 🎉 What I Built for Lekhak Ki
+# 🎉 What I Built for lekhak ai
 
 ## 📋 Summary
 
-I've created the **foundation for Lekhak Ki** - a production-grade, AI-first documentation platform. This is **Day 1** of the 5-day implementation plan, focusing on the **Commit Bus** (event store) that ensures no commits are ever lost.
+I've created the **foundation for lekhak ai** - a production-grade, AI-first documentation platform. This is **Day 1** of the 5-day implementation plan, focusing on the **Commit Bus** (event store) that ensures no commits are ever lost.
 
 ---
 

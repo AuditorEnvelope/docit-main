@@ -1,8 +1,8 @@
-# 🎉 Lekhak Ki - Complete Implementation (All 5 Days)
+# 🎉 lekhak ai - Complete Implementation (All 5 Days)
 
 ## 🏆 What I Built
 
-I've completed the **entire 5-day implementation** of Lekhak Ki - a production-grade, AI-first documentation platform.
+I've completed the **entire 5-day implementation** of lekhak ai - a production-grade, AI-first documentation platform.
 
 ---
 
@@ -471,7 +471,7 @@ python src/lekhak_ai_integration.py query "How does this work?"
 
 ### vs GitBook
 
-| Feature           | Lekhak Ki             | GitBook         |
+| Feature           | lekhak ai             | GitBook         |
 | ----------------- | --------------------- | --------------- |
 | Source            | Code (auto)           | Manual markdown |
 | Accuracy          | Always in sync        | Can be outdated |
@@ -482,7 +482,7 @@ python src/lekhak_ai_integration.py query "How does this work?"
 
 ### vs BookStack
 
-| Feature          | Lekhak Ki  | BookStack         |
+| Feature          | lekhak ai  | BookStack         |
 | ---------------- | ---------- | ----------------- |
 | Code-first       | Yes        | No                |
 | Versioning       | Per-commit | Manual            |

@@ -1,4 +1,4 @@
-# 🚀 Lekhak Ki - Quick Start Guide
+# 🚀 lekhak ai - Quick Start Guide
 
 ## Prerequisites
 
@@ -286,7 +286,7 @@ docker-compose logs -f event_consumer
 cd /path/to/your/repo
 echo "test" >> test.txt
 git add test.txt
-git commit -m "Test commit for Lekhak Ki"
+git commit -m "Test commit for lekhak ai"
 git push
 
 # 2. Check webhook was received

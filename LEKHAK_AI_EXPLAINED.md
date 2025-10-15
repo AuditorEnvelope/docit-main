@@ -1,8 +1,8 @@
-# 🎓 Lekhak Ki - Complete Explanation
+# 🎓 lekhak ai - Complete Explanation
 
 ## What Am I Building?
 
-I'm transforming your DocAI into **Lekhak Ki** - a production-grade, AI-first documentation platform that's **commit-accurate** and **code-first**.
+I'm transforming your DocAI into **lekhak ai** - a production-grade, AI-first documentation platform that's **commit-accurate** and **code-first**.
 
 ## 🎯 The Big Picture
 
@@ -22,7 +22,7 @@ GitHub Push → Webhook → Process Immediately → Generate Docs
 - ❌ Can't edit docs without changing code
 - ❌ Not productized
 
-### New State (Lekhak Ki)
+### New State (lekhak ai)
 
 ```
 GitHub Push → Commit Bus (Event Store) → Queue → Process → Generate Docs
@@ -565,7 +565,7 @@ Separate **generated** content from **edited** content:
 
 ## 🎯 X-Factor (Why This Beats GitBook)
 
-| Feature              | Lekhak Ki             | GitBook         |
+| Feature              | lekhak ai             | GitBook         |
 | -------------------- | --------------------- | --------------- |
 | **Source of truth**  | Code (auto-generated) | Manual markdown |
 | **Accuracy**         | Always in sync        | Can be outdated |

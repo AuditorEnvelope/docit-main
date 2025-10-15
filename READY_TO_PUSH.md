@@ -290,7 +290,7 @@ python test_lekhak_ai.py
 
 ```bash
 git add .
-git commit -m "feat: Complete Lekhak Ki implementation (5 days)
+git commit -m "feat: Complete lekhak ai implementation (5 days)
 
 - Day 1: Commit Bus with event store & replay
 - Day 2: Hierarchical docs with 14+ language support
@@ -415,7 +415,7 @@ git diff
 
 # Commit
 git add .
-git commit -m "feat: Complete Lekhak Ki - Production-ready docs platform"
+git commit -m "feat: Complete lekhak ai - Production-ready docs platform"
 
 # Push
 git push origin main

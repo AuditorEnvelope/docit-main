@@ -2,32 +2,32 @@
 
 ## ✅ Supported Languages (14+)
 
-Lekhak Ki now supports **ALL major programming languages** with intelligent parsing!
+lekhak ai now supports **ALL major programming languages** with intelligent parsing!
 
 ### Tier 1: Full AST Parsing ✅
 
-| Language | Extensions | Features Extracted |
-|----------|------------|-------------------|
-| **Python** | `.py` | Functions, Classes, Async, Docstrings |
+| Language       | Extensions    | Features Extracted                       |
+| -------------- | ------------- | ---------------------------------------- |
+| **Python**     | `.py`         | Functions, Classes, Async, Docstrings    |
 | **TypeScript** | `.ts`, `.tsx` | Functions, Classes, Interfaces, Generics |
-| **JavaScript** | `.js`, `.jsx` | Functions, Classes, Arrow Functions |
-| **Go** | `.go` | Functions, Structs, Interfaces, Methods |
-| **Rust** | `.rs` | Functions, Structs, Traits, Impl blocks |
-| **Java** | `.java` | Methods, Classes, Interfaces |
+| **JavaScript** | `.js`, `.jsx` | Functions, Classes, Arrow Functions      |
+| **Go**         | `.go`         | Functions, Structs, Interfaces, Methods  |
+| **Rust**       | `.rs`         | Functions, Structs, Traits, Impl blocks  |
+| **Java**       | `.java`       | Methods, Classes, Interfaces             |
 
 ### Tier 2: Regex-Based Parsing ✅
 
-| Language | Extensions | Features Extracted |
-|----------|------------|-------------------|
-| **C/C++** | `.c`, `.cpp`, `.h`, `.hpp` | Functions, Classes, Structs |
-| **C#** | `.cs` | Methods, Classes, Interfaces |
-| **Ruby** | `.rb` | Methods, Classes, Modules |
-| **PHP** | `.php` | Functions, Classes |
-| **Swift** | `.swift` | Functions, Classes, Protocols |
-| **Kotlin** | `.kt` | Functions, Classes |
-| **Scala** | `.scala` | Functions, Classes, Objects |
-| **Elixir** | `.ex`, `.exs` | Functions, Modules |
-| **Dart** | `.dart` | Functions, Classes |
+| Language   | Extensions                 | Features Extracted            |
+| ---------- | -------------------------- | ----------------------------- |
+| **C/C++**  | `.c`, `.cpp`, `.h`, `.hpp` | Functions, Classes, Structs   |
+| **C#**     | `.cs`                      | Methods, Classes, Interfaces  |
+| **Ruby**   | `.rb`                      | Methods, Classes, Modules     |
+| **PHP**    | `.php`                     | Functions, Classes            |
+| **Swift**  | `.swift`                   | Functions, Classes, Protocols |
+| **Kotlin** | `.kt`                      | Functions, Classes            |
+| **Scala**  | `.scala`                   | Functions, Classes, Objects   |
+| **Elixir** | `.ex`, `.exs`              | Functions, Modules            |
+| **Dart**   | `.dart`                    | Functions, Classes            |
 
 ### Tier 3: Generic Fallback ✅
 
@@ -40,6 +40,7 @@ Lekhak Ki now supports **ALL major programming languages** with intelligent pars
 ### For Every Language:
 
 1. **Functions/Methods**
+
    - Name
    - Signature
    - Parameters
@@ -48,12 +49,14 @@ Lekhak Ki now supports **ALL major programming languages** with intelligent pars
    - File path
 
 2. **Classes/Structs**
+
    - Name
    - Inheritance/Extensions
    - Line numbers
    - File path
 
 3. **Interfaces/Traits**
+
    - Name
    - Methods
    - Line numbers
@@ -68,6 +71,7 @@ Lekhak Ki now supports **ALL major programming languages** with intelligent pars
 ## 🎯 Language-Specific Examples
 
 ### Python
+
 ```python
 # Extracts:
 # - Functions (def, async def)
@@ -81,6 +85,7 @@ async def create_payment(amount: float) -> Payment:
 ```
 
 ### TypeScript
+
 ```typescript
 // Extracts:
 // - Functions (function, arrow)
@@ -89,16 +94,17 @@ async def create_payment(amount: float) -> Payment:
 // - Generics
 
 export interface Payment {
-    id: string;
-    amount: number;
+  id: string;
+  amount: number;
 }
 
 export async function createPayment<T>(data: T): Promise<Payment> {
-    // ...
+  // ...
 }
 ```
 
 ### Go
+
 ```go
 // Extracts:
 // - Functions
@@ -117,6 +123,7 @@ func (p *Payment) Process() error {
 ```
 
 ### Rust
+
 ```rust
 // Extracts:
 // - Functions
@@ -137,6 +144,7 @@ impl Payment {
 ```
 
 ### Java
+
 ```java
 // Extracts:
 // - Methods
@@ -146,7 +154,7 @@ impl Payment {
 public class Payment {
     private String id;
     private double amount;
-    
+
     public Payment process() {
         // ...
     }
@@ -154,6 +162,7 @@ public class Payment {
 ```
 
 ### C++
+
 ```cpp
 // Extracts:
 // - Functions
@@ -174,6 +183,7 @@ private:
 ## 🚀 How It Works
 
 ### 1. File Detection
+
 ```python
 # Automatically detects language from extension
 LANGUAGE_MAP = {
@@ -187,6 +197,7 @@ LANGUAGE_MAP = {
 ```
 
 ### 2. Parser Selection
+
 ```python
 # Uses specialized parser if available
 if language == 'python':
@@ -198,6 +209,7 @@ else:
 ```
 
 ### 3. Hierarchical Organization
+
 ```
 Repo
 ├─ Python SDK
@@ -243,11 +255,11 @@ stripe-sdk/
 
 ## 📈 Accuracy Levels
 
-| Tier | Accuracy | Languages | Method |
-|------|----------|-----------|--------|
-| **Tier 1** | 95%+ | Python, TS, JS, Go, Rust, Java | AST/Regex |
-| **Tier 2** | 85%+ | C++, C#, Ruby, PHP, Swift | Regex |
-| **Tier 3** | 70%+ | Any C-style language | Generic |
+| Tier       | Accuracy | Languages                      | Method    |
+| ---------- | -------- | ------------------------------ | --------- |
+| **Tier 1** | 95%+     | Python, TS, JS, Go, Rust, Java | AST/Regex |
+| **Tier 2** | 85%+     | C++, C#, Ruby, PHP, Swift      | Regex     |
+| **Tier 3** | 70%+     | Any C-style language           | Generic   |
 
 ---
 
@@ -284,15 +296,19 @@ def parse_kotlin(file_path: Path) -> List[CodeItem]:
 ## 🎯 Use Cases
 
 ### 1. Multi-Language SDKs
+
 Document Python, TypeScript, Go, and Rust SDKs in one place
 
 ### 2. Microservices
+
 Each service in different language, all documented together
 
 ### 3. Migration Projects
+
 Track changes across language migrations (e.g., Python → Go)
 
 ### 4. Polyglot Teams
+
 Unified docs for teams using multiple languages
 
 ---
@@ -300,12 +316,14 @@ Unified docs for teams using multiple languages
 ## 🚀 Future Enhancements
 
 ### Coming Soon:
+
 - [ ] Tree-sitter integration (100% accuracy for all languages)
 - [ ] Language-specific LLM prompts
 - [ ] Cross-language type mapping
 - [ ] Multi-language examples in docs
 
 ### Requested Languages:
+
 - [ ] Haskell
 - [ ] Clojure
 - [ ] F#
@@ -367,6 +385,6 @@ assert len(items) > 0
 ✅ **Automatic language detection**  
 ✅ **Unified hierarchical structure**  
 ✅ **Polyglot repository support**  
-✅ **Extensible parser system**  
+✅ **Extensible parser system**
 
 **Your docs now work for ANY codebase, in ANY language!** 🌍
