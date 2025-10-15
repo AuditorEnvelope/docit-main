@@ -76,7 +76,7 @@ async def startup():
     if HAS_COMMIT_BUS:
         try:
             commit_bus = CommitBusService(DATABASE_URL)
-            await commit_bus.init_db()
+            await commit_bus.init_pool()
             print("✅ Commit Bus initialized")
         except Exception as e:
             print(f"⚠️  Commit Bus failed: {e}")
