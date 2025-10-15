@@ -1,0 +1,188 @@
+version: "3.8"
+
+services:
+  # PostgreSQL - Main database for event store, docs, overlays
+  postgres:
+    image: postgres:15-alpine
+    container_name: lekhak_postgres
+    environment:
+      POSTGRES_DB: lekhak_ai
+      POSTGRES_USER: lekhak
+      POSTGRES_PASSWORD: lekhak_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lekhak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Job queue and caching
+  redis:
+    image: redis:7-alpine
+    container_name: lekhak_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Milvus - Vector database for RAG
+  # Note: Milvus requires etcd and minio
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: lekhak_etcd
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - etcd_data:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: lekhak_minio
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    volumes:
+      - minio_data:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  milvus:
+    image: milvusdb/milvus:v2.3.3
+    container_name: lekhak_milvus
+    depends_on:
+      - etcd
+      - minio
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+
+  # Commit Bus Service
+  commit_bus:
+    build:
+      context: .
+      dockerfile: Dockerfile.commit_bus
+    container_name: lekhak_commit_bus
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://lekhak:lekhak_password@postgres:5432/lekhak_ai
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./src:/app/src
+      - ./.env:/app/.env
+    command: python src/commit_bus.py
+    restart: unless-stopped
+
+  # Event Consumer Worker
+  event_consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    container_name: lekhak_event_consumer
+    depends_on:
+      postgres:
+        condition: service_healthy
+      commit_bus:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://lekhak:lekhak_password@postgres:5432/lekhak_ai
+      CONSUMER_BATCH_SIZE: 10
+      CONSUMER_POLL_INTERVAL: 5
+    volumes:
+      - ./src:/app/src
+      - ./.env:/app/.env
+    command: python src/event_consumer.py
+    restart: unless-stopped
+
+  # Main Backend (DocAI/Lekhak)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lekhak_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://lekhak:lekhak_password@postgres:5432/lekhak_ai
+      REDIS_URL: redis://redis:6379
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_ORG: ${GITHUB_ORG}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - ./.env:/app/.env
+    command: uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+  # Frontend (Pustak)
+  frontend:
+    build:
+      context: ./pustak
+      dockerfile: Dockerfile
+    container_name: lekhak_frontend
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_ORG: ${GITHUB_ORG}
+      NEXT_PUBLIC_BACKEND_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./pustak/src:/app/src
+      - ./pustak/.env.local:/app/.env.local
+    command: npm run dev
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  etcd_data:
+  minio_data:
+  milvus_data:
+
+networks:
+  default:
+    name: lekhak_network
