@@ -129,13 +129,20 @@ async def process_commit_event(payload: dict):
                 commit = commits[-1]  # Use last commit
                 
                 # Create CommitEvent object
+                # Parse timestamp and convert to naive datetime for database
+                timestamp_str = commit.get('timestamp', datetime.now().isoformat())
+                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                # Convert to naive datetime (remove timezone info)
+                if timestamp.tzinfo is not None:
+                    timestamp = timestamp.replace(tzinfo=None)
+                
                 event = CommitEvent(
                     repo_id=repo.get('full_name', 'unknown'),
                     commit_sha=commit.get('id', payload.get('after', 'unknown')),
                     parent_sha=[payload.get('before', '')] if payload.get('before') else [],
                     author_name=commit.get('author', {}).get('name', 'unknown'),
                     author_email=commit.get('author', {}).get('email', 'unknown@example.com'),
-                    timestamp=datetime.fromisoformat(commit.get('timestamp', datetime.now().isoformat()).replace('Z', '+00:00')),
+                    timestamp=timestamp,
                     branch=payload.get('ref', 'refs/heads/main').replace('refs/heads/', ''),
                     files_changed=[
                         {
