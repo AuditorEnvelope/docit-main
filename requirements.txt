@@ -3,6 +3,7 @@ uvicorn
 PyJWT
 PyGithub
 python-dotenv
+python-dateutil
 google-generativeai
 groq
 openai

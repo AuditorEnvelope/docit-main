@@ -23,8 +23,9 @@ from dotenv import load_dotenv
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from commit_bus import CommitBusService
+from commit_bus import CommitBusService, CommitEvent
 from smart_processor import handle_push_event
+from github_sync import GitHubSync
 
 load_dotenv()
 
@@ -54,6 +55,9 @@ class EventConsumer:
         await self.bus.init_pool()
         self.pool = self.bus.pool
         print("✅ Event Consumer initialized")
+        
+        # Check for missed commits on startup
+        await self.check_missed_commits()
     
     async def log_processing(
         self, 
@@ -152,6 +156,84 @@ class EventConsumer:
             await self.log_processing(event_id, "failed", started_at, error=error_msg)
             
             return False
+    
+    async def check_missed_commits(self):
+        """
+        Check for missed commits on startup
+        
+        This queries GitHub for recent commits and compares with our database
+        to find any commits that were missed during downtime.
+        """
+        try:
+            print("\n🔍 Checking for missed commits...")
+            
+            # Get unprocessed events from database
+            stats = await self.bus.get_event_stats()
+            
+            if stats["pending"] > 0:
+                print(f"📊 Found {stats['pending']} unprocessed events in database")
+                print(f"   These will be processed automatically")
+            
+            # Check GitHub for missed commits
+            github_token = os.getenv("GITHUB_TOKEN")
+            github_org = os.getenv("GITHUB_ORG", "AuditorEnvelope")
+            enable_github_sync = os.getenv("ENABLE_GITHUB_SYNC", "false").lower() == "true"
+            
+            if github_token and enable_github_sync:
+                try:
+                    sync = GitHubSync(github_token)
+                    
+                    # Get last processed commit SHA
+                    last_sha = await self.get_last_processed_sha()
+                    
+                    # Find missed commits from GitHub
+                    missed = await sync.find_missed_commits(
+                        f"{github_org}/lekhak_ai",
+                        last_processed_sha=last_sha
+                    )
+                    
+                    # Store missed commits in database
+                    if missed:
+                        print(f"\n💾 Storing {len(missed)} missed commits in database...")
+                        for event_dict in missed:
+                            try:
+                                # Convert dict to CommitEvent object
+                                event = CommitEvent(**event_dict)
+                                await self.bus.store_event(event)
+                                print(f"   ✅ Stored: {event.commit_sha[:8]}")
+                            except Exception as e:
+                                print(f"   ⚠️  Failed to store {event_dict['commit_sha'][:8]}: {e}")
+                        
+                        print(f"\n🎉 Successfully recovered {len(missed)} missed commits!")
+                        print(f"   They will be processed automatically")
+                    
+                except Exception as e:
+                    print(f"⚠️  Error syncing with GitHub: {e}")
+                    print(f"   Relying on GitHub webhook retries instead")
+            else:
+                print(f"⚠️  GITHUB_TOKEN not set, skipping GitHub sync")
+                print(f"   Relying on GitHub webhook retries instead")
+            
+            if stats["pending"] == 0 and (not github_token or not missed):
+                print(f"\n✅ No missed commits found")
+                print(f"   Last processed: {stats['processed']} events")
+            
+        except Exception as e:
+            print(f"⚠️  Error checking missed commits: {e}")
+    
+    async def get_last_processed_sha(self) -> Optional[str]:
+        """Get SHA of last successfully processed commit"""
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow("""
+                    SELECT commit_sha FROM commit_events
+                    WHERE processed = TRUE
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """)
+                return result["commit_sha"] if result else None
+        except:
+            return None
     
     async def consume_batch(self):
         """
