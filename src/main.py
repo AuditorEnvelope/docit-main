@@ -118,15 +118,46 @@ async def process_commit_event(payload: dict):
     # Try commit bus first (durable, never loses commits)
     if commit_bus:
         try:
-            event_id = await commit_bus.store_event(
-                event_type="push",
-                repo_id=payload.get('repository', {}).get('full_name', 'unknown'),
-                payload=payload
-            )
-            print(f"✅ Event stored in commit bus: {event_id}")
-            return {"status": "queued", "event_id": event_id}
+            from commit_bus import CommitEvent
+            from datetime import datetime
+            
+            # Extract commit info from payload
+            repo = payload.get('repository', {})
+            commits = payload.get('commits', [])
+            
+            if commits:
+                commit = commits[-1]  # Use last commit
+                
+                # Create CommitEvent object
+                event = CommitEvent(
+                    repo_id=repo.get('full_name', 'unknown'),
+                    commit_sha=commit.get('id', payload.get('after', 'unknown')),
+                    parent_sha=[payload.get('before', '')] if payload.get('before') else [],
+                    author_name=commit.get('author', {}).get('name', 'unknown'),
+                    author_email=commit.get('author', {}).get('email', 'unknown@example.com'),
+                    timestamp=datetime.fromisoformat(commit.get('timestamp', datetime.now().isoformat()).replace('Z', '+00:00')),
+                    branch=payload.get('ref', 'refs/heads/main').replace('refs/heads/', ''),
+                    files_changed=[
+                        {
+                            'path': f,
+                            'status': 'modified' if f in commit.get('modified', []) else 
+                                     'added' if f in commit.get('added', []) else 'deleted'
+                        }
+                        for f in (commit.get('added', []) + commit.get('modified', []) + commit.get('removed', []))
+                    ],
+                    commit_message=commit.get('message', ''),
+                    push_id=payload.get('push_id'),
+                    source='github',
+                    metadata={'payload': payload}
+                )
+                
+                event_id = await commit_bus.store_event(event)
+                print(f"✅ Event stored in commit bus: {event_id}")
+                return {"status": "queued", "event_id": event_id}
         except Exception as e:
             print(f"⚠️  Commit bus failed, falling back to legacy: {e}")
+            import traceback
+            traceback.print_exc()
     
     # Fallback to legacy processor
     try:
