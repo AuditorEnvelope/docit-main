@@ -1,149 +1,133 @@
 # API Documentation
 
-*Updated: 2025-10-15*
+## Overview
+### API Purpose
+The Lekhak AI API is designed to provide a comprehensive and reliable documentation generation service. It aims to assist developers in creating high-quality documentation for their projects, ensuring that the documentation is accurate, complete, and easy to understand.
 
-Lekhak AI Service API Documentation
-=====================================
+### Base URL
+The base URL for the Lekhak AI API is `https://api.lekhak.ai`.
 
-### Introduction
+### Authentication
+To use the Lekhak AI API, you need to authenticate your requests using a valid API token. You can obtain an API token by registering on the Lekhak AI website and following the instructions in the dashboard. Once you have your API token, you can include it in your requests using the `Authorization` header with the format `Bearer YOUR_API_TOKEN`.
 
-The Lekhak AI Service is a robust architecture for contextual AI assistance in code. It integrates a commit bus for event processing, an indexing service leveraging a vector database (Milvus) for embeddings, and a RAG (Retrieval Augmented Generation) system to interact with various LLMs (Groq, OpenAI, Google Generative AI). This API documentation provides an overview of the new API endpoints, request/response formats, authentication requirements, usage examples, and error handling.
+## Endpoints
 
-### API Endpoints
+### Endpoint 1: POST /generate-documentation
+**Description**: This endpoint generates comprehensive documentation for a given project. It takes a JSON payload with the project details and returns a JSON response with the generated documentation.
 
-The following API endpoints are available:
-
-#### 1. Commit Bus API
-
-* **POST /commit**: Process a commit event
-	+ Request Body: `{"commit_id": string, "commit_message": string, "code_changes": array}`
-	+ Response: `{"commit_id": string, "status": string}`
-* **GET /commits**: Retrieve a list of commit events
-	+ Response: `[{"commit_id": string, "commit_message": string, "code_changes": array}]`
-
-#### 2. Event Consumer API
-
-* **POST /event**: Process an event
-	+ Request Body: `{"event_id": string, "event_type": string, "event_data": object}`
-	+ Response: `{"event_id": string, "status": string}`
-* **GET /events**: Retrieve a list of events
-	+ Response: `[{"event_id": string, "event_type": string, "event_data": object}]`
-
-#### 3. Indexer Service API
-
-* **POST /index**: Create an index for a codebase
-	+ Request Body: `{"codebase_id": string, "codebase_data": object}`
-	+ Response: `{"index_id": string, "status": string}`
-* **GET /indexes**: Retrieve a list of indexes
-	+ Response: `[{"index_id": string, "codebase_id": string, "codebase_data": object}]`
-
-#### 4. RAG API
-
-* **POST /rag**: Retrieve relevant context from Milvus
-	+ Request Body: `{"query": string, "context_size": integer}`
-	+ Response: `{"context": array, "status": string}`
-* **GET /rag**: Retrieve a list of RAG queries
-	+ Response: `[{"query": string, "context_size": integer, "context": array}]`
-
-#### 5. LLM API
-
-* **POST /llm**: Interact with a large language model
-	+ Request Body: `{"llm_id": string, "input_text": string, "output_size": integer}`
-	+ Response: `{"output_text": string, "status": string}`
-* **GET /llms**: Retrieve a list of large language models
-	+ Response: `[{"llm_id": string, "llm_name": string, "llm_description": string}]`
-
-#### 6. Agent Service API
-
-* **POST /agent**: Orchestrate AI tasks
-	+ Request Body: `{"task_id": string, "task_type": string, "task_data": object}`
-	+ Response: `{"task_id": string, "status": string}`
-* **GET /agents**: Retrieve a list of AI tasks
-	+ Response: `[{"task_id": string, "task_type": string, "task_data": object}]`
-
-#### 7. Overlay Service API
-
-* **POST /overlay**: Present AI-generated insights
-	+ Request Body: `{"insight_id": string, "insight_data": object}`
-	+ Response: `{"insight_id": string, "status": string}`
-* **GET /overlays**: Retrieve a list of AI-generated insights
-	+ Response: `[{"insight_id": string, "insight_data": object}]`
-
-### Request/Response Formats
-
-All API endpoints accept and return JSON data.
-
-### Authentication Requirements
-
-API endpoints require authentication using a JSON Web Token (JWT). The JWT token can be obtained by sending a POST request to the `/auth` endpoint with a valid username and password.
-
-* **POST /auth**: Authenticate a user
-	+ Request Body: `{"username": string, "password": string}`
-	+ Response: `{"token": string, "status": string}`
-
-### Usage Examples
-
-#### 1. Process a commit event
-
-```bash
-curl -X POST \
-  http://localhost:8000/commit \
-  -H 'Content-Type: application/json' \
-  -d '{"commit_id": "12345", "commit_message": "Initial commit", "code_changes": ["file1.py", "file2.py"]}'
-```
-
-#### 2. Retrieve a list of commit events
-
-```bash
-curl -X GET \
-  http://localhost:8000/commits
-```
-
-#### 3. Create an index for a codebase
-
-```bash
-curl -X POST \
-  http://localhost:8000/index \
-  -H 'Content-Type: application/json' \
-  -d '{"codebase_id": "12345", "codebase_data": {"language": "python", "files": ["file1.py", "file2.py"]}}'
-```
-
-#### 4. Retrieve relevant context from Milvus
-
-```bash
-curl -X POST \
-  http://localhost:8000/rag \
-  -H 'Content-Type: application/json' \
-  -d '{"query": "What is the meaning of life?", "context_size": 10}'
-```
-
-#### 5. Interact with a large language model
-
-```bash
-curl -X POST \
-  http://localhost:8000/llm \
-  -H 'Content-Type: application/json' \
-  -d '{"llm_id": "12345", "input_text": "Hello, world!", "output_size": 10}'
-```
-
-### Error Handling
-
-API endpoints return error responses in the following format:
-
+**Request**:
 ```json
 {
-  "error": {
-    "code": integer,
-    "message": string,
-    "details": object
-  }
+  "project_name": "string",
+  "project_description": "string",
+  "project_files": ["string"]
 }
 ```
 
-Common error codes and messages:
+**Response**:
+```json
+{
+  "documentation": "string"
+}
+```
 
-* **401 Unauthorized**: Invalid or missing JWT token
-* **404 Not Found**: Resource not found
-* **500 Internal Server Error**: Server-side error
+**Errors**:
+- 400: Bad Request (invalid payload or missing required fields)
+- 401: Unauthorized (invalid or missing API token)
+- 500: Internal Server Error (documentation generation failed)
 
-Note: This API documentation is subject to change as the Lekhak AI Service evolves.
+### Endpoint 2: GET /health-check
+**Description**: This endpoint checks the health and status of the Lekhak AI API.
+
+**Request**: None
+
+**Response**:
+```json
+{
+  "status": "string"
+}
+```
+
+**Errors**:
+- 500: Internal Server Error (health check failed)
+
+## Data Models
+### Project Model
+```json
+{
+  "project_name": "string",
+  "project_description": "string",
+  "project_files": ["string"]
+}
+```
+
+### Documentation Model
+```json
+{
+  "documentation": "string"
+}
+```
+
+## Authentication
+To authenticate your requests, you need to include a valid API token in the `Authorization` header. You can obtain an API token by registering on the Lekhak AI website and following the instructions in the dashboard.
+
+### Token Management
+API tokens are valid for a limited time and can be refreshed using the `POST /refresh-token` endpoint. To refresh your token, send a JSON payload with your current token and a new token will be generated and returned in the response.
+
+## Rate Limiting
+The Lekhak AI API has a rate limit of 100 requests per hour per IP address. If you exceed this limit, you will receive a 429 response with a `Retry-After` header indicating when you can make another request.
+
+### Headers
+The following headers are included in the response to help you manage rate limiting:
+- `X-Rate-Limit-Limit`: The maximum number of requests allowed per hour.
+- `X-Rate-Limit-Remaining`: The number of requests remaining in the current hour.
+- `X-Rate-Limit-Reset`: The time when the rate limit will be reset.
+
+## Examples
+### Example 1: Generate Documentation
+```bash
+curl -X POST \
+  https://api.lekhak.ai/generate-documentation \
+  -H 'Authorization: Bearer YOUR_API_TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "project_name": "My Project",
+        "project_description": "This is my project",
+        "project_files": ["file1.txt", "file2.txt"]
+      }'
+```
+
+### Example 2: Health Check
+```bash
+curl -X GET \
+  https://api.lekhak.ai/health-check
+```
+
+## SDKs & Libraries
+The Lekhak AI API has SDKs available for the following programming languages:
+- Python
+- Java
+- JavaScript
+
+You can find the SDKs and usage examples on the Lekhak AI GitHub page.
+
+### Python SDK Example
+```python
+import requests
+
+api_token = "YOUR_API_TOKEN"
+project_name = "My Project"
+project_description = "This is my project"
+project_files = ["file1.txt", "file2.txt"]
+
+response = requests.post(
+    "https://api.lekhak.ai/generate-documentation",
+    headers={"Authorization": f"Bearer {api_token}"},
+    json={"project_name": project_name, "project_description": project_description, "project_files": project_files}
+)
+
+if response.status_code == 200:
+    print(response.json()["documentation"])
+else:
+    print(f"Error: {response.status_code}")
+```
