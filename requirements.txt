@@ -8,3 +8,16 @@ groq
 openai
 requests
 gitpython
+
+# Day 1: Commit Bus
+asyncpg==0.29.0
+
+# Day 3: RAG System
+pymilvus==2.3.3
+
+# Embeddings (choose one or use all)
+# openai  # Optional - only if you have OpenAI key
+sentence-transformers  # FREE local embeddings (no API key needed!)
+
+# Additional
+pydantic==2.5.0
