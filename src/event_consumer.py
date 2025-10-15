@@ -83,6 +83,16 @@ class EventConsumer:
         
         This allows us to reuse the existing smart_processor without changes
         """
+        import json
+        
+        # Parse files_changed if it's a JSON string
+        files_changed = event.get("files_changed", [])
+        if isinstance(files_changed, str):
+            try:
+                files_changed = json.loads(files_changed)
+            except:
+                files_changed = []
+        
         return {
             "repository": {
                 "full_name": event["repo_id"],
@@ -97,8 +107,8 @@ class EventConsumer:
                     "email": event["author_email"]
                 },
                 "added": [],
-                "modified": [f["path"] for f in event.get("files_changed", []) if f.get("status") == "modified"],
-                "removed": [f["path"] for f in event.get("files_changed", []) if f.get("status") == "deleted"]
+                "modified": [f["path"] for f in files_changed if f.get("status") == "modified"],
+                "removed": [f["path"] for f in files_changed if f.get("status") == "deleted"]
             }],
             "ref": f"refs/heads/{event['branch']}",
             "after": event["commit_sha"],
