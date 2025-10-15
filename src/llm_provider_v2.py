@@ -2,6 +2,7 @@
 import os
 import random
 import time
+import asyncio
 from typing import List, Dict, Optional, Tuple
 from dotenv import load_dotenv
 load_dotenv()
@@ -10,6 +11,14 @@ load_dotenv()
 import google.generativeai as genai
 from groq import Groq
 import openai
+
+# Rate limiting (imported from smart_processor to share global limiter)
+try:
+    from aiolimiter import AsyncLimiter
+    llm_rate_limiter = AsyncLimiter(50, 60)  # 50 requests per minute
+    HAS_RATE_LIMITER = True
+except ImportError:
+    HAS_RATE_LIMITER = False
 
 class LLMProvider:
     """Base class for LLM providers"""
