@@ -1,4 +1,4 @@
-# Lekhak Ki 📚
+# lekhak ai 📚
 
 **Production-grade, AI-first documentation platform** that automatically generates and maintains comprehensive, hierarchical documentation for your repositories.
 
@@ -9,31 +9,37 @@
 ## 🚀 Key Features
 
 ### 🔥 Never Lose Commits
+
 - **Durable Event Store**: PostgreSQL-backed commit bus
 - **Automatic Replay**: Process missed commits after downtime
 - **Retry Logic**: 3 automatic retries on failure
 
 ### 🌍 Universal Language Support (14+ Languages!)
+
 - **Python, TypeScript, JavaScript, Go, Rust, Java, C++, C#, Ruby, PHP, Swift, Kotlin, Scala, Elixir, Dart**
 - **Polyglot Repositories**: Document multiple languages in one repo
 - **Automatic Detection**: No configuration needed
 
 ### 🌲 Hierarchical Documentation
+
 - **Deep Tree Structure**: Repo → SDK → Module → Feature → Function
 - **Smart Parsing**: Extracts signatures, parameters, docstrings
 - **Breadcrumb Navigation**: Easy traversal
 
 ### 🤖 AI Agent with Provenance
+
 - **Semantic Search**: Vector DB (Milvus) powered
 - **Commit-Backed Answers**: Every answer cites commit SHA
 - **RAG System**: Retrieval-Augmented Generation
 
 ### ✏️ Admin Overlays
+
 - **Non-Code Edits**: Edit docs without changing code
 - **Full Provenance**: Track who, when, why
 - **Optional PR Generation**: Push edits back to code
 
 ### 💰 Production-Ready Subscriptions
+
 - **3 Pricing Tiers**: Free, Team ($49/mo), Enterprise
 - **Feature Gates**: Control access to overlays, SSO, etc.
 - **Usage Tracking**: Repos, queries, storage
@@ -144,6 +150,7 @@ GROQ_API_KEY=your_groq_key
 ```
 
 **Frontend (pustak/.env.local)**:
+
 ```env
 GITHUB_TOKEN=your_github_token
 GITHUB_ORG=your_org_name

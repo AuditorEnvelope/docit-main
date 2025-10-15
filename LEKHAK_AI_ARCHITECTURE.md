@@ -1,4 +1,4 @@
-# Lekhak Ki / Pustak - Complete Architecture
+# lekhak ai / Pustak - Complete Architecture
 
 ## 🏗️ System Architecture
 
@@ -75,11 +75,13 @@
 **Purpose**: Durable, ordered event stream for all commits
 
 **Tech Stack**:
+
 - **Event Store**: PostgreSQL (append-only table)
 - **Queue**: Redis + BullMQ for job processing
 - **Alternative**: Kafka for scale (future)
 
 **Schema**:
+
 ```sql
 CREATE TABLE commit_events (
     event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -101,12 +103,13 @@ CREATE TABLE commit_events (
     UNIQUE(repo_id, commit_sha)
 );
 
-CREATE INDEX idx_commit_events_repo_processed 
+CREATE INDEX idx_commit_events_repo_processed
     ON commit_events(repo_id, processed, timestamp);
 CREATE INDEX idx_commit_events_sha ON commit_events(commit_sha);
 ```
 
 **API Endpoints**:
+
 ```
 POST /webhook                    # Receive git webhooks
 POST /events                     # Manual event creation
@@ -120,6 +123,7 @@ GET  /status                     # Service health
 **Purpose**: Transform code → structured, versioned documentation
 
 **Stages**:
+
 1. **Ingest**: Clone/fetch repo at commit SHA
 2. **Parse**: AST extraction (TypeScript, Python, Java, Solidity)
 3. **Normalize**: Convert to canonical doc model
@@ -129,6 +133,7 @@ GET  /status                     # Service health
 7. **Changelog**: Generate human-readable changes
 
 **Doc Model** (Hierarchical):
+
 ```json
 {
   "id": "uuid",
@@ -181,6 +186,7 @@ GET  /status                     # Service health
 ```
 
 **Storage**:
+
 ```sql
 CREATE TABLE doc_nodes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -208,11 +214,13 @@ CREATE INDEX idx_doc_nodes_commit ON doc_nodes(commit_sha);
 **Purpose**: Semantic search over code and docs
 
 **Tech Stack**:
+
 - **Vector DB**: Milvus (self-hosted) or Pinecone (managed)
 - **Embeddings**: OpenAI text-embedding-3-small or sentence-transformers
 - **Metadata**: PostgreSQL for provenance
 
 **Vector Schema**:
+
 ```python
 {
     "id": "uuid",
@@ -233,6 +241,7 @@ CREATE INDEX idx_doc_nodes_commit ON doc_nodes(commit_sha);
 ```
 
 **API Endpoints**:
+
 ```
 POST /index/node         # Index a doc node
 POST /index/batch        # Batch indexing
@@ -245,6 +254,7 @@ DELETE /index/:id        # Remove from index
 **Purpose**: Answer queries with commit-backed evidence
 
 **Query Flow**:
+
 ```
 User Query
   ↓
@@ -260,11 +270,13 @@ Answer + Citations
 ```
 
 **Memory Tiers**:
+
 - **Session Memory**: Ephemeral (Redis, 1 hour TTL)
 - **Long-term Memory**: Persistent (Vector DB)
 - **Snapshot Memory**: Per-release checkpoints
 
 **API Endpoints**:
+
 ```
 POST /query              # Ask a question
 POST /diff               # Compare versions
@@ -276,6 +288,7 @@ GET  /provenance/:id     # Get source for answer
 **Purpose**: Non-code edits with provenance
 
 **Schema**:
+
 ```sql
 CREATE TABLE doc_overlays (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -294,6 +307,7 @@ CREATE INDEX idx_overlays_node ON doc_overlays(node_id, status);
 ```
 
 **Merge Logic**:
+
 ```
 1. Fetch base doc node (generated from code)
 2. Fetch active overlay for node
@@ -305,6 +319,7 @@ CREATE INDEX idx_overlays_node ON doc_overlays(node_id, status);
 ```
 
 **API Endpoints**:
+
 ```
 GET  /doc/:node_id                    # Get merged doc
 POST /overlay/:node_id                # Create/update overlay
@@ -382,18 +397,18 @@ User: "What changed in Payment.create between v2.0 and v2.1?"
 
 ## 🛠️ Tech Stack Summary
 
-| Component | Technology | Alternative |
-|-----------|-----------|-------------|
-| Backend | Python (FastAPI) | Node.js (Express) |
-| Event Store | PostgreSQL | Kafka |
-| Job Queue | Redis + BullMQ | RabbitMQ |
-| Vector DB | Milvus | Pinecone, Weaviate |
-| Embeddings | OpenAI | sentence-transformers |
-| LLM | OpenAI GPT-4 | Google Gemini, Groq |
-| Frontend | Next.js | React + Vite |
-| Database | PostgreSQL | MongoDB |
-| Object Store | S3 | MinIO |
-| Cache | Redis | Memcached |
+| Component    | Technology       | Alternative           |
+| ------------ | ---------------- | --------------------- |
+| Backend      | Python (FastAPI) | Node.js (Express)     |
+| Event Store  | PostgreSQL       | Kafka                 |
+| Job Queue    | Redis + BullMQ   | RabbitMQ              |
+| Vector DB    | Milvus           | Pinecone, Weaviate    |
+| Embeddings   | OpenAI           | sentence-transformers |
+| LLM          | OpenAI GPT-4     | Google Gemini, Groq   |
+| Frontend     | Next.js          | React + Vite          |
+| Database     | PostgreSQL       | MongoDB               |
+| Object Store | S3               | MinIO                 |
+| Cache        | Redis            | Memcached             |
 
 ## 📊 Database Schema Overview
 
@@ -419,11 +434,13 @@ audit_logs        -- Security
 ## 🔐 Security & Access Control
 
 ### Authentication
+
 - **Free tier**: No auth (public repos)
 - **Team tier**: OAuth (GitHub, GitLab)
 - **Enterprise**: SSO (SAML, OIDC)
 
 ### Authorization (RBAC)
+
 ```
 Roles:
 - viewer: Read docs
@@ -433,6 +450,7 @@ Roles:
 ```
 
 ### API Security
+
 - Rate limiting (per tier)
 - Token-based auth (JWT)
 - Webhook signature validation
@@ -441,6 +459,7 @@ Roles:
 ## 💰 Subscription Model
 
 ### Free Tier
+
 - 1 public repo
 - Daily indexing
 - Basic docs (no overlays)
@@ -448,6 +467,7 @@ Roles:
 - 100 queries/day
 
 ### Team Tier ($49/month)
+
 - 10 repos (public + private)
 - Real-time indexing
 - Admin overlays
@@ -457,6 +477,7 @@ Roles:
 - SSO option
 
 ### Enterprise Tier (Custom)
+
 - Unlimited repos
 - On-premise deployment
 - Fine-grained RBAC
@@ -468,33 +489,36 @@ Roles:
 
 ## 🎯 X-Factor vs GitBook/BookStack
 
-| Feature | Lekhak Ki | GitBook | BookStack |
-|---------|-----------|---------|-----------|
-| Code-first | ✅ Auto-generated | ❌ Manual | ❌ Manual |
-| Commit tracking | ✅ Event store | ❌ No | ❌ No |
-| Versioning | ✅ Per-commit | ⚠️ Manual | ❌ No |
-| AI Agent | ✅ RAG + provenance | ❌ No | ❌ No |
-| Changelog | ✅ Auto-generated | ❌ Manual | ❌ Manual |
-| Admin overlays | ✅ Non-code edits | ❌ No | ✅ Yes |
-| Hierarchical | ✅ Deep nesting | ⚠️ Limited | ⚠️ Limited |
-| Semantic search | ✅ Vector DB | ⚠️ Basic | ⚠️ Basic |
-| Provenance | ✅ Commit-backed | ❌ No | ❌ No |
+| Feature         | lekhak ai           | GitBook    | BookStack  |
+| --------------- | ------------------- | ---------- | ---------- |
+| Code-first      | ✅ Auto-generated   | ❌ Manual  | ❌ Manual  |
+| Commit tracking | ✅ Event store      | ❌ No      | ❌ No      |
+| Versioning      | ✅ Per-commit       | ⚠️ Manual  | ❌ No      |
+| AI Agent        | ✅ RAG + provenance | ❌ No      | ❌ No      |
+| Changelog       | ✅ Auto-generated   | ❌ Manual  | ❌ Manual  |
+| Admin overlays  | ✅ Non-code edits   | ❌ No      | ✅ Yes     |
+| Hierarchical    | ✅ Deep nesting     | ⚠️ Limited | ⚠️ Limited |
+| Semantic search | ✅ Vector DB        | ⚠️ Basic   | ⚠️ Basic   |
+| Provenance      | ✅ Commit-backed    | ❌ No      | ❌ No      |
 
 ## 📈 Scalability Considerations
 
 ### Horizontal Scaling
+
 - **Commit Bus**: Multiple consumers (consumer groups)
 - **Doc Generator**: Worker pool (BullMQ concurrency)
 - **Indexer**: Batch processing
 - **Frontend**: CDN + edge caching
 
 ### Performance Targets
+
 - Webhook processing: < 100ms
 - Doc generation: < 30s per commit
 - Query response: < 2s
 - Indexing: < 5s per node
 
 ### Monitoring
+
 - Event processing lag
 - Queue depth
 - LLM API latency

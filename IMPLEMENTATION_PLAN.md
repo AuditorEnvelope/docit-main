@@ -1,4 +1,4 @@
-# Lekhak Ki - 5-Day Implementation Plan
+# lekhak ai - 5-Day Implementation Plan
 
 ## Day 1: Commit Bus + Event Store
 
