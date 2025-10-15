@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-15] - Fix Tax Handling and API Response for Item Creation
+
+### Bug_Fix
+- This commit addresses potential issues with tax handling by adding validation to the `Item.tax` field, ensuring it's greater than zero. It also modifies the `POST /items/` endpoint to apply the tax to the item's price if provided and standardizes the API response format to include a success message.
+
+### Details
+- **Significance:** 7/10
+- **Commit:** 3bb98f2770f2d8b65293500f63367adb1a69ed2b
+- **Impact:** data_validation, api_behavior, business_logic
+
+
+
 ## [2025-10-15] - Fix Comprehensive Documentation Generator Reliability and Error Reporting
 
 ### Bug_Fix
