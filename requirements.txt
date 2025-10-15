@@ -22,3 +22,4 @@ sentence-transformers  # FREE local embeddings (no API key needed!)
 
 # Additional
 pydantic==2.5.0
+aiolimiter==1.1.0

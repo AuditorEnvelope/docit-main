@@ -41,20 +41,24 @@ class EventConsumer:
     5. Retry failed events (up to 3 times)
     """
     
-    def __init__(self, db_url: str, batch_size: int = 10, poll_interval: int = 5):
+    def __init__(self, db_url: str, batch_size: int = 10, poll_interval: int = 5, max_concurrent: int = 3):
         self.db_url = db_url
         self.batch_size = batch_size
         self.poll_interval = poll_interval
+        self.max_concurrent = max_concurrent  # Max parallel processing
         self.bus = None
         self.running = False
         self.pool = None
+        self.semaphore = None  # Will be created in init()
     
     async def init(self):
         """Initialize database connections"""
         self.bus = CommitBusService(self.db_url)
         await self.bus.init_pool()
         self.pool = self.bus.pool
+        self.semaphore = asyncio.Semaphore(self.max_concurrent)
         print("✅ Event Consumer initialized")
+        print(f"   Max concurrent processing: {self.max_concurrent}")
         
         # Check for missed commits on startup
         await self.check_missed_commits()
@@ -245,11 +249,16 @@ class EventConsumer:
         except:
             return None
     
+    async def process_event_with_limit(self, event):
+        """Process single event with concurrency limit"""
+        async with self.semaphore:
+            return await self.process_event(event)
+    
     async def consume_batch(self):
         """
         Consume a batch of events
         
-        Processes events in order, one at a time
+        Processes events concurrently (up to max_concurrent at a time)
         """
         try:
             # Get unprocessed events
@@ -260,20 +269,26 @@ class EventConsumer:
             
             print(f"\n🔄 Processing batch of {len(events)} events")
             
-            processed_count = 0
+            # Process events concurrently with semaphore limit
+            tasks = []
             for event in events:
                 if not self.running:
                     print("⏸️  Consumer stopped, breaking batch")
                     break
-                
-                success = await self.process_event(event)
-                if success:
-                    processed_count += 1
+                tasks.append(self.process_event_with_limit(event))
+            
+            # Wait for all tasks to complete
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Count successes
+            processed_count = sum(1 for r in results if r is True)
             
             return processed_count
             
         except Exception as e:
             print(f"❌ Error in consume_batch: {e}")
+            import traceback
+            traceback.print_exc()
             return 0
     
     async def run(self):
