@@ -44,6 +44,29 @@
 
 ```bash
 # 1. Install dependencies
+
+## 🆕 Recent Updates
+
+### Initial Implementation of Lekhak AI Service with Embeddings and RAG
+This monumental commit introduces the core Lekhak AI service, establishing a robust architecture for contextual AI assistance in code. It integrates a commit bus for event processing, an indexing service leveraging a vector database (Milvus) for embeddings, and a RAG (Retrieval Augmented Generation) system to interact with various LLMs (Groq, OpenAI, Google Generative AI). This forms the foundational AI capabilities of the project.
+
+**New Features:**
+- Lekhak AI Core Service for RAG and Embeddings
+- Commit Bus (AsyncPG) for event-driven architecture
+- Event Consumer for processing commit events
+- Indexer Service for vectorizing code/docs and storing in Milvus
+- Integration with Milvus vector database
+- Support for multiple LLM providers (Groq, OpenAI, Google Generative AI)
+- Local embeddings generation via Sentence Transformers
+- Hierarchical Document Generation for structured knowledge base
+- Universal Code Parser for diverse language support
+- Subscription Service for external event sources (e.g., webhooks)
+- Agent Service for orchestrating AI tasks
+- Overlay Service (likely for presenting AI-generated insights)
+- Comprehensive documentation for architecture, quick start, and implementation
+
+*Added on 2025-10-15*
+
 pip install -r requirements.txt
 
 # 2. Setup database

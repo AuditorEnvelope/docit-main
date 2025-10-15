@@ -3,10 +3,12 @@
 * [Home](README.md)
 
 ## Architecture
+* [V3 Architecture](architecture/v3-architecture.md)
 * [V2 Architecture](architecture/v2-architecture.md)
 * [V1 Architecture](architecture/v1-architecture.md)
 
 ## Workflow
+* [V3 Workflow](workflow/v3-workflow.md)
 * [V2 Workflow](workflow/v2-workflow.md)
 * [V1 Workflow](workflow/v1-workflow.md)
 
@@ -14,9 +16,10 @@
 * [API Documentation](api.md)
 
 ## Changes
-* [Refactor and Test Codebase](changes/cb0c52f3d2f7fc22698a9f2d085b882d0991f804-refactor.md)
+* [Initial Implementation of Lekhak AI Service with Embeddings and RAG](changes/ea2bf9157afc4fd4ce9fc626701de39d105f6ba5-feature.md)
 
 * [Bug_Fix](changes/ec9d42b08ebedf160c19ce7db9a789c7716ed705-bug_fix.md)
+* [Refactor](changes/cb0c52f3d2f7fc22698a9f2d085b882d0991f804-refactor.md)
 * [Bug_Fix](changes/a6eb74bb0d2dd7f41f9f74ceca6d7c17a4279e7c-bug_fix.md)
 * [Refactor](changes/7e2d81e7595dab40e7301af2a7b9a2c8d9a9a5c4-refactor.md)
 * [Feature](changes/6f4aa000b16c9add03efe474003dd2d7fa0363b7-feature.md)

@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-15] - Initial Implementation of Lekhak AI Service with Embeddings and RAG
+
+### Feature
+- This monumental commit introduces the core Lekhak AI service, establishing a robust architecture for contextual AI assistance in code. It integrates a commit bus for event processing, an indexing service leveraging a vector database (Milvus) for embeddings, and a RAG (Retrieval Augmented Generation) system to interact with various LLMs (Groq, OpenAI, Google Generative AI). This forms the foundational AI capabilities of the project.
+
+### Details
+- **Significance:** 9/10
+- **Commit:** ea2bf9157afc4fd4ce9fc626701de39d105f6ba5
+- **Impact:** core_ai_logic, data_processing, system_architecture, deployment, external_integrations, documentation
+
+
+
 ## [2025-10-12] - Refactor and Test Codebase
 
 ### Refactor
