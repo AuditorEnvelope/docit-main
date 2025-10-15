@@ -651,16 +651,16 @@ Create detailed API documentation that includes:
 
 **Request**:
 ```json
-{
+{{
   "param1": "value"
-}
+}}
 ```
 
 **Response**:
 ```json
-{
+{{
   "result": "data"
-}
+}}
 ```
 
 **Errors**:
@@ -673,10 +673,10 @@ Create detailed API documentation that includes:
 ## Data Models
 ### Model 1
 ```json
-{
+{{
   "field1": "type",
   "field2": "type"
-}
+}}
 ```
 
 ## Authentication
