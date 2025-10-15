@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-15] - Efficiency Improvement
+
+### Performance
+- Implemented changes to increase efficiency in the system, affecting event consumer, LLM provider, and smart processor components
+
+### Details
+- **Significance:** 8/10
+- **Commit:** 90a622deadc051928480ab22e8483a4a1648e382
+- **Impact:** event_consumer, llm_provider, smart_processor
+
+
+
 ## [2025-10-15] - Improve LLM Prompts and Clean Up Codebase
 
 ### Bug_Fix
