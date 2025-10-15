@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-15] - Improve LLM Prompts and Clean Up Codebase
+
+### Bug_Fix
+- Refined the Large Language Model (LLM) prompts within the comprehensive document generator to enhance output quality, accuracy, and clarity. Additionally, the codebase underwent a cleanup, and several obsolete development tracking and architecture documentation files were removed to streamline the repository.
+
+### Details
+- **Significance:** 8/10
+- **Commit:** 111363f98d874e9484918921d4bb4dbaf9d82848
+- **Impact:** LLM output quality, Code maintainability, Project documentation structure, Application core logic
+
+
+
 ## [2025-10-15] - Fix Tax Handling and API Response for Item Creation
 
 ### Bug_Fix
