@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-21] - Fix for Hierarchical Document Generation/Storage Logic
+
+### Bug_Fix
+- Addresses a bug within the `hierarchical_doc_generator` module that impacts the correct structuring or storage of documents, ensuring proper hierarchical relationships.
+
+### Details
+- **Significance:** 7/10
+- **Commit:** 7f17925591a50fba82d51e672c12eceb91195da3
+- **Impact:** document_generation, data_integrity, document_structure_accuracy
+
+
+
 ## [2025-10-21] - Activate Automatic Hierarchical Documentation Generation
 
 ### Feature

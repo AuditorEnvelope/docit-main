@@ -3,6 +3,7 @@
 * [Home](README.md)
 
 ## Architecture
+* [V5 Architecture](architecture/v5-architecture.md)
 * [V4 Architecture](architecture/v4-architecture.md)
 * [V3 Architecture](architecture/v3-architecture.md)
 * [V2 Architecture](architecture/v2-architecture.md)
@@ -19,7 +20,7 @@
 * [API Documentation](api.md)
 
 ## Changes
-* [Activate Automatic Hierarchical Documentation Generation](changes/049dd7d93a22436d2de938f39d21e883ce11209a-feature.md)
+* [Fix for Hierarchical Document Generation/Storage Logic](changes/7f17925591a50fba82d51e672c12eceb91195da3-bug_fix.md)
 
 * [Bug_Fix](changes/ec9d42b08ebedf160c19ce7db9a789c7716ed705-bug_fix.md)
 * [Feature](changes/ea2bf9157afc4fd4ce9fc626701de39d105f6ba5-feature.md)
