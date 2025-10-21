@@ -130,6 +130,61 @@ class HierarchicalDocGenerator:
         print(f"\n✅ Analysis complete! Generated {self.node_counter} nodes")
         return root
     
+    async def store_tree(self, root_node: DocNode):
+        """
+        Store the entire tree structure in the database
+        
+        This recursively stores all nodes in the tree, maintaining parent-child relationships.
+        """
+        print(f"\n💾 Storing tree structure in database...")
+        
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized. Call init_db() first.")
+        
+        # Store nodes recursively
+        await self._store_node_recursive(root_node)
+        
+        print(f"✅ Successfully stored {self.node_counter} nodes in database")
+    
+    async def _store_node_recursive(self, node: DocNode):
+        """Recursively store a node and its children"""
+        async with self.pool.acquire() as conn:
+            # Insert or update the node
+            await conn.execute("""
+                INSERT INTO doc_nodes (
+                    id, repo_id, type, title, slug, path,
+                    parent_id, depth, position, commit_sha, version,
+                    content, metadata, created_at, updated_at
+                ) VALUES (
+                    gen_random_uuid(), $1, $2, $3, $4, $5,
+                    $6, $7, $8, $9, $10,
+                    $11, $12, NOW(), NOW()
+                )
+                ON CONFLICT (repo_id, path, commit_sha) 
+                DO UPDATE SET
+                    title = EXCLUDED.title,
+                    content = EXCLUDED.content,
+                    metadata = EXCLUDED.metadata,
+                    updated_at = NOW()
+            """, 
+                self.repo_id,           # $1
+                node.type,              # $2
+                node.title,             # $3
+                node.slug,              # $4
+                node.path,              # $5
+                node.parent_id,         # $6
+                node.depth,             # $7
+                node.position,          # $8
+                self.commit_sha,        # $9
+                node.version,           # $10
+                json.dumps(node.content),   # $11
+                json.dumps(node.metadata)   # $12
+            )
+        
+        # Recursively store children
+        for child in node.children:
+            await self._store_node_recursive(child)
+    
     def find_sdks(self) -> List[Path]:
         """
         Find SDK directories (top-level packages)

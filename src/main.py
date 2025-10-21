@@ -7,7 +7,7 @@ import os
 import hmac
 import hashlib
 import json
-from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import uvicorn
@@ -40,6 +40,11 @@ app.add_middleware(
 WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/lekhak_ai")
 
+# Feature flags
+HAS_COMMIT_BUS = True  # Always enable commit bus
+HAS_SUBSCRIPTIONS = True  # Always enable subscriptions
+HAS_OVERLAYS = True  # Always enable overlays
+
 # Initialize services
 commit_bus = None
 subscription_service = None
@@ -51,6 +56,7 @@ async def startup():
     global commit_bus, subscription_service, overlay_service
     
     print("🚀 Starting Lekhak AI...")
+    
     
     # Initialize Commit Bus
     if HAS_COMMIT_BUS:
@@ -213,7 +219,7 @@ async def webhook(
 
 @app.get("/repos/{repo_name}/docs")
 async def get_repo_docs(repo_name: str):
-    """Get repository documentation"""
+    """Get repository documentation (legacy flat docs)"""
     # TODO: Integrate with hierarchical doc generator
     return {
         "summary": {"content": f"# {repo_name}\n\nDocumentation", "fileName": "README.md"},
@@ -222,6 +228,148 @@ async def get_repo_docs(repo_name: str):
         "changelog": {"content": "# Changelog", "fileName": "CHANGELOG.md"},
         "changes": [],
     }
+
+# ============================================
+# HIERARCHICAL DOCUMENTATION ROUTES (NEW)
+# ============================================
+
+@app.get("/api/repos/{repo_name}/tree")
+async def get_repo_tree(repo_name: str, commit_sha: str = None):
+    """
+    Get full hierarchical tree for a repository
+    
+    Returns the complete tree structure: Repo → SDK → Module → Feature → Function
+    """
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        async with commit_bus.pool.acquire() as conn:
+            # Get latest commit if not specified
+            if not commit_sha:
+                result = await conn.fetchrow("""
+                    SELECT commit_sha FROM doc_nodes
+                    WHERE repo_id = $1
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, repo_name)
+                if result:
+                    commit_sha = result['commit_sha']
+                else:
+                    raise HTTPException(status_code=404, detail="No documentation found for this repository")
+            
+            # Get all nodes for this repo and commit
+            nodes = await conn.fetch("""
+                SELECT 
+                    id, repo_id, type, title, slug, path,
+                    parent_id, depth, position, commit_sha, version,
+                    content, metadata, created_at
+                FROM doc_nodes
+                WHERE repo_id = $1 AND commit_sha = $2
+                ORDER BY depth, position
+            """, repo_name, commit_sha)
+            
+            if not nodes:
+                raise HTTPException(status_code=404, detail="No documentation found")
+            
+            # Convert to dict and build tree structure
+            nodes_dict = {str(node['id']): dict(node) for node in nodes}
+            
+            # Build tree
+            root = None
+            for node in nodes_dict.values():
+                node['children'] = []
+                if node['parent_id'] is None:
+                    root = node
+            
+            for node in nodes_dict.values():
+                if node['parent_id']:
+                    parent = nodes_dict.get(str(node['parent_id']))
+                    if parent:
+                        parent['children'].append(node)
+            
+            return root if root else {}
+            
+    except Exception as e:
+        print(f"Error fetching tree: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/repos/{repo_name}/node/{node_id}")
+async def get_node_details(repo_name: str, node_id: str):
+    """Get details for a specific node (SDK/module/function)"""
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        async with commit_bus.pool.acquire() as conn:
+            node = await conn.fetchrow("""
+                SELECT 
+                    id, repo_id, type, title, slug, path,
+                    parent_id, depth, position, commit_sha, version,
+                    content, metadata, created_at
+                FROM doc_nodes
+                WHERE id = $1 AND repo_id = $2
+            """, node_id, repo_name)
+            
+            if not node:
+                raise HTTPException(status_code=404, detail="Node not found")
+            
+            # Get children
+            children = await conn.fetch("""
+                SELECT 
+                    id, type, title, slug, path, position
+                FROM doc_nodes
+                WHERE parent_id = $1
+                ORDER BY position
+            """, node_id)
+            
+            result = dict(node)
+            result['children'] = [dict(child) for child in children]
+            
+            return result
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching node: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/repos/{repo_name}/search")
+async def search_hierarchy(repo_name: str, query: str):
+    """Search across hierarchical documentation"""
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        async with commit_bus.pool.acquire() as conn:
+            results = await conn.fetch("""
+                SELECT 
+                    id, repo_id, type, title, slug, path,
+                    content, created_at
+                FROM doc_nodes
+                WHERE repo_id = $1
+                AND (
+                    title ILIKE $2 
+                    OR content::text ILIKE $2
+                    OR path ILIKE $2
+                )
+                ORDER BY 
+                    CASE 
+                        WHEN title ILIKE $2 THEN 1
+                        WHEN path ILIKE $2 THEN 2
+                        ELSE 3
+                    END,
+                    created_at DESC
+                LIMIT 20
+            """, repo_name, f"%{query}%")
+            
+            return [dict(r) for r in results]
+            
+    except Exception as e:
+        print(f"Error searching: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
 # COMMIT BUS ROUTES
