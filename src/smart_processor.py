@@ -68,9 +68,13 @@ async def generate_hierarchical_docs(repo_dir, repo_full, commit_sha, changed_fi
         # Don't fail the entire process if hierarchical generation fails
 
 
-def run_cmd(cmd, cwd=None):
+def run_cmd(cmd, cwd=None, capture_output=False):
     print("RUN:", cmd)
-    subprocess.run(cmd, shell=True, check=True, cwd=cwd)
+    if capture_output:
+        result = subprocess.run(cmd, shell=True, check=True, cwd=cwd, capture_output=True, text=True)
+        return result.stdout
+    else:
+        subprocess.run(cmd, shell=True, check=True, cwd=cwd)
 
 def clone_repo_via_token(repo_full_name, token, target_dir):
     url = f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
@@ -655,7 +659,7 @@ def commit_and_push_changes(repo_dir, analysis, commit_sha, token, repo_full):
             run_cmd("git add docs/ README.md CHANGELOG.md || true", cwd=repo_dir)
 
             # Check if there are changes to commit
-            status = run_cmd("git status --porcelain", cwd=repo_dir).strip()
+            status = run_cmd("git status --porcelain", cwd=repo_dir, capture_output=True).strip()
             if not status:
                 print("ℹ️  No changes to commit")
                 return
