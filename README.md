@@ -30,6 +30,22 @@ Lekhak AI transforms your codebase into intelligent, searchable documentation au
 
 ## 🆕 Recent Updates
 
+### Enhance documentation generation with AI-powered descriptions and metadata extraction
+This commit introduces a major enhancement to the documentation generation process by integrating LLMs (Gemini, Groq, DeepSeek) to produce AI-generated descriptions for all code nodes (repo, SDK, module, feature, function, class). It also adds robust extraction of function parameters (including types and default values) and return types for both Python and TypeScript signatures. A graceful fallback mechanism ensures descriptions are always available, even if LLMs are temporarily inaccessible.
+
+**New Features:**
+- LLM-generated descriptions for all code nodes
+- Smart parameter extraction (name, type, default) from function signatures
+- Return type extraction from function signatures (Python & TypeScript)
+- LLM rotator for description generation (Gemini/Groq/DeepSeek)
+- Graceful fallback for descriptions when LLM is unavailable
+- Enhanced code parsing for metadata
+
+*Added on 2025-10-21*
+
+
+## 🆕 Recent Updates
+
 ### Introduce Recursive File Detection Depth Control for Doc Parsing
 This commit introduces a new feature allowing control over the maximum recursion depth during hierarchical documentation parsing. Both the backend generation logic and the frontend display components are updated to support and utilize this depth limit, improving the structure and performance of documentation generation.
 

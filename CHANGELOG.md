@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-21] - Enhance documentation generation with AI-powered descriptions and metadata extraction
+
+### Feature
+- This commit introduces a major enhancement to the documentation generation process by integrating LLMs (Gemini, Groq, DeepSeek) to produce AI-generated descriptions for all code nodes (repo, SDK, module, feature, function, class). It also adds robust extraction of function parameters (including types and default values) and return types for both Python and TypeScript signatures. A graceful fallback mechanism ensures descriptions are always available, even if LLMs are temporarily inaccessible.
+
+### Details
+- **Significance:** 8/10
+- **Commit:** 02648a103e721cbe7dce8705753b071e08edbc74
+- **Impact:** documentation_generation, code_analysis, metadata_extraction, api_enrichment, LLM_integration
+
+
+
 ## [2025-10-21] - Fix Grouping in Hierarchical Doc Generator
 
 ### Bug_Fix
