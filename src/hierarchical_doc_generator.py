@@ -112,7 +112,7 @@ class HierarchicalDocGenerator:
             async with self.pool.acquire() as conn:
                 # Get previous commit for this repo
                 prev_commit = await conn.fetchval("""
-                    SELECT DISTINCT commit_sha FROM doc_nodes
+                    SELECT commit_sha FROM doc_nodes
                     WHERE repo_id = $1 AND commit_sha != $2
                     ORDER BY created_at DESC
                     LIMIT 1
