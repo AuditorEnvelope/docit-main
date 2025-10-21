@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-21] - Activate Automatic Hierarchical Documentation Generation
+
+### Feature
+- This change integrates and activates the `hierarchical_doc_generator` into the main application execution flow and file processing logic, ensuring hierarchical documentation is generated automatically.
+
+### Details
+- **Significance:** 8/10
+- **Commit:** 049dd7d93a22436d2de938f39d21e883ce11209a
+- **Impact:** internal_process, developer_experience, application_runtime
+
+
+
 ## [2025-10-15] - Efficiency Improvement
 
 ### Performance

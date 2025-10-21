@@ -27,6 +27,18 @@ Lekhak AI transforms your codebase into intelligent, searchable documentation au
 
 ```bash
 # 1. Install
+
+## 🆕 Recent Updates
+
+### Activate Automatic Hierarchical Documentation Generation
+This change integrates and activates the `hierarchical_doc_generator` into the main application execution flow and file processing logic, ensuring hierarchical documentation is generated automatically.
+
+**New Features:**
+- Automatic hierarchical documentation generation during application runtime
+- Automatic hierarchical documentation generation during file processing
+
+*Added on 2025-10-21*
+
 pip install -r requirements.txt
 
 # 2. Configure (only 2 keys needed!)
