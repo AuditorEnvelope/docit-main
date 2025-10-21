@@ -1,6 +1,7 @@
 # smart_processor.py - Enhanced smart documentation agent
 import os, subprocess, tempfile, shutil, datetime, json
 import asyncio
+import time  # Added for retry delays
 from aiolimiter import AsyncLimiter
 from github_app import get_installation_token
 from llm_provider_v2 import get_rotator
@@ -633,28 +634,65 @@ def update_summary_md(docs_dir, analysis, commit_sha):
         print(f"❌ Failed to update SUMMARY.md: {e}")
 
 def commit_and_push_changes(repo_dir, analysis, commit_sha, token, repo_full):
-    """Commit and push all documentation changes"""
-    
-    try:
-        # Configure git
-        run_cmd("git config user.email 'docai@bots.local' && git config user.name 'docai-bot'", cwd=repo_dir)
-        
-        # Add all documentation files (changes is now inside docs/)
-        run_cmd("git add docs/ README.md CHANGELOG.md || true", cwd=repo_dir)
-        
-        # Create commit message
-        commit_msg = f"docs: {analysis['type']} - {analysis['title']} [sha:{commit_sha}]"
-        
-        # Commit
-        run_cmd(f"git commit -m '{commit_msg}' || echo 'no changes'", cwd=repo_dir)
-        
-        # Push
-        run_cmd(f"git push https://x-access-token:{token}@github.com/{repo_full}.git HEAD:main", cwd=repo_dir)
-        
-        print("✅ Documentation changes committed and pushed")
-        
-    except Exception as e:
-        print(f"❌ Failed to commit/push changes: {e}")
+    """Commit and push all documentation changes with conflict handling"""
+
+    max_retries = 3
+    retry_delay = 2
+
+    for attempt in range(max_retries):
+        try:
+            # Configure git
+            run_cmd("git config user.email 'docai@bots.local' && git config user.name 'docai-bot'", cwd=repo_dir)
+
+            # Fetch latest changes from remote
+            print("🔄 Fetching latest changes from remote...")
+            run_cmd("git fetch origin", cwd=repo_dir)
+
+            # Reset to ensure we have latest main
+            run_cmd("git reset --hard origin/main", cwd=repo_dir)
+
+            # Add all documentation files (changes is now inside docs/)
+            run_cmd("git add docs/ README.md CHANGELOG.md || true", cwd=repo_dir)
+
+            # Check if there are changes to commit
+            status = run_cmd("git status --porcelain", cwd=repo_dir).strip()
+            if not status:
+                print("ℹ️  No changes to commit")
+                return
+
+            # Create commit message
+            commit_msg = f"docs: {analysis['type']} - {analysis['title']} [sha:{commit_sha}]"
+
+            # Commit
+            run_cmd(f"git commit -m '{commit_msg}' || echo 'no changes'", cwd=repo_dir)
+
+            # Push with force if needed (for non-fast-forward updates)
+            print("⬆️  Pushing changes to remote...")
+            try:
+                run_cmd(f"git push https://x-access-token:{token}@github.com/{repo_full}.git HEAD:main", cwd=repo_dir)
+                print("✅ Documentation changes committed and pushed")
+                return
+
+            except Exception as push_error:
+                if "rejected" in str(push_error).lower() and attempt < max_retries - 1:
+                    print(f"⚠️  Push rejected, retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise push_error
+
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"⚠️  Attempt {attempt + 1} failed: {e}")
+                print(f"   Retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+            else:
+                print(f"❌ Failed to commit/push changes after {max_retries} attempts: {e}")
+                print("   Continuing without pushing (docs saved locally)")
+                return
+
+    print("❌ All retry attempts exhausted")
+    return
 
 # Backward compatibility
 def has_already_processed_push(repo_dir, sha, changed_files):
