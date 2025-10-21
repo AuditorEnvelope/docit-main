@@ -129,12 +129,15 @@ class HierarchicalDocGenerator:
                     WHERE repo_id = $1 AND commit_sha = $2
                 """, self.repo_id, prev_commit)
                 
-                # Cache descriptions for unchanged files
+                # Cache ALL descriptions (repo, SDK, modules, features, files, functions)
                 for node in nodes:
                     path = node['path']
                     node_type = node['type']
                     
-                    # Check if this file/path was changed
+                    # For structural nodes (repo, SDK, module, feature), always cache
+                    # For code nodes (file, function, class), check if file changed
+                    should_cache = True
+                    
                     if node_type in ['file', 'function', 'class']:
                         # Extract file path from metadata
                         metadata = node.get('metadata', {})
@@ -144,17 +147,20 @@ class HierarchicalDocGenerator:
                         
                         file_path = metadata.get('file_path', '')
                         
-                        # If file not in changed_files, cache its description
-                        if file_path and not any(changed in file_path for changed in self.changed_files):
-                            content = node.get('content', {})
-                            if isinstance(content, str):
-                                import json
-                                content = json.loads(content)
-                            
-                            description = content.get('description', '')
-                            if description:
-                                cache_key = f"{node_type}:{path}"
-                                self.description_cache[cache_key] = description
+                        # Only cache if file wasn't changed
+                        if file_path and any(changed in file_path for changed in self.changed_files):
+                            should_cache = False
+                    
+                    if should_cache:
+                        content = node.get('content', {})
+                        if isinstance(content, str):
+                            import json
+                            content = json.loads(content)
+                        
+                        description = content.get('description', '')
+                        if description:
+                            cache_key = f"{node_type}:{path}"
+                            self.description_cache[cache_key] = description
                 
                 print(f"✅ Loaded {len(self.description_cache)} cached descriptions from previous commit")
                 print(f"📝 Changed files: {len(self.changed_files)}")
