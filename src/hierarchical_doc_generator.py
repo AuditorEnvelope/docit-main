@@ -14,6 +14,7 @@ from dataclasses import dataclass, asdict
 import asyncpg
 from datetime import datetime
 from universal_code_parser import UniversalCodeParser
+from llm_provider_v2 import get_rotator
 
 @dataclass
 class DocNode:
@@ -76,10 +77,19 @@ class HierarchicalDocGenerator:
         self.db_url = db_url
         self.pool = None
         self.node_counter = 0
+        self.llm_rotator = None  # Initialize LLM for descriptions
     
     async def init_db(self):
         """Initialize database connection"""
         self.pool = await asyncpg.create_pool(self.db_url)
+        
+        # Initialize LLM for AI-generated descriptions
+        try:
+            self.llm_rotator = get_rotator()
+            print("✅ LLM initialized for AI descriptions")
+        except Exception as e:
+            print(f"⚠️  LLM initialization failed: {e}")
+            self.llm_rotator = None
     
     def generate_id(self) -> str:
         """Generate unique node ID"""
@@ -114,7 +124,7 @@ class HierarchicalDocGenerator:
             position=0,
             commit_sha=self.commit_sha,
             version=None,
-            content={'description': f'Documentation for {self.repo_id}'},
+            content={'description': await self.generate_description('repo', self.repo_id, {'type': 'repository'})},  
             metadata={'repo_id': self.repo_id, 'commit_sha': self.commit_sha},
             children=[]
         )
@@ -241,7 +251,7 @@ class HierarchicalDocGenerator:
             position=position,
             commit_sha=self.commit_sha,
             version=None,
-            content={'description': f'SDK: {sdk_dir.name}'},
+            content={'description': await self.generate_description('sdk', sdk_dir.name, {'type': 'sdk', 'path': str(sdk_dir)})},  
             metadata={'directory': str(sdk_dir)},
             children=[]
         )
@@ -279,7 +289,7 @@ class HierarchicalDocGenerator:
             position=position,
             commit_sha=self.commit_sha,
             version=None,
-            content={'description': f'Module: {module_dir.name}'},
+            content={'description': await self.generate_description('module', module_dir.name, {'type': 'module', 'path': str(module_dir)})},  
             metadata={'directory': str(module_dir)},
             children=[]
         )
@@ -323,7 +333,7 @@ class HierarchicalDocGenerator:
             position=position,
             commit_sha=self.commit_sha,
             version=None,
-            content={'description': f'Directory: {dir_path.name}'},
+            content={'description': await self.generate_description('feature', dir_path.name, {'type': 'directory', 'path': str(dir_path)})},  
             metadata={'directory': str(dir_path)},
             children=[]
         )
@@ -363,7 +373,12 @@ class HierarchicalDocGenerator:
                 commit_sha=self.commit_sha,
                 version=None,
                 content={
-                    'description': f'File: {file_name}',
+                    'description': await self.generate_description('file', file_name, {
+                        'type': 'file',
+                        'functions': [item.name for item in items if item.type == 'function'],
+                        'classes': [item.name for item in items if item.type == 'class'],
+                        'item_count': len(items)
+                    }),
                     'functions': [item.name for item in items if item.type == 'function'],
                     'classes': [item.name for item in items if item.type == 'class'],
                     'item_count': len(items)
@@ -375,10 +390,10 @@ class HierarchicalDocGenerator:
             # Add top-level functions/classes as children (limit to 10)
             for idx, item in enumerate(items[:10]):
                 if item.type == 'function':
-                    func_node = self.create_function_node_from_item(item, file_node.id, idx, file_node.path)
+                    func_node = await self.create_function_node_from_item(item, file_node.id, idx, file_node.path)
                     file_node.children.append(func_node)
                 elif item.type == 'class':
-                    class_node = self.create_class_node_from_item(item, file_node.id, idx, file_node.path)
+                    class_node = await self.create_class_node_from_item(item, file_node.id, idx, file_node.path)
                     file_node.children.append(class_node)
             
             return file_node
@@ -386,7 +401,7 @@ class HierarchicalDocGenerator:
             print(f"          ⚠️  Error parsing {file_path.name}: {e}")
             return None
     
-    def create_function_node_from_item(self, item, parent_id: str, position: int, parent_path: str) -> DocNode:
+    async def create_function_node_from_item(self, item, parent_id: str, position: int, parent_path: str) -> DocNode:
         """Create function node from CodeItem"""
         return DocNode(
             id=self.generate_id(),
@@ -401,16 +416,21 @@ class HierarchicalDocGenerator:
             version=None,
             content={
                 'signature': item.signature,
-                'description': item.docstring or '',
+                'description': item.docstring or await self.generate_description('function', item.name, {
+                    'signature': item.signature,
+                    'type': 'function'
+                }),
                 'file': item.file,
                 'line_start': item.line_start,
-                'line_end': item.line_end
+                'line_end': item.line_end,
+                'parameters': self.extract_parameters(item.signature),
+                'return_type': self.extract_return_type(item.signature)
             },
             metadata={'language': item.language},
             children=[]
         )
     
-    def create_class_node_from_item(self, item, parent_id: str, position: int, parent_path: str) -> DocNode:
+    async def create_class_node_from_item(self, item, parent_id: str, position: int, parent_path: str) -> DocNode:
         """Create class node from CodeItem"""
         return DocNode(
             id=self.generate_id(),
@@ -424,7 +444,9 @@ class HierarchicalDocGenerator:
             commit_sha=self.commit_sha,
             version=None,
             content={
-                'description': item.docstring or '',
+                'description': item.docstring or await self.generate_description('class', item.name, {
+                    'type': 'class'
+                }),
                 'file': item.file,
                 'line_start': item.line_start,
                 'line_end': item.line_end
@@ -446,7 +468,7 @@ class HierarchicalDocGenerator:
             position=position,
             commit_sha=self.commit_sha,
             version=None,
-            content={'description': f'Module: {name}'},
+            content={'description': await self.generate_description('module', name, {'type': 'module'})},  
             metadata={},
             children=[]
         )
@@ -460,7 +482,7 @@ class HierarchicalDocGenerator:
         features = self.group_into_features(all_items)
         
         for idx, (feature_name, items) in enumerate(features.items()):
-            feature_node = self.create_feature_node(
+            feature_node = await self.create_feature_node(
                 feature_name, items, module_node.id, idx, module_node.path
             )
             module_node.children.append(feature_node)
@@ -503,7 +525,7 @@ class HierarchicalDocGenerator:
         
         return features
     
-    def create_feature_node(
+    async def create_feature_node(
         self, 
         feature_name: str, 
         items: List[Dict], 
@@ -525,22 +547,22 @@ class HierarchicalDocGenerator:
             position=position,
             commit_sha=self.commit_sha,
             version=None,
-            content={'description': f'Feature: {feature_name}'},
+            content={'description': await self.generate_description('feature', feature_name, {'type': 'feature', 'item_count': len(items)})},  
             metadata={'item_count': len(items)},
             children=[]
         )
         
         for idx, item in enumerate(items):
             if item['type'] == 'function':
-                func_node = self.create_function_node(item, feature_node.id, idx, feature_node.path)
+                func_node = await self.create_function_node(item, feature_node.id, idx, feature_node.path)
                 feature_node.children.append(func_node)
             elif item['type'] == 'class':
-                class_node = self.create_class_node(item, feature_node.id, idx, feature_node.path)
+                class_node = await self.create_class_node(item, feature_node.id, idx, feature_node.path)
                 feature_node.children.append(class_node)
         
         return feature_node
     
-    def create_function_node(self, func: Dict, parent_id: str, position: int, parent_path: str) -> DocNode:
+    async def create_function_node(self, func: Dict, parent_id: str, position: int, parent_path: str) -> DocNode:
         """Create doc node for function"""
         # Build signature
         if 'params' in func:  # TypeScript
@@ -562,9 +584,12 @@ class HierarchicalDocGenerator:
             version=None,
             content={
                 'signature': signature,
-                'description': func.get('docstring', ''),
-                'parameters': [],  # TODO: Parse from signature
-                'returns': {},
+                'description': func.get('docstring', '') or await self.generate_description('function', func['name'], {
+                    'signature': signature,
+                    'type': 'function'
+                }),
+                'parameters': self.extract_parameters(signature),
+                'return_type': self.extract_return_type(signature),
                 'examples': [],
                 'related': []
             },
@@ -577,7 +602,7 @@ class HierarchicalDocGenerator:
             children=[]
         )
     
-    def create_class_node(self, cls: Dict, parent_id: str, position: int, parent_path: str) -> DocNode:
+    async def create_class_node(self, cls: Dict, parent_id: str, position: int, parent_path: str) -> DocNode:
         """Create doc node for class"""
         return DocNode(
             id=self.generate_id(),
@@ -591,7 +616,11 @@ class HierarchicalDocGenerator:
             commit_sha=self.commit_sha,
             version=None,
             content={
-                'description': cls.get('docstring', ''),
+                'description': cls.get('docstring', '') or await self.generate_description('class', cls['name'], {
+                    'type': 'class',
+                    'methods': cls.get('methods', []),
+                    'extends': cls.get('extends') or cls.get('bases', [])
+                }),
                 'methods': cls.get('methods', []),
                 'properties': cls.get('properties', ''),
                 'extends': cls.get('extends') or cls.get('bases', [])
@@ -627,6 +656,145 @@ class HierarchicalDocGenerator:
         # Recursively save children
         for child in node.children:
             await self.save_tree(child)
+    
+    async def generate_description(self, node_type: str, name: str, context: Dict) -> str:
+        """Generate AI description for a node"""
+        if not self.llm_rotator:
+            # Fallback to simple descriptions
+            return self._fallback_description(node_type, name, context)
+        
+        try:
+            prompt = self._create_description_prompt(node_type, name, context)
+            description = self.llm_rotator.generate_with_rotation(prompt, max_attempts=2)
+            
+            if description:
+                # Clean up the description (remove markdown, etc.)
+                description = description.strip()
+                if description.startswith('#'):
+                    description = '\n'.join(description.split('\n')[1:]).strip()
+                return description[:500]  # Limit length
+            else:
+                return self._fallback_description(node_type, name, context)
+        except Exception as e:
+            print(f"⚠️  LLM description failed for {name}: {e}")
+            return self._fallback_description(node_type, name, context)
+    
+    def _create_description_prompt(self, node_type: str, name: str, context: Dict) -> str:
+        """Create prompt for LLM description generation"""
+        if node_type == 'repo':
+            return f"""Describe this repository in 1-2 sentences: {name}
+Be concise and technical."""
+        elif node_type == 'sdk':
+            return f"""Describe this SDK/package in 1 sentence: {name}
+Focus on its purpose."""
+        elif node_type == 'module':
+            return f"""Describe this module in 1 sentence: {name}
+Explain what it contains."""
+        elif node_type == 'feature':
+            items = context.get('item_count', 0)
+            return f"""Describe this feature directory in 1 sentence: {name}
+It contains {items} code items."""
+        elif node_type == 'file':
+            funcs = context.get('functions', [])
+            classes = context.get('classes', [])
+            return f"""Describe this code file in 1 sentence: {name}
+Functions: {', '.join(funcs[:3])}
+Classes: {', '.join(classes[:3])}"""
+        elif node_type == 'function':
+            sig = context.get('signature', '')
+            return f"""Describe what this function does in 1 sentence: {sig}
+Be specific about its purpose."""
+        elif node_type == 'class':
+            methods = context.get('methods', [])
+            return f"""Describe this class in 1 sentence: {name}
+Methods: {', '.join([m.get('name', '') for m in methods[:3]])}"""
+        else:
+            return f"Describe {name} in 1 sentence."
+    
+    def _fallback_description(self, node_type: str, name: str, context: Dict) -> str:
+        """Fallback description when LLM is unavailable"""
+        if node_type == 'repo':
+            return f"Documentation for {name} repository"
+        elif node_type == 'sdk':
+            return f"SDK: {name}"
+        elif node_type == 'module':
+            return f"Module: {name}"
+        elif node_type == 'feature':
+            return f"Feature: {name}"
+        elif node_type == 'file':
+            return f"File: {name}"
+        elif node_type == 'function':
+            return f"Function: {name}"
+        elif node_type == 'class':
+            return f"Class: {name}"
+        else:
+            return f"{node_type.capitalize()}: {name}"
+    
+    def extract_parameters(self, signature: str) -> List[Dict]:
+        """Extract parameters from function signature"""
+        try:
+            # Match content between parentheses
+            match = re.search(r'\(([^)]*)\)', signature)
+            if not match:
+                return []
+            
+            params_str = match.group(1).strip()
+            if not params_str or params_str in ['', 'self', 'cls']:
+                return []
+            
+            params = []
+            for param in params_str.split(','):
+                param = param.strip()
+                if not param or param in ['self', 'cls']:
+                    continue
+                
+                # Parse param: name, type, default
+                parts = param.split(':')
+                name = parts[0].strip()
+                
+                param_type = None
+                default = None
+                
+                if len(parts) > 1:
+                    type_and_default = parts[1].strip()
+                    if '=' in type_and_default:
+                        type_part, default = type_and_default.split('=', 1)
+                        param_type = type_part.strip()
+                        default = default.strip()
+                    else:
+                        param_type = type_and_default
+                elif '=' in name:
+                    name, default = name.split('=', 1)
+                    name = name.strip()
+                    default = default.strip()
+                
+                params.append({
+                    'name': name,
+                    'type': param_type,
+                    'default': default
+                })
+            
+            return params
+        except Exception as e:
+            print(f"⚠️  Error extracting parameters: {e}")
+            return []
+    
+    def extract_return_type(self, signature: str) -> Optional[str]:
+        """Extract return type from function signature"""
+        try:
+            # Python: def func() -> ReturnType:
+            match = re.search(r'->\s*([^:]+)', signature)
+            if match:
+                return match.group(1).strip()
+            
+            # TypeScript: function func(): ReturnType
+            match = re.search(r'\)\s*:\s*([^{;]+)', signature)
+            if match:
+                return match.group(1).strip()
+            
+            return None
+        except Exception:
+            return None
     
     async def generate(self) -> DocNode:
         """
