@@ -70,7 +70,7 @@ class HierarchicalDocGenerator:
     8. Store in database
     """
     
-    def __init__(self, repo_dir: Path, repo_id: str, commit_sha: str, db_url: str):
+    def __init__(self, repo_dir: Path, repo_id: str, commit_sha: str, db_url: str, changed_files: List[str] = None):
         self.repo_dir = repo_dir
         self.repo_id = repo_id
         self.commit_sha = commit_sha
@@ -78,6 +78,9 @@ class HierarchicalDocGenerator:
         self.pool = None
         self.node_counter = 0
         self.llm_rotator = None  # Initialize LLM for descriptions
+        self.changed_files = set(changed_files or [])  # Track changed files for smart caching
+        self.description_cache = {}  # Cache for reused descriptions
+        self.llm_calls_saved = 0  # Track optimization
     
     async def init_db(self):
         """Initialize database connection"""
@@ -90,6 +93,9 @@ class HierarchicalDocGenerator:
         except Exception as e:
             print(f"⚠️  LLM initialization failed: {e}")
             self.llm_rotator = None
+        
+        # Load previous descriptions for unchanged files
+        await self.load_description_cache()
     
     def generate_id(self) -> str:
         """Generate unique node ID"""
@@ -99,6 +105,63 @@ class HierarchicalDocGenerator:
     def create_slug(self, title: str) -> str:
         """Create URL-friendly slug"""
         return re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
+    
+    async def load_description_cache(self):
+        """Load descriptions from previous commit for unchanged files"""
+        try:
+            async with self.pool.acquire() as conn:
+                # Get previous commit for this repo
+                prev_commit = await conn.fetchval("""
+                    SELECT DISTINCT commit_sha FROM doc_nodes
+                    WHERE repo_id = $1 AND commit_sha != $2
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, self.repo_id, self.commit_sha)
+                
+                if not prev_commit:
+                    print("ℹ️  No previous commit found - full generation")
+                    return
+                
+                # Load all nodes from previous commit
+                nodes = await conn.fetch("""
+                    SELECT path, type, content, metadata
+                    FROM doc_nodes
+                    WHERE repo_id = $1 AND commit_sha = $2
+                """, self.repo_id, prev_commit)
+                
+                # Cache descriptions for unchanged files
+                for node in nodes:
+                    path = node['path']
+                    node_type = node['type']
+                    
+                    # Check if this file/path was changed
+                    if node_type in ['file', 'function', 'class']:
+                        # Extract file path from metadata
+                        metadata = node.get('metadata', {})
+                        if isinstance(metadata, str):
+                            import json
+                            metadata = json.loads(metadata)
+                        
+                        file_path = metadata.get('file_path', '')
+                        
+                        # If file not in changed_files, cache its description
+                        if file_path and not any(changed in file_path for changed in self.changed_files):
+                            content = node.get('content', {})
+                            if isinstance(content, str):
+                                import json
+                                content = json.loads(content)
+                            
+                            description = content.get('description', '')
+                            if description:
+                                cache_key = f"{node_type}:{path}"
+                                self.description_cache[cache_key] = description
+                
+                print(f"✅ Loaded {len(self.description_cache)} cached descriptions from previous commit")
+                print(f"📝 Changed files: {len(self.changed_files)}")
+                
+        except Exception as e:
+            print(f"⚠️  Failed to load description cache: {e}")
+            self.description_cache = {}
     
     async def analyze_repo(self) -> DocNode:
         """
@@ -138,6 +201,8 @@ class HierarchicalDocGenerator:
             root.children.append(sdk_node)
         
         print(f"\n✅ Analysis complete! Generated {self.node_counter} nodes")
+        if self.llm_calls_saved > 0:
+            print(f"💾 Optimization: Reused {self.llm_calls_saved} cached descriptions (saved ~{self.llm_calls_saved * 2}s)")
         return root
     
     async def store_tree(self, root_node: DocNode):
@@ -658,9 +723,26 @@ class HierarchicalDocGenerator:
             await self.save_tree(child)
     
     async def generate_description(self, node_type: str, name: str, context: Dict) -> str:
-        """Generate AI description for a node"""
+        """Generate AI description for a node (with smart caching)"""
+        # Check cache first
+        file_path = context.get('file_path', context.get('path', ''))
+        cache_key = f"{node_type}:{file_path or name}"
+        
+        if cache_key in self.description_cache:
+            self.llm_calls_saved += 1
+            if self.llm_calls_saved % 10 == 0:  # Log every 10 saves
+                print(f"💾 Reused {self.llm_calls_saved} cached descriptions")
+            return self.description_cache[cache_key]
+        
+        # Check if this file was changed - if not, use fallback (don't waste LLM calls)
+        if file_path and self.changed_files:
+            is_changed = any(changed in str(file_path) for changed in self.changed_files)
+            if not is_changed and node_type in ['file', 'function', 'class']:
+                # File unchanged but not in cache - use simple fallback
+                return self._fallback_description(node_type, name, context)
+        
+        # Generate new description with LLM
         if not self.llm_rotator:
-            # Fallback to simple descriptions
             return self._fallback_description(node_type, name, context)
         
         try:
@@ -672,7 +754,11 @@ class HierarchicalDocGenerator:
                 description = description.strip()
                 if description.startswith('#'):
                     description = '\n'.join(description.split('\n')[1:]).strip()
-                return description[:500]  # Limit length
+                description = description[:500]  # Limit length
+                
+                # Cache for future use
+                self.description_cache[cache_key] = description
+                return description
             else:
                 return self._fallback_description(node_type, name, context)
         except Exception as e:
