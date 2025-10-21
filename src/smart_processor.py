@@ -17,11 +17,14 @@ github_rate_limiter = AsyncLimiter(4000, 3600)  # 4000 requests per hour (safe m
 llm_rate_limiter = AsyncLimiter(50, 60)  # 50 requests per minute (safe margin)
 
 
-async def generate_hierarchical_docs(repo_dir, repo_full, commit_sha):
+async def generate_hierarchical_docs(repo_dir, repo_full, commit_sha, changed_files=None):
     """
     Generate hierarchical documentation tree and store in database
     
     This is the NEW approach that creates proper SDK → Module → Feature → Function structure
+    
+    Args:
+        changed_files: List of changed file paths for smart caching
     """
     try:
         from hierarchical_doc_generator import HierarchicalDocGenerator
@@ -36,12 +39,13 @@ async def generate_hierarchical_docs(repo_dir, repo_full, commit_sha):
         print("🌲 GENERATING HIERARCHICAL DOCUMENTATION")
         print("="*60)
         
-        # Initialize generator
+        # Initialize generator with changed files for smart caching
         generator = HierarchicalDocGenerator(
             repo_dir=Path(repo_dir),
             repo_id=repo_full,
             commit_sha=commit_sha,
-            db_url=db_url
+            db_url=db_url,
+            changed_files=list(changed_files) if changed_files else None
         )
         
         # Initialize database connection
@@ -136,7 +140,7 @@ def handle_push_event(payload):
         
         # NEW: Generate hierarchical documentation tree (stored in database)
         try:
-            asyncio.run(generate_hierarchical_docs(tmpdir, repo_full, after_sha))
+            asyncio.run(generate_hierarchical_docs(tmpdir, repo_full, after_sha, changed_files))
         except Exception as e:
             print(f"⚠️  Hierarchical doc generation failed (non-fatal): {e}")
             # Continue even if hierarchical generation fails
