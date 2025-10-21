@@ -141,22 +141,25 @@ class HierarchicalDocGenerator:
         if not self.pool:
             raise RuntimeError("Database pool not initialized. Call init_db() first.")
         
+        # Map of node.id (string) -> database UUID
+        self.id_map = {}
+        
         # Store nodes recursively
-        await self._store_node_recursive(root_node)
+        await self._store_node_recursive(root_node, parent_uuid=None)
         
         print(f"✅ Successfully stored {self.node_counter} nodes in database")
     
-    async def _store_node_recursive(self, node: DocNode):
+    async def _store_node_recursive(self, node: DocNode, parent_uuid=None):
         """Recursively store a node and its children"""
         async with self.pool.acquire() as conn:
-            # Insert or update the node
-            await conn.execute("""
+            # Insert or update the node and get the UUID
+            result = await conn.fetchrow("""
                 INSERT INTO doc_nodes (
-                    id, repo_id, type, title, slug, path,
+                    repo_id, type, title, slug, path,
                     parent_id, depth, position, commit_sha, version,
                     content, metadata, created_at, updated_at
                 ) VALUES (
-                    gen_random_uuid(), $1, $2, $3, $4, $5,
+                    $1, $2, $3, $4, $5,
                     $6, $7, $8, $9, $10,
                     $11, $12, NOW(), NOW()
                 )
@@ -166,13 +169,14 @@ class HierarchicalDocGenerator:
                     content = EXCLUDED.content,
                     metadata = EXCLUDED.metadata,
                     updated_at = NOW()
+                RETURNING id
             """, 
                 self.repo_id,           # $1
                 node.type,              # $2
                 node.title,             # $3
                 node.slug,              # $4
                 node.path,              # $5
-                node.parent_id,         # $6
+                parent_uuid,            # $6 - Use the actual UUID from parent
                 node.depth,             # $7
                 node.position,          # $8
                 self.commit_sha,        # $9
@@ -180,10 +184,14 @@ class HierarchicalDocGenerator:
                 json.dumps(node.content),   # $11
                 json.dumps(node.metadata)   # $12
             )
+            
+            # Store the database UUID for this node
+            node_uuid = result['id']
+            self.id_map[node.id] = node_uuid
         
-        # Recursively store children
+        # Recursively store children with this node's UUID as parent
         for child in node.children:
-            await self._store_node_recursive(child)
+            await self._store_node_recursive(child, parent_uuid=node_uuid)
     
     def find_sdks(self) -> List[Path]:
         """
