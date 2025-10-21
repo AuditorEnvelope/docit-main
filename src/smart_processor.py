@@ -78,7 +78,8 @@ def run_cmd(cmd, cwd=None, capture_output=False):
 
 def clone_repo_via_token(repo_full_name, token, target_dir):
     url = f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
-    run_cmd(f"git clone --depth 1 {url} {target_dir}")
+    # Remove --depth 1 to get full history for commit checkout
+    run_cmd(f"git clone {url} {target_dir}")
 
 def handle_push_event(payload):
     """Enhanced push event handler with smart analysis"""
@@ -129,7 +130,12 @@ def handle_push_event(payload):
         ref = payload.get("ref")
         after_sha = payload.get("after")
         if after_sha:
-            run_cmd(f"git checkout --detach {after_sha}", cwd=tmpdir)
+            try:
+                run_cmd(f"git checkout --detach {after_sha}", cwd=tmpdir)
+                print(f"✅ Checked out commit {after_sha[:8]}")
+            except Exception as e:
+                print(f"⚠️  Could not checkout commit {after_sha[:8]}: {e}")
+                print("   Using current branch instead")
         
         # Smart analysis of the change
         analysis = smart_analyze_change(payload, tmpdir, changed_files, removed_files)
@@ -144,11 +150,13 @@ def handle_push_event(payload):
         generate_smart_documentation(tmpdir, analysis, after_sha, ref)
         
         # NEW: Generate hierarchical documentation tree (stored in database)
-        try:
-            asyncio.run(generate_hierarchical_docs(tmpdir, repo_full, after_sha, changed_files))
-        except Exception as e:
-            print(f"⚠️  Hierarchical doc generation failed (non-fatal): {e}")
-            # Continue even if hierarchical generation fails
+        # TEMPORARILY DISABLED - causing too many LLM calls and cache issues
+        # try:
+        #     asyncio.run(generate_hierarchical_docs(tmpdir, repo_full, after_sha, changed_files))
+        # except Exception as e:
+        #     print(f"⚠️  Hierarchical doc generation failed (non-fatal): {e}")
+        #     # Continue even if hierarchical generation fails
+        print("⏭️  Hierarchical documentation generation disabled (commented out)")
         
         # Commit and push
         commit_and_push_changes(tmpdir, analysis, after_sha, token, repo_full)
