@@ -247,14 +247,32 @@ async def get_repo_tree(repo_name: str, commit_sha: str = None):
         async with commit_bus.pool.acquire() as conn:
             # Get latest commit if not specified
             if not commit_sha:
+                # Try exact match first
                 result = await conn.fetchrow("""
                     SELECT commit_sha FROM doc_nodes
                     WHERE repo_id = $1
                     ORDER BY created_at DESC
                     LIMIT 1
                 """, repo_name)
+                
+                # If not found, try partial match (e.g., "lekhak_ai" matches "AuditorEnvelope/lekhak_ai")
+                if not result:
+                    result = await conn.fetchrow("""
+                        SELECT commit_sha FROM doc_nodes
+                        WHERE repo_id LIKE $1
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                    """, f"%{repo_name}")
+                
                 if result:
                     commit_sha = result['commit_sha']
+                    # Also get the actual repo_id for subsequent queries
+                    actual_repo = await conn.fetchval("""
+                        SELECT repo_id FROM doc_nodes
+                        WHERE commit_sha = $1
+                        LIMIT 1
+                    """, commit_sha)
+                    repo_name = actual_repo
                 else:
                     raise HTTPException(status_code=404, detail="No documentation found for this repository")
             
@@ -304,14 +322,19 @@ async def get_node_details(repo_name: str, node_id: str):
     
     try:
         async with commit_bus.pool.acquire() as conn:
+            # Try to find the node by ID first (ID is unique)
             node = await conn.fetchrow("""
                 SELECT 
                     id, repo_id, type, title, slug, path,
                     parent_id, depth, position, commit_sha, version,
                     content, metadata, created_at
                 FROM doc_nodes
-                WHERE id = $1 AND repo_id = $2
-            """, node_id, repo_name)
+                WHERE id = $1
+            """, node_id)
+            
+            # If found, verify it matches the repo (with partial match support)
+            if node and not (node['repo_id'] == repo_name or repo_name in node['repo_id']):
+                node = None
             
             if not node:
                 raise HTTPException(status_code=404, detail="Node not found")
