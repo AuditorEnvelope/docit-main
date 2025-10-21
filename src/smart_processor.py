@@ -16,6 +16,53 @@ from comprehensive_doc_generator import (
 github_rate_limiter = AsyncLimiter(4000, 3600)  # 4000 requests per hour (safe margin)
 llm_rate_limiter = AsyncLimiter(50, 60)  # 50 requests per minute (safe margin)
 
+
+async def generate_hierarchical_docs(repo_dir, repo_full, commit_sha):
+    """
+    Generate hierarchical documentation tree and store in database
+    
+    This is the NEW approach that creates proper SDK → Module → Feature → Function structure
+    """
+    try:
+        from hierarchical_doc_generator import HierarchicalDocGenerator
+        
+        # Get database URL
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            print("⚠️  DATABASE_URL not set, skipping hierarchical doc generation")
+            return
+        
+        print("\n" + "="*60)
+        print("🌲 GENERATING HIERARCHICAL DOCUMENTATION")
+        print("="*60)
+        
+        # Initialize generator
+        generator = HierarchicalDocGenerator(
+            repo_dir=Path(repo_dir),
+            repo_id=repo_full,
+            commit_sha=commit_sha,
+            db_url=db_url
+        )
+        
+        # Initialize database connection
+        await generator.init_db()
+        
+        # Analyze repository and build tree
+        root_node = await generator.analyze_repo()
+        
+        # Store tree in database
+        await generator.store_tree(root_node)
+        
+        print("✅ Hierarchical documentation generated and stored!")
+        print("="*60 + "\n")
+        
+    except Exception as e:
+        print(f"❌ Error generating hierarchical docs: {e}")
+        import traceback
+        traceback.print_exc()
+        # Don't fail the entire process if hierarchical generation fails
+
+
 def run_cmd(cmd, cwd=None):
     print("RUN:", cmd)
     subprocess.run(cmd, shell=True, check=True, cwd=cwd)
@@ -84,8 +131,15 @@ def handle_push_event(payload):
         
         print(f"✅ Significant change detected: {analysis['title']}")
         
-        # Generate comprehensive documentation
+        # Generate comprehensive documentation (flat docs - backward compatible)
         generate_smart_documentation(tmpdir, analysis, after_sha, ref)
+        
+        # NEW: Generate hierarchical documentation tree (stored in database)
+        try:
+            asyncio.run(generate_hierarchical_docs(tmpdir, repo_full, after_sha))
+        except Exception as e:
+            print(f"⚠️  Hierarchical doc generation failed (non-fatal): {e}")
+            # Continue even if hierarchical generation fails
         
         # Commit and push
         commit_and_push_changes(tmpdir, analysis, after_sha, token, repo_full)
