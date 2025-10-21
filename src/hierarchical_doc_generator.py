@@ -140,6 +140,10 @@ class HierarchicalDocGenerator:
                     else:
                         cache_key = f"{node_type}:{path}"
                     
+                    # Debug: Log cache storage for structural nodes
+                    if node_type in ['repo', 'sdk', 'module', 'feature']:
+                        print(f"💾 Storing {node_type} cache key: {cache_key}")
+                    
                     # For structural nodes (repo, SDK, module, feature), always cache
                     # For code nodes (file, function, class), check if file changed
                     should_cache = True
@@ -746,12 +750,21 @@ class HierarchicalDocGenerator:
             # For code nodes, use the file path
             cache_key = f"{node_type}:{file_path or name}"
 
+        # Debug: Log cache lookup
+        if node_type in ['repo', 'sdk', 'module', 'feature']:
+            print(f"🔍 Looking for cache key: {cache_key}")
+
         # Check cache first
         if cache_key in self.description_cache:
             self.llm_calls_saved += 1
             if self.llm_calls_saved % 10 == 0:  # Log every 10 saves
                 print(f"💾 Reused {self.llm_calls_saved} cached descriptions")
             return self.description_cache[cache_key]
+
+        # Debug: Show what's in cache for structural nodes
+        if node_type in ['repo', 'sdk', 'module', 'feature']:
+            cache_keys = [k for k in self.description_cache.keys() if node_type in k]
+            print(f"📋 Available {node_type} cache keys: {cache_keys[:3]}...")  # Show first 3
 
         # For structural nodes (repo, SDK, module, feature) - always regenerate if not cached
         # For code nodes (file, function, class) - check if file was changed
