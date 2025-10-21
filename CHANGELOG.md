@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-21] - Introduce Recursive File Detection Depth Control for Doc Parsing
+
+### Feature
+- This commit introduces a new feature allowing control over the maximum recursion depth during hierarchical documentation parsing. Both the backend generation logic and the frontend display components are updated to support and utilize this depth limit, improving the structure and performance of documentation generation.
+
+### Details
+- **Significance:** 8/10
+- **Commit:** b6ffa543e80f27d01571c5129c65d81f7ab8e6f8
+- **Impact:** documentation_generation, frontend_display, cli_configuration
+
+
+
 ## [2025-10-21] - Fix for Hierarchical Document Generation/Storage Logic
 
 ### Bug_Fix
