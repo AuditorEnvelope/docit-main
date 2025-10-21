@@ -134,6 +134,12 @@ class HierarchicalDocGenerator:
                     path = node['path']
                     node_type = node['type']
                     
+                    # Create the same cache key format used in generate_description
+                    if node_type in ['repo', 'sdk', 'module', 'feature']:
+                        cache_key = f"{self.repo_id}:{prev_commit}:{node_type}:{path}"
+                    else:
+                        cache_key = f"{node_type}:{path}"
+                    
                     # For structural nodes (repo, SDK, module, feature), always cache
                     # For code nodes (file, function, class), check if file changed
                     should_cache = True
@@ -159,7 +165,6 @@ class HierarchicalDocGenerator:
                         
                         description = content.get('description', '')
                         if description:
-                            cache_key = f"{node_type}:{path}"
                             self.description_cache[cache_key] = description
                 
                 print(f"✅ Loaded {len(self.description_cache)} cached descriptions from previous commit")
@@ -730,9 +735,16 @@ class HierarchicalDocGenerator:
     
     async def generate_description(self, node_type: str, name: str, context: Dict) -> str:
         """Generate AI description for a node (with smart caching)"""
-        # Create cache key
+        # Create cache key - use a stable identifier based on repo, commit, and logical path
         file_path = context.get('file_path', context.get('path', ''))
-        cache_key = f"{node_type}:{file_path or name}"
+
+        # For structural nodes, create a more stable cache key
+        if node_type in ['repo', 'sdk', 'module', 'feature']:
+            # Use repo_id + commit_sha + logical path as cache key
+            cache_key = f"{self.repo_id}:{self.commit_sha}:{node_type}:{file_path or name}"
+        else:
+            # For code nodes, use the file path
+            cache_key = f"{node_type}:{file_path or name}"
 
         # Check cache first
         if cache_key in self.description_cache:
