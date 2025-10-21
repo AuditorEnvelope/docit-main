@@ -30,6 +30,18 @@ Lekhak AI transforms your codebase into intelligent, searchable documentation au
 
 ## 🆕 Recent Updates
 
+### Introduce Recursive File Detection Depth Control for Doc Parsing
+This commit introduces a new feature allowing control over the maximum recursion depth during hierarchical documentation parsing. Both the backend generation logic and the frontend display components are updated to support and utilize this depth limit, improving the structure and performance of documentation generation.
+
+**New Features:**
+- Configurable maximum recursion depth for hierarchical document parsing (CLI `--max-depth` argument).
+- Frontend `DocumentTree` now respects a `maxDepth` prop for rendering.
+
+*Added on 2025-10-21*
+
+
+## 🆕 Recent Updates
+
 ### Activate Automatic Hierarchical Documentation Generation
 This change integrates and activates the `hierarchical_doc_generator` into the main application execution flow and file processing logic, ensuring hierarchical documentation is generated automatically.
 
