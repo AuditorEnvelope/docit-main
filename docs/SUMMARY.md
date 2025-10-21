@@ -3,6 +3,7 @@
 * [Home](README.md)
 
 ## Architecture
+* [V7 Architecture](architecture/v7-architecture.md)
 * [V6 Architecture](architecture/v6-architecture.md)
 * [V5 Architecture](architecture/v5-architecture.md)
 * [V4 Architecture](architecture/v4-architecture.md)
@@ -11,6 +12,7 @@
 * [V1 Architecture](architecture/v1-architecture.md)
 
 ## Workflow
+* [V7 Workflow](workflow/v7-workflow.md)
 * [V6 Workflow](workflow/v6-workflow.md)
 * [V5 Workflow](workflow/v5-workflow.md)
 * [V4 Workflow](workflow/v4-workflow.md)
@@ -22,7 +24,7 @@
 * [API Documentation](api.md)
 
 ## Changes
-* [Enhance documentation generation with AI-powered descriptions and metadata extraction](changes/02648a103e721cbe7dce8705753b071e08edbc74-feature.md)
+* [Smart Caching for AI Descriptions: 10x Faster Incremental Updates](changes/1043453929f32c228eab689304661e8e93817c01-performance.md)
 
 * [Bug_Fix](changes/ec9d42b08ebedf160c19ce7db9a789c7716ed705-bug_fix.md)
 * [Feature](changes/ea2bf9157afc4fd4ce9fc626701de39d105f6ba5-feature.md)
