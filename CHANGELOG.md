@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-21] - Implement full hierarchical caching for documentation generation
+
+### Feature
+- This commit introduces a comprehensive hierarchical caching mechanism for all structural node descriptions (repository, SDK, modules, features) within the documentation generation process. This significantly reduces the number of LLM calls required for incremental commits, drastically cutting down processing time and API costs.
+
+### Details
+- **Significance:** 8/10
+- **Commit:** 3889ccc9577e459bdc454b2f28d892d5750c155c
+- **Impact:** performance, cost_efficiency, developer_experience, build_pipeline_efficiency
+
+
+
 ## [2025-10-21] - Smart Caching for AI Descriptions: 10x Faster Incremental Updates
 
 ### Performance

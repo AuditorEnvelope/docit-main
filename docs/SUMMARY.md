@@ -3,6 +3,7 @@
 * [Home](README.md)
 
 ## Architecture
+* [V8 Architecture](architecture/v8-architecture.md)
 * [V7 Architecture](architecture/v7-architecture.md)
 * [V6 Architecture](architecture/v6-architecture.md)
 * [V5 Architecture](architecture/v5-architecture.md)
@@ -24,7 +25,7 @@
 * [API Documentation](api.md)
 
 ## Changes
-* [Smart Caching for AI Descriptions: 10x Faster Incremental Updates](changes/1043453929f32c228eab689304661e8e93817c01-performance.md)
+* [Implement full hierarchical caching for documentation generation](changes/3889ccc9577e459bdc454b2f28d892d5750c155c-feature.md)
 
 * [Bug_Fix](changes/ec9d42b08ebedf160c19ce7db9a789c7716ed705-bug_fix.md)
 * [Feature](changes/ea2bf9157afc4fd4ce9fc626701de39d105f6ba5-feature.md)
