@@ -284,44 +284,154 @@ class HierarchicalDocGenerator:
             children=[]
         )
         
-        # Parse all code files in module recursively (all supported languages)
-        files = []
-        for ext in UniversalCodeParser.LANGUAGE_MAP.keys():
-            files.extend(module_dir.rglob(f'*{ext}'))  # rglob = recursive glob
+        # BETTER APPROACH: Analyze subdirectories as features (logical grouping)
+        subdirs = [d for d in module_dir.iterdir() if d.is_dir() and not d.name.startswith('.') and not d.name.startswith('__')]
         
-        if files:
-            print(f"      📄 Found {len(files)} files to parse")
-            all_items = []
-            for file in files:
-                try:
-                    items = CodeParser.parse_file(file)
-                    # Convert CodeItem to dict
-                    all_items.extend([{
-                        'type': item.type,
-                        'name': item.name,
-                        'signature': item.signature,
-                        'docstring': item.docstring,
-                        'file': item.file,
-                        'line_start': item.line_start,
-                        'line_end': item.line_end,
-                        'language': item.language,
-                        **item.metadata
-                    } for item in items])
-                except Exception as e:
-                    print(f"      ⚠️  Error parsing {file.name}: {e}")
-            
-            print(f"      ✅ Extracted {len(all_items)} code items")
-            
-            # Group into features
-            features = self.group_into_features(all_items)
-            
-            for idx, (feature_name, items) in enumerate(features.items()):
-                feature_node = self.create_feature_node(
-                    feature_name, items, module_node.id, idx, module_node.path
-                )
+        if subdirs:
+            # Has subdirectories - treat each as a feature
+            print(f"      📁 Found {len(subdirs)} subdirectories")
+            for idx, subdir in enumerate(subdirs):
+                feature_node = await self.analyze_directory_as_feature(subdir, module_node.id, idx, module_node.path)
                 module_node.children.append(feature_node)
+        else:
+            # No subdirectories - parse files directly
+            files = []
+            for ext in UniversalCodeParser.LANGUAGE_MAP.keys():
+                files.extend(module_dir.glob(f'*{ext}'))  # Only direct files
+            
+            if files:
+                print(f"      📄 Found {len(files)} files in {module_dir.name}")
+                for idx, file in enumerate(files):
+                    file_node = await self.analyze_file_as_node(file, module_node.id, idx, module_node.path)
+                    if file_node:
+                        module_node.children.append(file_node)
         
         return module_node
+    
+    async def analyze_directory_as_feature(self, dir_path: Path, parent_id: str, position: int, parent_path: str) -> DocNode:
+        """Analyze a directory as a feature (e.g., app/, components/, lib/)"""
+        print(f"        📂 Feature directory: {dir_path.name}")
+        
+        feature_node = DocNode(
+            id=self.generate_id(),
+            type='feature',
+            title=dir_path.name,
+            slug=self.create_slug(dir_path.name),
+            path=f'{parent_path}/{dir_path.name}',
+            parent_id=parent_id,
+            depth=3,
+            position=position,
+            commit_sha=self.commit_sha,
+            version=None,
+            content={'description': f'Directory: {dir_path.name}'},
+            metadata={'directory': str(dir_path)},
+            children=[]
+        )
+        
+        # Parse all files in this directory (recursively)
+        files = []
+        for ext in UniversalCodeParser.LANGUAGE_MAP.keys():
+            files.extend(dir_path.rglob(f'*{ext}'))
+        
+        if files:
+            print(f"          📄 {len(files)} files in {dir_path.name}")
+            for idx, file in enumerate(files[:20]):  # Limit to 20 files per directory
+                file_node = await self.analyze_file_as_node(file, feature_node.id, idx, feature_node.path)
+                if file_node:
+                    feature_node.children.append(file_node)
+        
+        return feature_node
+    
+    async def analyze_file_as_node(self, file_path: Path, parent_id: str, position: int, parent_path: str) -> DocNode:
+        """Analyze a single file as a node"""
+        try:
+            items = CodeParser.parse_file(file_path)
+            
+            # Get relative path from parent
+            file_name = file_path.name
+            
+            # Create file node
+            file_node = DocNode(
+                id=self.generate_id(),
+                type='file',
+                title=file_name,
+                slug=self.create_slug(file_name),
+                path=f'{parent_path}/{file_name}',
+                parent_id=parent_id,
+                depth=4,
+                position=position,
+                commit_sha=self.commit_sha,
+                version=None,
+                content={
+                    'description': f'File: {file_name}',
+                    'functions': [item.name for item in items if item.type == 'function'],
+                    'classes': [item.name for item in items if item.type == 'class'],
+                    'item_count': len(items)
+                },
+                metadata={'file_path': str(file_path)},
+                children=[]
+            )
+            
+            # Add top-level functions/classes as children (limit to 10)
+            for idx, item in enumerate(items[:10]):
+                if item.type == 'function':
+                    func_node = self.create_function_node_from_item(item, file_node.id, idx, file_node.path)
+                    file_node.children.append(func_node)
+                elif item.type == 'class':
+                    class_node = self.create_class_node_from_item(item, file_node.id, idx, file_node.path)
+                    file_node.children.append(class_node)
+            
+            return file_node
+        except Exception as e:
+            print(f"          ⚠️  Error parsing {file_path.name}: {e}")
+            return None
+    
+    def create_function_node_from_item(self, item, parent_id: str, position: int, parent_path: str) -> DocNode:
+        """Create function node from CodeItem"""
+        return DocNode(
+            id=self.generate_id(),
+            type='function',
+            title=item.name,
+            slug=self.create_slug(item.name),
+            path=f"{parent_path}/{self.create_slug(item.name)}",
+            parent_id=parent_id,
+            depth=5,
+            position=position,
+            commit_sha=self.commit_sha,
+            version=None,
+            content={
+                'signature': item.signature,
+                'description': item.docstring or '',
+                'file': item.file,
+                'line_start': item.line_start,
+                'line_end': item.line_end
+            },
+            metadata={'language': item.language},
+            children=[]
+        )
+    
+    def create_class_node_from_item(self, item, parent_id: str, position: int, parent_path: str) -> DocNode:
+        """Create class node from CodeItem"""
+        return DocNode(
+            id=self.generate_id(),
+            type='class',
+            title=item.name,
+            slug=self.create_slug(item.name),
+            path=f"{parent_path}/{self.create_slug(item.name)}",
+            parent_id=parent_id,
+            depth=5,
+            position=position,
+            commit_sha=self.commit_sha,
+            version=None,
+            content={
+                'description': item.docstring or '',
+                'file': item.file,
+                'line_start': item.line_start,
+                'line_end': item.line_end
+            },
+            metadata={'language': item.language},
+            children=[]
+        )
     
     async def analyze_files(self, files: List[Path], parent_id: str, position: int, parent_path: str, name: str) -> DocNode:
         """Analyze files directly (not in subdirectory)"""
