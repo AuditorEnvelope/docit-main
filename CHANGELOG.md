@@ -1,6 +1,18 @@
 # Changelog
 
 
+## [2025-10-21] - Fix Grouping in Hierarchical Doc Generator
+
+### Bug_Fix
+- Modified the hierarchical doc generator to group by directory structure instead of function prefix, improving document organization
+
+### Details
+- **Significance:** 8/10
+- **Commit:** 93f2ebc515000fd90d045c1f9761a6dcb94527b2
+- **Impact:** documentation, hierarchical_doc_generator
+
+
+
 ## [2025-10-21] - Introduce Recursive File Detection Depth Control for Doc Parsing
 
 ### Feature
