@@ -193,7 +193,7 @@ class HierarchicalDocGenerator:
             position=0,
             commit_sha=self.commit_sha,
             version=None,
-            content={'description': await self.generate_description('repo', self.repo_id, {'type': 'repository'})},  
+            content={'description': await self.generate_description('repo', self.repo_id, {'type': 'repository', 'path': '/'})},  
             metadata={'repo_id': self.repo_id, 'commit_sha': self.commit_sha},
             children=[]
         )
@@ -539,7 +539,7 @@ class HierarchicalDocGenerator:
             position=position,
             commit_sha=self.commit_sha,
             version=None,
-            content={'description': await self.generate_description('module', name, {'type': 'module'})},  
+            content={'description': await self.generate_description('module', name, {'type': 'module', 'path': f'{parent_path}/{name}'})},  
             metadata={},
             children=[]
         )
@@ -730,38 +730,42 @@ class HierarchicalDocGenerator:
     
     async def generate_description(self, node_type: str, name: str, context: Dict) -> str:
         """Generate AI description for a node (with smart caching)"""
-        # Check cache first
+        # Create cache key
         file_path = context.get('file_path', context.get('path', ''))
         cache_key = f"{node_type}:{file_path or name}"
-        
+
+        # Check cache first
         if cache_key in self.description_cache:
             self.llm_calls_saved += 1
             if self.llm_calls_saved % 10 == 0:  # Log every 10 saves
                 print(f"💾 Reused {self.llm_calls_saved} cached descriptions")
             return self.description_cache[cache_key]
-        
-        # Check if this file was changed - if not, use fallback (don't waste LLM calls)
-        if file_path and self.changed_files:
-            is_changed = any(changed in str(file_path) for changed in self.changed_files)
-            if not is_changed and node_type in ['file', 'function', 'class']:
-                # File unchanged but not in cache - use simple fallback
-                return self._fallback_description(node_type, name, context)
-        
+
+        # For structural nodes (repo, SDK, module, feature) - always regenerate if not cached
+        # For code nodes (file, function, class) - check if file was changed
+        if node_type in ['file', 'function', 'class']:
+            # Check if this file was changed - if not, use fallback (don't waste LLM calls)
+            if file_path and self.changed_files:
+                is_changed = any(changed in str(file_path) for changed in self.changed_files)
+                if not is_changed:
+                    # File unchanged but not in cache - use simple fallback
+                    return self._fallback_description(node_type, name, context)
+
         # Generate new description with LLM
         if not self.llm_rotator:
             return self._fallback_description(node_type, name, context)
-        
+
         try:
             prompt = self._create_description_prompt(node_type, name, context)
             description = self.llm_rotator.generate_with_rotation(prompt, max_attempts=2)
-            
+
             if description:
                 # Clean up the description (remove markdown, etc.)
                 description = description.strip()
                 if description.startswith('#'):
                     description = '\n'.join(description.split('\n')[1:]).strip()
                 description = description[:500]  # Limit length
-                
+
                 # Cache for future use
                 self.description_cache[cache_key] = description
                 return description
