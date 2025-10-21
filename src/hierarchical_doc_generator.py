@@ -256,7 +256,7 @@ class HierarchicalDocGenerator:
         # Also parse files directly in SDK directory (all supported languages)
         files = []
         for ext in UniversalCodeParser.LANGUAGE_MAP.keys():
-            files.extend(sdk_dir.glob(f'*{ext}'))
+            files.extend(sdk_dir.glob(f'*{ext}'))  # Only direct files, not recursive here
         
         if files:
             direct_module = await self.analyze_files(files, sdk_node.id, len(modules), sdk_node.path, sdk_dir.name)
@@ -284,27 +284,33 @@ class HierarchicalDocGenerator:
             children=[]
         )
         
-        # Parse all code files in module (all supported languages)
+        # Parse all code files in module recursively (all supported languages)
         files = []
         for ext in UniversalCodeParser.LANGUAGE_MAP.keys():
-            files.extend(module_dir.glob(f'*{ext}'))
+            files.extend(module_dir.rglob(f'*{ext}'))  # rglob = recursive glob
         
         if files:
+            print(f"      📄 Found {len(files)} files to parse")
             all_items = []
             for file in files:
-                items = CodeParser.parse_file(file)
-                # Convert CodeItem to dict
-                all_items.extend([{
-                    'type': item.type,
-                    'name': item.name,
-                    'signature': item.signature,
-                    'docstring': item.docstring,
-                    'file': item.file,
-                    'line_start': item.line_start,
-                    'line_end': item.line_end,
-                    'language': item.language,
-                    **item.metadata
-                } for item in items])
+                try:
+                    items = CodeParser.parse_file(file)
+                    # Convert CodeItem to dict
+                    all_items.extend([{
+                        'type': item.type,
+                        'name': item.name,
+                        'signature': item.signature,
+                        'docstring': item.docstring,
+                        'file': item.file,
+                        'line_start': item.line_start,
+                        'line_end': item.line_end,
+                        'language': item.language,
+                        **item.metadata
+                    } for item in items])
+                except Exception as e:
+                    print(f"      ⚠️  Error parsing {file.name}: {e}")
+            
+            print(f"      ✅ Extracted {len(all_items)} code items")
             
             # Group into features
             features = self.group_into_features(all_items)

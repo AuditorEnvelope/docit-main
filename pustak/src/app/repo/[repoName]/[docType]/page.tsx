@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Calendar,
   FileText,
+  Network,
 } from "lucide-react";
 import Link from "next/link";
 import { loadRepoDocumentation } from "@/lib/dynamicGitHubLoader";
@@ -238,6 +239,14 @@ export default async function RepoPage({ params }: RepoPageProps) {
                   })}
                 </span>
               </div>
+
+              <Link
+                href={`/repo/${repoName}/tree`}
+                className="inline-flex items-center space-x-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              >
+                <Network className="w-4 h-4" />
+                <span>Tree View</span>
+              </Link>
 
               <a
                 href={githubUrl}
