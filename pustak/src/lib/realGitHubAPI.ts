@@ -25,33 +25,63 @@ export interface GitHubFile {
   encoding?: string;
 }
 
-// Get GitHub token from environment or backend
-// NOTE: This is only used as fallback. Authenticated user's token should come from backend.
-function getGitHubToken(): string | null {
-  if (typeof window !== "undefined") {
-    // Client-side: token should be passed from server
-    return null;
+// Get GitHub token from backend (for authenticated user)
+// This is called server-side during page rendering
+let cachedToken: string | null = null;
+
+async function getGitHubTokenFromBackend(jwtToken: string): Promise<string | null> {
+  try {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const response = await fetch(`${backendUrl}/auth/github-token`, {
+      headers: {
+        'Authorization': `Bearer ${jwtToken}`,
+      },
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      cachedToken = data.token;
+      return data.token;
+    }
+  } catch (error) {
+    console.error('Failed to fetch GitHub token from backend:', error);
   }
-  // Server-side: get from environment (fallback only)
-  return process.env.GITHUB_TOKEN || null;
+  
+  return null;
 }
 
-// Get GitHub organization from environment
+function getGitHubToken(): string | null {
+  if (typeof window !== "undefined") {
+    // Client-side: cannot access token
+    return null;
+  }
+  // Server-side: use cached token or fallback to environment
+  return cachedToken || process.env.GITHUB_TOKEN || null;
+}
+
+// Get GitHub organization from environment (fallback only)
+// For authenticated users, org comes from the repo name itself
 function getGitHubOrg(): string {
   if (typeof window !== "undefined") {
     return "";
   }
+  // Fallback to environment org if needed
   return process.env.GITHUB_ORG || "";
 }
 
+// Export for use in page components
+export { getGitHubTokenFromBackend };
+
 // Fetch all repositories from your GitHub organization
-export async function fetchAllRepositoriesFromGitHub(): Promise<GitHubRepo[]> {
+// Fetch repositories (uses user's token from backend)
+export async function fetchAllRepositoriesFromGitHub(userToken?: string): Promise<GitHubRepo[]> {
   try {
-    const token = getGitHubToken();
+    // Use provided user token, or fall back to environment token
+    const token = userToken || getGitHubToken();
     const org = getGitHubOrg();
 
     if (!token) {
-      console.error("GITHUB_TOKEN not found in environment variables.");
+      console.error("No GitHub token available.");
       return [];
     }
 
@@ -100,13 +130,15 @@ export async function fetchAllRepositoriesFromGitHub(): Promise<GitHubRepo[]> {
 // Fetch file content from GitHub
 export async function fetchFileFromGitHub(
   repo: string,
-  filePath: string
+  filePath: string,
+  userToken?: string
 ): Promise<string | null> {
   try {
-    const token = getGitHubToken();
+    // Use provided user token, or fall back to environment token
+    const token = userToken || getGitHubToken();
 
     if (!token) {
-      console.error("GITHUB_TOKEN not found. Cannot fetch file.");
+      console.error("No GitHub token available. Cannot fetch file.");
       return null;
     }
 
@@ -158,13 +190,15 @@ export async function fetchFileFromGitHub(
 // List files in a directory
 export async function listDirectoryContents(
   repo: string,
-  path: string
+  path: string,
+  userToken?: string
 ): Promise<string[]> {
   try {
-    const token = getGitHubToken();
+    // Use provided user token, or fall back to environment token
+    const token = userToken || getGitHubToken();
 
     if (!token) {
-      console.error("GITHUB_TOKEN not found. Cannot list directory contents.");
+      console.error("No GitHub token available. Cannot list directory contents.");
       return [];
     }
 
@@ -210,9 +244,10 @@ export async function listDirectoryContents(
 }
 
 // Check if a repository has a docs folder
-export async function hasDocsFolder(repo: string): Promise<boolean> {
+export async function hasDocsFolder(repo: string, userToken?: string): Promise<boolean> {
   try {
-    const token = getGitHubToken();
+    // Use provided user token, or fall back to environment token
+    const token = userToken || getGitHubToken();
 
     if (!token) {
       return false;

@@ -2,6 +2,7 @@
 
 import { Layout } from "@/components/Layout";
 import { useState, useEffect } from "react";
+import { useAuth } from '@/contexts/AuthContext';
 import {
   BookOpen,
   GitBranch,
@@ -16,61 +17,74 @@ import {
   Search,
 } from "lucide-react";
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
 export default function HomePage() {
+  const { token, user } = useAuth();
   const [stats, setStats] = useState({
     repositories: 0,
     documents: 0,
     updates: 0,
-    lastUpdate: "Loading...",
+    lastUpdate: "N/A",
   });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadStats() {
-      try {
-        const response = await fetch('/api/repositories');
-        if (!response.ok) {
-          throw new Error('Failed to fetch repositories');
+      // If user is logged in, fetch their actual stats
+      if (token) {
+        try {
+          const response = await fetch(`${BACKEND_URL}/auth/repositories`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            const repos = data.repositories || [];
+            const repoCount = repos.length;
+            
+            // Calculate total documents (6 doc types per repo)
+            const docCount = repoCount * 6;
+            
+            // Get the most recent update time
+            if (repos.length > 0) {
+              const mostRecent = repos.reduce((latest: Date, repo: any) => {
+                const repoDate = new Date(repo.updated_at);
+                return repoDate > latest ? repoDate : latest;
+              }, new Date(0));
+              
+              const now = new Date();
+              const diffMs = now.getTime() - mostRecent.getTime();
+              const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+              const diffDays = Math.floor(diffHours / 24);
+              
+              let lastUpdateStr = "Just now";
+              if (diffDays > 0) {
+                lastUpdateStr = `${diffDays}d ago`;
+              } else if (diffHours > 0) {
+                lastUpdateStr = `${diffHours}h ago`;
+              }
+              
+              setStats({
+                repositories: repoCount,
+                documents: docCount,
+                updates: repoCount * 8,
+                lastUpdate: lastUpdateStr,
+              });
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load stats:", error);
         }
-        const repos = await response.json();
-        const repoCount = repos.length;
-        
-        // Calculate total documents (6 doc types per repo)
-        const docCount = repoCount * 6;
-        
-        // Get the most recent update time
-        const mostRecent = repos.reduce((latest: Date, repo: any) => {
-          const repoDate = new Date(repo.lastUpdated);
-          return repoDate > latest ? repoDate : latest;
-        }, new Date(0));
-        
-        const now = new Date();
-        const diffMs = now.getTime() - mostRecent.getTime();
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffDays = Math.floor(diffHours / 24);
-        
-        let lastUpdateStr = "Just now";
-        if (diffDays > 0) {
-          lastUpdateStr = `${diffDays}d ago`;
-        } else if (diffHours > 0) {
-          lastUpdateStr = `${diffHours}h ago`;
-        }
-        
-        setStats({
-          repositories: repoCount,
-          documents: docCount,
-          updates: repoCount * 8, // Approximate updates
-          lastUpdate: lastUpdateStr,
-        });
-        setLoading(false);
-      } catch (error) {
-        console.error("Failed to load stats:", error);
-        setLoading(false);
       }
+      // If not logged in, show generic stats
+      setLoading(false);
     }
     
     loadStats();
-  }, []);
+  }, [token]);
 
   return (
     <Layout>

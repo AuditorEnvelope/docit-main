@@ -270,6 +270,19 @@ async def get_user_repositories(user = Depends(get_auth_user)):
     return {"repositories": repos}
 
 
+@app.get("/auth/github-token")
+async def get_user_github_token(user = Depends(get_auth_user)):
+    """Get user's GitHub token for frontend API calls"""
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+    
+    token = await auth_service.get_github_token(user.id)
+    if not token:
+        raise HTTPException(status_code=404, detail="No GitHub token found")
+    
+    return {"token": token}
+
+
 @app.post("/docs/generate")
 async def generate_documentation(repo_name: str, user = Depends(get_auth_user), background_tasks: BackgroundTasks = None):
     """Generate documentation for a repository"""

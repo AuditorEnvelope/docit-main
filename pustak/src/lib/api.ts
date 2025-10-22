@@ -33,8 +33,13 @@ export interface HierarchicalNode {
   children?: HierarchicalNode[];
 }
 
-// Fetch repositories from backend
+/**
+ * DEPRECATED: This function uses hardcoded .env org
+ * Use /auth/repositories from backend with user's JWT token instead
+ * Keeping for backward compatibility only
+ */
 export async function fetchRepositories(): Promise<RepoData[]> {
+  console.warn('fetchRepositories() is deprecated. Use /auth/repositories with JWT token instead.');
   try {
     const response = await fetch(`${BACKEND_URL}/api/repositories`, {
       next: { revalidate: 30 }, // Revalidate every 30 seconds

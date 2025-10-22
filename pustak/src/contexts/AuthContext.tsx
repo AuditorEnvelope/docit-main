@@ -44,30 +44,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
+        console.log('🔐 Initializing auth...');
         const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
         const storedUser = localStorage.getItem(USER_KEY);
 
+        console.log('📦 Found in localStorage:', { 
+          hasToken: !!accessToken, 
+          hasUser: !!storedUser,
+          tokenPreview: accessToken?.substring(0, 20) + '...'
+        });
+
         if (accessToken && storedUser) {
           // Verify token is still valid
+          console.log('📡 Verifying token with backend...');
           const response = await fetch(`${BACKEND_URL}/auth/me`, {
             headers: {
               'Authorization': `Bearer ${accessToken}`,
             },
           });
 
+          console.log('📥 Backend response:', response.status);
+
           if (response.ok) {
             const userData = await response.json();
+            console.log('✅ Token valid, user authenticated:', userData.username);
             setUser(userData);
             setToken(accessToken);
           } else {
             // Token invalid, clear storage
+            console.error('❌ Token invalid, clearing auth');
             clearAuth();
           }
+        } else {
+          console.log('⚠️  No token or user in localStorage');
         }
       } catch (error) {
-        console.error('Auth initialization error:', error);
+        console.error('❌ Auth initialization error:', error);
         clearAuth();
       } finally {
+        console.log('🏁 Auth initialization complete');
         setLoading(false);
       }
     };

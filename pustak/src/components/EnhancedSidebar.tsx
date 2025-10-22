@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from '@/contexts/AuthContext';
 import {
   BookOpen,
   ChevronRight,
@@ -15,6 +16,8 @@ import {
   X,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
 interface SidebarProps {
   onClose: () => void;
@@ -31,6 +34,7 @@ interface RepoData {
 }
 
 export function EnhancedSidebar({ onClose }: SidebarProps) {
+  const { token } = useAuth();
   const [repos, setRepos] = useState<RepoData[]>([]);
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
@@ -39,48 +43,37 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
   useEffect(() => {
     const loadRepos = async () => {
+      if (!token) {
+        console.log('No auth token available');
+        setLoading(false);
+        return;
+      }
+
       try {
-        const response = await fetch('/api/repositories');
+        const response = await fetch(`${BACKEND_URL}/auth/repositories`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch repositories');
         }
         
-        const reposData = await response.json();
+        const data = await response.json();
+        const reposData = data.repositories || [];
 
-        // Fetch versions for each repo
-        const reposWithVersions = await Promise.all(
-          reposData.map(async (repo: any) => {
-            try {
-              const docsResponse = await fetch(`/api/docs/${repo.name}`);
-              if (docsResponse.ok) {
-                const docs = await docsResponse.json();
-                return {
-                  name: repo.name,
-                  fullName: repo.fullName,
-                  lastUpdated: repo.lastUpdated,
-                  description: repo.description,
-                  hasDocs: repo.hasLocalDocs,
-                  architectureVersions: docs.architectureVersions || [],
-                  workflowVersions: docs.workflowVersions || [],
-                };
-              }
-            } catch (e) {
-              console.error(`Failed to fetch docs for ${repo.name}:`, e);
-            }
-            
-            return {
-              name: repo.name,
-              fullName: repo.fullName,
-              lastUpdated: repo.lastUpdated,
-              description: repo.description,
-              hasDocs: repo.hasLocalDocs,
-              architectureVersions: [],
-              workflowVersions: [],
-            };
-          })
-        );
+        // Map repos with empty version arrays (versions not needed for now)
+        const mappedRepos = reposData.map((repo: any) => ({
+          name: repo.name,
+          fullName: repo.full_name || repo.name, // Backend returns full_name (snake_case)
+          lastUpdated: repo.updated_at || new Date().toISOString(),
+          description: repo.description || 'No description available',
+          hasDocs: true,
+          architectureVersions: [],
+          workflowVersions: [],
+        }));
 
-        setRepos(reposWithVersions);
+        setRepos(mappedRepos);
         setLoading(false);
       } catch (error) {
         console.error("Failed to load repositories:", error);
@@ -89,7 +82,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
     };
 
     loadRepos();
-  }, []);
+  }, [token]);
 
   const toggleRepo = (repoName: string) => {
     const newExpanded = new Set(expandedRepos);
@@ -238,13 +231,12 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                       Updated {formatDate(repo.lastUpdated)}
                     </p>
 
-                    {repo.hasDocs ? (
-                      <div className="space-y-1">
+                    <div className="space-y-1">
                         {/* Summary */}
                         <a
-                          href={`/repo/${repo.name}/summary`}
+                          href={`/repo/${repo.fullName}/summary`}
                           className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.name}/summary`)
+                            isActive(`/repo/${repo.fullName}/summary`)
                               ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                               : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                           }`}
@@ -258,7 +250,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                           <button
                             onClick={() => toggleSection(`${repo.name}-architecture`)}
                             className={`flex items-center justify-between w-full p-2 text-sm rounded-md transition-colors ${
-                              isActive(`/repo/${repo.name}/architecture`)
+                              isActive(`/repo/${repo.fullName}/architecture`)
                                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                                 : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             }`}
@@ -281,9 +273,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                               {repo.architectureVersions.map((v) => (
                                 <a
                                   key={v.version}
-                                  href={`/repo/${repo.name}/architecture/${v.version}`}
+                                  href={`/repo/${repo.fullName}/architecture/${v.version}`}
                                   className={`block p-1.5 text-xs rounded transition-colors ${
-                                    isActive(`/repo/${repo.name}/architecture/${v.version}`)
+                                    isActive(`/repo/${repo.fullName}/architecture/${v.version}`)
                                       ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
                                       : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
                                   }`}
@@ -300,7 +292,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                           <button
                             onClick={() => toggleSection(`${repo.name}-workflow`)}
                             className={`flex items-center justify-between w-full p-2 text-sm rounded-md transition-colors ${
-                              isActive(`/repo/${repo.name}/workflow`)
+                              isActive(`/repo/${repo.fullName}/workflow`)
                                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                                 : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             }`}
@@ -339,9 +331,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
                         {/* API */}
                         <a
-                          href={`/repo/${repo.name}/api`}
+                          href={`/repo/${repo.fullName}/api`}
                           className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.name}/api`)
+                            isActive(`/repo/${repo.fullName}/api`)
                               ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                               : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                           }`}
@@ -352,9 +344,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
                         {/* Changes */}
                         <a
-                          href={`/repo/${repo.name}/changes`}
+                          href={`/repo/${repo.fullName}/changes`}
                           className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.name}/changes`)
+                            isActive(`/repo/${repo.fullName}/changes`)
                               ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                               : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                           }`}
@@ -365,9 +357,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
                         {/* Changelog */}
                         <a
-                          href={`/repo/${repo.name}/changelog`}
+                          href={`/repo/${repo.fullName}/changelog`}
                           className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.name}/changelog`)
+                            isActive(`/repo/${repo.fullName}/changelog`)
                               ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                               : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                           }`}
@@ -375,12 +367,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                           {getDocIcon("changelog")}
                           <span>Changelog</span>
                         </a>
-                      </div>
-                    ) : (
-                      <p className="text-yellow-600 dark:text-yellow-400">
-                        No documentation yet. DocAI will generate it soon!
-                      </p>
-                    )}
+                    </div>
                   </div>
                 </div>
               )}
