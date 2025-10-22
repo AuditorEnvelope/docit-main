@@ -6,66 +6,21 @@ from aiolimiter import AsyncLimiter
 from github_app import get_installation_token
 from llm_provider_v2 import get_rotator
 from pathlib import Path
-import re
-from comprehensive_doc_generator import (
-    check_documentation_quality,
-    generate_comprehensive_documentation,
-    analyze_architectural_impact
-)
 
 # Rate limiters (global instances)
 github_rate_limiter = AsyncLimiter(4000, 3600)  # 4000 requests per hour (safe margin)
 llm_rate_limiter = AsyncLimiter(50, 60)  # 50 requests per minute (safe margin)
 
 
-async def generate_hierarchical_docs(repo_dir, repo_full, commit_sha, changed_files=None):
+async def generate_hierarchical_docs(repo_dir, repo_full, commit_sha, changed_files):
     """
-    Generate hierarchical documentation tree and store in database
-    
-    This is the NEW approach that creates proper SDK → Module → Feature → Function structure
-    
-    Args:
-        changed_files: List of changed file paths for smart caching
+    Generate hierarchical documentation tree - DISABLED
+
+    This function was causing excessive LLM calls and cache issues.
+    The comprehensive documentation generation provides all the necessary documentation.
     """
-    try:
-        from hierarchical_doc_generator import HierarchicalDocGenerator
-        
-        # Get database URL
-        db_url = os.getenv("DATABASE_URL")
-        if not db_url:
-            print("⚠️  DATABASE_URL not set, skipping hierarchical doc generation")
-            return
-        
-        print("\n" + "="*60)
-        print("🌲 GENERATING HIERARCHICAL DOCUMENTATION")
-        print("="*60)
-        
-        # Initialize generator with changed files for smart caching
-        generator = HierarchicalDocGenerator(
-            repo_dir=Path(repo_dir),
-            repo_id=repo_full,
-            commit_sha=commit_sha,
-            db_url=db_url,
-            changed_files=list(changed_files) if changed_files else None
-        )
-        
-        # Initialize database connection
-        await generator.init_db()
-        
-        # Analyze repository and build tree
-        root_node = await generator.analyze_repo()
-        
-        # Store tree in database
-        await generator.store_tree(root_node)
-        
-        print("✅ Hierarchical documentation generated and stored!")
-        print("="*60 + "\n")
-        
-    except Exception as e:
-        print(f"❌ Error generating hierarchical docs: {e}")
-        import traceback
-        traceback.print_exc()
-        # Don't fail the entire process if hierarchical generation fails
+    print("❌ Hierarchical documentation generation is disabled")
+    return  # Completely disabled
 
 
 def run_cmd(cmd, cwd=None, capture_output=False):
@@ -150,13 +105,9 @@ def handle_push_event(payload):
         generate_smart_documentation(tmpdir, analysis, after_sha, ref)
         
         # NEW: Generate hierarchical documentation tree (stored in database)
-        # TEMPORARILY DISABLED - causing too many LLM calls and cache issues
-        # try:
-        #     asyncio.run(generate_hierarchical_docs(tmpdir, repo_full, after_sha, changed_files))
-        # except Exception as e:
-        #     print(f"⚠️  Hierarchical doc generation failed (non-fatal): {e}")
-        #     # Continue even if hierarchical generation fails
-        print("⏭️  Hierarchical documentation generation disabled (commented out)")
+        # COMPLETELY REMOVED - causing too many LLM calls and cache issues
+        # The comprehensive documentation generation is sufficient and works perfectly
+        print("⏭️  Hierarchical documentation generation completely removed")
         
         # Commit and push
         commit_and_push_changes(tmpdir, analysis, after_sha, token, repo_full)
