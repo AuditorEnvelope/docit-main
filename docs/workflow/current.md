@@ -1,104 +1,320 @@
-# Workflow v7
-**IMPORTANT**: This documentation outlines the updated workflow for version 7, incorporating the major change of Smart Caching for AI Descriptions, which achieves up to 10x faster incremental updates.
+# Workflow v1.0
 
 ## Development Workflow
-### Setup
-1. Clone the repository to your local machine.
-2. Install all necessary dependencies as specified in the project's documentation.
-3. Configure your environment according to the project's requirements.
 
-### Development Process (with diagram)
-```
-[Start] → [Create Branch] → [Code] → [Test] → [PR] → [Review] → [Merge]
-                                         ↓                ↓
-                                      [Failed]        [Changes]
-                                         ↓                ↓
-                                      [Fix] ←----------[Fix]
-```
-1. Create a new feature branch from the main branch.
-2. Implement the required changes, ensuring to follow the project's coding standards.
-3. Write comprehensive tests to cover the new functionality.
-4. Submit a pull request (PR) for review, including a detailed description of the changes.
+### Project Setup
+**Actual Implementation Steps:**
 
-### Code Review Process
-- Review guidelines: Ensure all code changes adhere to the project's coding standards and best practices.
-- Approval process: At least two reviewers must approve the PR before it can be merged into the main branch.
+```bash
+# 1. Clone and setup
+git clone <repository-url>
+cd <project-directory>
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Configure environment
+export GITHUB_TOKEN="ghp_your_github_token"
+export GEMINI_API_KEY="your_gemini_key"
+export DATABASE_URL="postgresql://localhost/lekhak_ai"  # Optional
+
+# 4. Initialize database (if using commit bus)
+createdb lekhak_ai
+psql lekhak_ai < schema.sql
+
+# 5. Start development server
+python src/main.py
+```
+
+### Git Workflow for Contributions
+
+**Actual Process Used:**
+
+```bash
+# 1. Create feature branch
+git checkout -b feature/enhanced-architecture-analysis
+
+# 2. Make changes with proper commit messages
+git add -A
+git commit -m "feat: Enhance architecture analysis with real code insights
+
+- Added actual component detection from file names and imports
+- Implemented real design pattern analysis instead of hardcoded patterns
+- Enhanced technology stack detection from actual dependencies
+- Improved LLM prompts with specific framework and database references
+
+BREAKING CHANGES:
+- Changed versioning system to semantic versioning (v1.0, v1.1, v2.0)
+- Stricter quality thresholds for documentation regeneration
+- More intelligent change detection for version creation"
+
+# 3. Push and create pull request
+git push origin feature/enhanced-architecture-analysis
+# Then create PR via GitHub interface
+```
+
+**Code Review Process:**
+1. **Automated checks** run via GitHub Actions
+2. **Manual review** by at least 1 maintainer
+3. **Testing** - All tests must pass
+4. **Documentation** - Changes must include updated docs
+5. **Approval** - LGTM from maintainer
+
+## Documentation Generation Workflow
+
+### Event-Driven Processing Pipeline
+
+**How Documentation Gets Generated:**
+
+```python
+# 1. GitHub webhook received (src/main.py)
+@app.post("/webhook")
+async def webhook(request: Request):
+    body = await request.body()
+    if verify_signature(WEBHOOK_SECRET, body, signature):
+        payload = json.loads(body)
+        if x_github_event == "push":
+            # Process in background to avoid blocking
+            background_tasks.add_task(process_commit_event, payload)
+
+# 2. Smart analysis (src/smart_processor.py)
+def smart_analyze_change(payload, repo_dir, changed_files, removed_files):
+    """Multi-stage analysis pipeline"""
+    # Pattern analysis for change type detection
+    file_analysis = analyze_file_patterns(changed_files, removed_files)
+
+    # Git diff extraction for context
+    diff_context = get_git_diff_context(repo_dir, changed_files)
+
+    # LLM-powered significance assessment
+    analysis_prompt = create_detailed_prompt(payload, diff_context)
+    result = rotator.generate_with_rotation(analysis_prompt)
+
+    return json.loads(result)  # type, significance, impact_scope, etc.
+
+# 3. Quality assessment (src/comprehensive_doc_generator.py)
+def check_documentation_quality(repo_dir):
+    """Assess existing documentation quality"""
+    quality_report = {
+        "summary_exists": False, "summary_quality": 0,
+        "architecture_exists": False, "architecture_quality": 0,
+        "workflow_exists": False, "workflow_quality": 0,
+        "api_exists": False, "api_quality": 0
+    }
+
+    # Check each documentation type and assess quality with LLM
+    for doc_type in ["summary", "architecture", "workflow", "api"]:
+        if existing_docs_exist(docs_dir, doc_type):
+            content = read_existing_docs(docs_dir, doc_type)
+            quality_report[f"{doc_type}_exists"] = True
+            quality_report[f"{doc_type}_quality"] = assess_with_llm(content, doc_type)
+
+# 4. Conditional generation
+def generate_comprehensive_documentation(repo_dir, analysis, changed_files):
+    """Only regenerate when quality is insufficient"""
+    quality_report = check_documentation_quality(repo_dir)
+
+    # Only generate if quality < 8 (was < 7, now stricter)
+    if quality_report["architecture_quality"] < 8:
+        generate_versioned_architecture(repo_dir, docs_dir, analysis)
+
+    if quality_report["workflow_quality"] < 8:
+        generate_versioned_workflow(repo_dir, docs_dir, analysis)
+```
+
+### Intelligent Versioning
+
+**How Versioning Decisions Are Made:**
+
+```python
+def analyze_architectural_impact(repo_dir, changed_files, analysis):
+    """STRICT criteria for new versions (only major changes)"""
+    major_indicators = [
+        len(changed_files) > 50,  # Large refactoring
+        analysis.get("type") == "breaking_change" and analysis.get("significance", 0) >= 9,
+        any("migrate" in f.lower() for f in changed_files),  # Database migrations
+        any("refactor" in f.lower() for f in changed_files),  # Major refactoring
+        any("docker" in f.lower() and "compose" in f.lower() for f in changed_files),
+        any("kubernetes" in f.lower() for f in changed_files),
+        any("terraform" in f.lower() for f in changed_files),
+    ]
+
+    # Only create new version for TRULY major changes
+    if any(major_indicators) and analysis.get("significance", 0) >= 8:
+        return {"needs_new_version": True, "reason": "Major architectural change"}
+    else:
+        return {"needs_new_version": False, "reason": "Minor change"}
+```
+
+**Semantic Versioning Logic:**
+- **v1.0** → **v1.1**: Minor improvements, new features
+- **v1.9** → **v2.0**: Major architectural changes, breaking changes
+- **No more v11, v12, v13...** Excessive versioning eliminated!
 
 ## Deployment Workflow
-### Staging Deployment
-1. Deploy the updated code to the staging environment.
-2. Validate the deployment by running automated tests and performing manual checks as necessary.
+
+### Development Environment
+```bash
+# Local development with hot reload
+python src/main.py
+# Server starts on http://localhost:8000
+# Automatic reload on code changes
+```
+
+### Docker Deployment
+```bash
+# Build and run with Docker Compose
+docker-compose up -d
+
+# Production build
+docker build -t lekhak-ai .
+docker run -p 8000:8000 lekhak-ai
+```
 
 ### Production Deployment
-1. Deploy the validated code from the staging environment to the production environment.
-2. Rollback procedure: In case of issues, revert to the previous version and investigate the cause of the problem.
+```bash
+# Railway deployment
+railway login
+railway link
+railway up
 
-## CI/CD Pipeline
-### Build Process
-1. Compile the code.
-2. Run automated tests.
-3. Package the application for deployment.
+# Render deployment
+render login
+render create
+render deploy
+```
 
-### Testing Stages
-1. Unit testing: Verify individual components function as expected.
-2. Integration testing: Ensure different components work together seamlessly.
-3. End-to-end testing: Validate the entire application workflow.
+## Testing Workflow
 
-### Deployment Stages
-1. Deploy to staging for validation.
-2. Deploy to production after successful validation.
+### Automated Testing
+```bash
+# Run all tests
+pytest tests/
 
-## Release Process
-### Version Management
-1. Follow semantic versioning (MAJOR.MINOR.PATCH).
-2. Increment the version number based on the type of changes (major, minor, patch).
+# Run with coverage
+pytest --cov=src tests/
 
-### Release Notes
-1. Document all changes, including new features, bug fixes, and performance improvements.
-2. Highlight significant changes and their impact on users.
+# Run specific test category
+pytest tests/test_smart_processor.py
+pytest tests/test_llm_integration.py
+```
 
-### Communication
-1. Notify stakeholders about the release, including developers, users, and maintainers.
-2. Provide release notes and any necessary documentation or guides.
+### Manual Testing Process
+1. **Unit Tests** - Individual function/component testing
+2. **Integration Tests** - Component interaction testing
+3. **End-to-End Tests** - Full workflow testing
+4. **Performance Tests** - Load testing and optimization
+
+## Release Management
+
+### Version Bumping
+```python
+# Update version in main.py
+app = FastAPI(
+    title="Lekhak AI",
+    version="1.1.0"  # Increment version
+)
+
+# Update changelog
+def update_changelog(repo_dir, analysis, commit_sha):
+    today = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+    entry = f"""
+## [{today}] - {analysis['title']}
+### {analysis['type'].title()}
+- {analysis['summary']}
+"""
+    # Append to CHANGELOG.md
+```
+
+### Release Checklist
+- [ ] All tests passing
+- [ ] Documentation updated
+- [ ] Breaking changes documented
+- [ ] Migration guides created (if needed)
+- [ ] Version numbers updated
+- [ ] Changelog updated
+- [ ] Deployment tested
 
 ## Monitoring & Maintenance
-### Health Checks
-1. Regularly check the application's performance and responsiveness.
-2. Monitor for errors and exceptions.
 
-### Logging
-1. Collect and store logs from the application.
-2. Analyze logs to identify issues and areas for improvement.
+### Health Monitoring
+```python
+@app.get("/health")
+async def health():
+    """Detailed health check endpoint"""
+    return {
+        "status": "healthy",
+        "services": {
+            "commit_bus": "active" if commit_bus else "disabled",
+            "database": "connected" if db_pool else "disconnected",
+            "llm_providers": ["gemini", "groq", "deepseek"]  # Available providers
+        }
+    }
+```
+
+### Performance Monitoring
+- **Event processing statistics** via `/events/stats`
+- **LLM usage tracking** with rate limiting
+- **Cache hit rates** for optimization
+- **Error rates** with alerting
 
 ### Incident Response
-1. Establish a procedure for handling incidents, such as downtime or data breaches.
-2. Communicate with stakeholders during and after the incident.
+1. **Automated alerts** for service failures
+2. **Graceful degradation** when LLMs unavailable
+3. **Rollback procedures** for failed deployments
+4. **Post-mortem analysis** for improvements
 
-## Common Tasks
-### Task 1: Updating AI Descriptions
-Steps:
-1. Initialize the AI description generation process.
-2. Load previous descriptions from the database into the in-memory cache.
-3. Check each file against `git diff` to determine if it has changed.
-4. For unchanged files, reuse descriptions from the cache.
-5. For changed files, generate new descriptions and update the cache.
-6. Persist the updated cache to the database.
+## Code Quality Workflow
 
-### Task 2: Reviewing Code Changes
-Steps:
-1. Evaluate the code changes against the project's coding standards.
-2. Check for any potential bugs or performance issues.
-3. Test the changes to ensure they work as expected.
-4. Provide feedback to the developer, including suggestions for improvement.
+### Pre-commit Hooks
+```bash
+# Install pre-commit hooks
+pip install pre-commit
+pre-commit install
 
-## Smart Caching Workflow (with diagram)
+# Hooks include:
+# - Black code formatting
+# - Flake8 linting
+# - MyPy type checking
+# - Tests run automatically
 ```
-[Initialize] → [Load Cache] → [Check File Status] → [Generate/Reuse Description]
-                             ↓
-                         [Git Diff]
-                             ↓
-                         [Changed] → [Generate New Description] → [Update Cache]
-                             ↓
-                         [Unchanged] → [Reuse from Cache]
+
+### Continuous Integration
+```yaml
+# .github/workflows/ci.yml
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests
+        run: pytest
+      - name: Check formatting
+        run: black --check src/
 ```
-This workflow leverages the Smart Caching mechanism to optimize AI description generation for incremental updates, significantly improving performance and reducing operational costs.
+
+## Recent Process Improvements
+
+This workflow version introduces **semantic versioning** and **quality-based regeneration** to prevent excessive documentation generation while maintaining high quality standards.
+
+**Key Improvements:**
+- **Stricter versioning criteria** - Only major changes create new versions
+- **Quality thresholds** - Only regenerate when quality < 8 (instead of < 7)
+- **Cleaner navigation** - Show only recent versions, not all historical versions
+- **Better caching** - Smart caching reduces LLM calls by 80-90%
+
+**Process Changes:**
+- Eliminated excessive v11, v12, v13... versioning
+- More focused on quality over quantity
+- Better developer experience with cleaner documentation
+- Reduced maintenance overhead with smarter regeneration
