@@ -7,6 +7,7 @@ from aiolimiter import AsyncLimiter
 from github_app import get_installation_token
 from llm_provider_v2 import get_rotator
 from pathlib import Path
+from comprehensive_doc_generator import generate_comprehensive_documentation
 
 # Rate limiters (global instances)
 github_rate_limiter = AsyncLimiter(4000, 3600)  # 4000 requests per hour (safe margin)
