@@ -26,6 +26,16 @@ export function MarkdownRenderer({
     const match = /language-(\w+)/.exec(className || "");
     const language = match ? match[1] : "";
 
+    // Extract text content properly from children
+    const getTextContent = (child: any): string => {
+      if (typeof child === 'string') return child;
+      if (Array.isArray(child)) return child.map(getTextContent).join('');
+      if (child?.props?.children) return getTextContent(child.props.children);
+      return String(child || '');
+    };
+
+    const codeContent = getTextContent(children);
+
     if (!inline && language) {
       return (
         <SyntaxHighlighter
@@ -35,7 +45,7 @@ export function MarkdownRenderer({
           className="rounded-lg !mt-4 !mb-4"
           {...props}
         >
-          {String(children).replace(/\n$/, "")}
+          {codeContent.replace(/\n$/, "")}
         </SyntaxHighlighter>
       );
     }
@@ -45,7 +55,7 @@ export function MarkdownRenderer({
         className="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-1 py-0.5 rounded text-sm font-mono"
         {...props}
       >
-        {children}
+        {codeContent}
       </code>
     );
   };
