@@ -353,7 +353,7 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
     // Fetch architecture versions from docs/architecture/
     const archFiles = await listDirectoryContents(repo, "docs/architecture");
     for (const fileName of archFiles) {
-      const match = fileName.match(/^v(\d+)-architecture\.md$/);
+      const match = fileName.match(/^v([\d.]+)-architecture\.md$/);
       if (match) {
         docs.architectureVersions.push({
           version: `v${match[1]}`,
@@ -361,17 +361,23 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
         });
       }
     }
-    // Sort versions in descending order (v2, v1)
+    // Sort versions in descending order (v3.3, v3.2, v3.1, v3, v2, v1)
     docs.architectureVersions.sort((a, b) => {
-      const aNum = parseInt(a.version.substring(1));
-      const bNum = parseInt(b.version.substring(1));
-      return bNum - aNum;
+      const aVer = a.version.substring(1).split('.').map(Number);
+      const bVer = b.version.substring(1).split('.').map(Number);
+      
+      for (let i = 0; i < Math.max(aVer.length, bVer.length); i++) {
+        const aNum = aVer[i] || 0;
+        const bNum = bVer[i] || 0;
+        if (aNum !== bNum) return bNum - aNum;
+      }
+      return 0;
     });
 
     // Fetch workflow versions from docs/workflow/
     const workflowFiles = await listDirectoryContents(repo, "docs/workflow");
     for (const fileName of workflowFiles) {
-      const match = fileName.match(/^v(\d+)-workflow\.md$/);
+      const match = fileName.match(/^v([\d.]+)-workflow\.md$/);
       if (match) {
         docs.workflowVersions.push({
           version: `v${match[1]}`,
@@ -379,11 +385,17 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
         });
       }
     }
-    // Sort versions in descending order (v2, v1)
+    // Sort versions in descending order (v3.3, v3.2, v3.1, v3, v2, v1)
     docs.workflowVersions.sort((a, b) => {
-      const aNum = parseInt(a.version.substring(1));
-      const bNum = parseInt(b.version.substring(1));
-      return bNum - aNum;
+      const aVer = a.version.substring(1).split('.').map(Number);
+      const bVer = b.version.substring(1).split('.').map(Number);
+      
+      for (let i = 0; i < Math.max(aVer.length, bVer.length); i++) {
+        const aNum = aVer[i] || 0;
+        const bNum = bVer[i] || 0;
+        if (aNum !== bNum) return bNum - aNum;
+      }
+      return 0;
     });
 
     return docs;

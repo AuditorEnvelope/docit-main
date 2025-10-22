@@ -111,6 +111,19 @@ def handle_push_event(payload):
         # The comprehensive documentation generation is sufficient and works perfectly
         print("⏭️  Hierarchical documentation generation completely removed")
         
+        # QUALITY VALIDATION: Check documentation quality before committing
+        print("\n" + "="*60)
+        print("🔍 RUNNING QUALITY VALIDATION")
+        print("="*60)
+        
+        from quality_integration import validate_documentation_quality
+        quality_passed = validate_documentation_quality(tmpdir, repo.get("name", "unknown"))
+        
+        if not quality_passed:
+            print("\n⚠️  WARNING: Documentation quality below threshold (< 8.0/10)")
+            print("   Proceeding with commit anyway (auto-regeneration coming soon)")
+            print("   Check docs/QUALITY_REPORT.md for detailed feedback")
+        
         # Commit and push
         commit_and_push_changes(tmpdir, analysis, after_sha, token, repo_full)
         

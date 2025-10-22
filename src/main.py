@@ -17,6 +17,7 @@ from commit_bus import CommitBusService
 from subscription_service import SubscriptionService
 from overlay_service import OverlayService
 from smart_processor import handle_push_event as legacy_handle_push
+from quality_checker import DocumentationQualityChecker, DocumentationQuality
 
 load_dotenv()
 
@@ -49,13 +50,22 @@ HAS_OVERLAYS = True  # Always enable overlays
 commit_bus = None
 subscription_service = None
 overlay_service = None
+quality_checker = None
 
 @app.on_event("startup")
 async def startup():
     """Initialize all services on startup"""
-    global commit_bus, subscription_service, overlay_service
+    global commit_bus, subscription_service, overlay_service, quality_checker
     
     print("🚀 Starting Lekhak AI...")
+    
+    # Initialize Quality Checker
+    try:
+        quality_checker = DocumentationQualityChecker()
+        print("✅ Quality Checker initialized")
+    except Exception as e:
+        print(f"⚠️  Quality Checker failed: {e}")
+        quality_checker = None
     
     
     # Initialize Commit Bus
@@ -485,6 +495,71 @@ async def create_overlay(
     return {"overlay_id": overlay_id}
 
 # ============================================
+# QUALITY CHECKING ROUTES
+# ============================================
+
+@app.post("/api/quality/check")
+async def check_documentation_quality(
+    repo_name: str,
+    codebase_size: dict,
+    docs: dict
+):
+    """
+    Check documentation quality and get scores
+    
+    Args:
+        repo_name: Repository name
+        codebase_size: Dict of language -> line count
+        docs: Dict of doc_type -> content
+    
+    Returns:
+        Quality scores and feedback
+    """
+    if not quality_checker:
+        raise HTTPException(status_code=503, detail="Quality checker not available")
+    
+    quality = await quality_checker.evaluate_documentation(
+        repo_name=repo_name,
+        codebase_size=codebase_size,
+        docs=docs
+    )
+    
+    return {
+        "overall_score": quality.overall_score,
+        "should_regenerate": quality.should_regenerate(),
+        "low_quality_docs": quality.get_low_quality_docs(),
+        "architecture": {
+            "score": quality.architecture_score.score if quality.architecture_score else None,
+            "feedback": quality.architecture_score.feedback if quality.architecture_score else None,
+        } if quality.architecture_score else None,
+        "workflow": {
+            "score": quality.workflow_score.score if quality.workflow_score else None,
+            "feedback": quality.workflow_score.feedback if quality.workflow_score else None,
+        } if quality.workflow_score else None,
+        "readme": {
+            "score": quality.readme_score.score if quality.readme_score else None,
+            "feedback": quality.readme_score.feedback if quality.readme_score else None,
+        } if quality.readme_score else None,
+        "api": {
+            "score": quality.api_score.score if quality.api_score else None,
+            "feedback": quality.api_score.feedback if quality.api_score else None,
+        } if quality.api_score else None,
+    }
+
+@app.get("/api/quality/report/{repo_name}")
+async def get_quality_report(repo_name: str):
+    """Get detailed quality report for a repository"""
+    if not quality_checker:
+        raise HTTPException(status_code=503, detail="Quality checker not available")
+    
+    # TODO: Fetch docs from database or GitHub
+    # For now, return placeholder
+    return {
+        "message": "Quality report generation - coming soon",
+        "repo_name": repo_name
+    }
+
+# ============================================
 # ADMIN ROUTES
 # ============================================
 
@@ -497,6 +572,7 @@ async def list_features():
             "Multi-LLM support (Gemini, Groq, OpenAI)",
             "Smart documentation generation",
             "Pustak frontend integration",
+            "AI Quality Validation (NEW)" if quality_checker else None,
         ],
         "advanced": [
             "Commit Bus (event store)" if commit_bus else None,
@@ -504,12 +580,86 @@ async def list_features():
             "RAG system with embeddings" if True else None,
             "Admin overlays" if overlay_service else None,
             "Subscription management" if subscription_service else None,
+            "Documentation Quality Checker" if quality_checker else None,
         ],
         "languages_supported": [
             "Python", "TypeScript", "JavaScript", "Go", "Rust", "Java",
             "C++", "C#", "Ruby", "PHP", "Swift", "Kotlin", "Scala",
             "Elixir", "Dart"
         ]
+    }
+
+@app.get("/admin/progress")
+async def get_project_progress():
+    """Get 5-week project progress tracking"""
+    return {
+        "project": "Lekhak AI - AI-Powered Documentation Platform",
+        "timeline": "5 weeks",
+        "current_week": 3,
+        "weeks": [
+            {
+                "week": 1,
+                "title": "Core Documentation System",
+                "status": "completed",
+                "progress": 100,
+                "tasks": [
+                    {"name": "GitHub webhook integration", "status": "done"},
+                    {"name": "Multi-language code parsing", "status": "done"},
+                    {"name": "Basic documentation generation", "status": "done"},
+                    {"name": "Pustak frontend setup", "status": "done"},
+                ]
+            },
+            {
+                "week": 2,
+                "title": "Advanced Features",
+                "status": "completed",
+                "progress": 100,
+                "tasks": [
+                    {"name": "Hierarchical documentation tree", "status": "done"},
+                    {"name": "Version management (v1, v2, v3, v3.1, v3.2, v3.3)", "status": "done"},
+                    {"name": "Commit bus with event storage", "status": "done"},
+                    {"name": "Multi-LLM support (Gemini, Groq, OpenAI)", "status": "done"},
+                ]
+            },
+            {
+                "week": 3,
+                "title": "Quality & Intelligence",
+                "status": "in_progress",
+                "progress": 60,
+                "tasks": [
+                    {"name": "AI quality validation system", "status": "done"},
+                    {"name": "Auto-regeneration for low-quality docs", "status": "in_progress"},
+                    {"name": "Quality scoring (0-10 scale)", "status": "done"},
+                    {"name": "Feedback-driven improvements", "status": "pending"},
+                ]
+            },
+            {
+                "week": 4,
+                "title": "Production Features",
+                "status": "pending",
+                "progress": 0,
+                "tasks": [
+                    {"name": "Subscription management", "status": "pending"},
+                    {"name": "Admin overlays", "status": "pending"},
+                    {"name": "RAG system with embeddings", "status": "pending"},
+                    {"name": "Search functionality", "status": "pending"},
+                ]
+            },
+            {
+                "week": 5,
+                "title": "Polish & Deployment",
+                "status": "pending",
+                "progress": 0,
+                "tasks": [
+                    {"name": "Performance optimization", "status": "pending"},
+                    {"name": "Error handling & logging", "status": "pending"},
+                    {"name": "Documentation & guides", "status": "pending"},
+                    {"name": "Production deployment", "status": "pending"},
+                ]
+            }
+        ],
+        "overall_progress": 52,
+        "quality_validation_enabled": quality_checker is not None
     }
 
 if __name__ == "__main__":
