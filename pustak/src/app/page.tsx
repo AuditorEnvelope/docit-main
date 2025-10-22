@@ -1,7 +1,6 @@
 "use client";
 
 import { Layout } from "@/components/Layout";
-import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { useState, useEffect } from "react";
 import {
   BookOpen,
@@ -15,97 +14,6 @@ import {
   Users,
   Zap,
 } from "lucide-react";
-
-const mockContent = `# Welcome to Pustak
-
-**Pustak** (पुस्तक) is a beautiful, AI-powered documentation platform that automatically generates and maintains documentation for your repositories.
-
-## 🚀 Features
-
-### 📚 Multi-Repository Support
-- Organize documentation across multiple repositories
-- Each repository gets its own documentation space
-- Automatic discovery and indexing of repositories
-
-### 🤖 AI-Powered Documentation
-- Automatically generated documentation from code changes
-- Smart analysis of significant changes
-- Context-aware documentation creation
-
-### 🎨 Beautiful Interface
-- Clean, GitBook-inspired design
-- Dark and light themes
-- Responsive layout for all devices
-- Fast search across all documentation
-
-### 🔄 Real-time Updates
-- Automatic synchronization with repository changes
-- Live updates when new documentation is generated
-- Version history and change tracking
-
-## 📖 Documentation Structure
-
-Each repository's documentation includes:
-
-### 📋 Summary
-- Project overview and purpose
-- Key features and capabilities
-- Getting started guide
-
-### 🏗️ Architecture
-- System architecture diagrams
-- Component relationships
-- Technology stack details
-
-### 🔄 Workflow
-- Development workflow
-- CI/CD processes
-- Deployment procedures
-
-### 🔌 API Documentation
-- Endpoint documentation
-- Request/response examples
-- Authentication details
-
-### 📝 Changes
-- Recent changes and updates
-- Feature additions and modifications
-- Bug fixes and improvements
-
-### 📚 Changelog
-- Version history
-- Release notes
-- Breaking changes
-
-## 🛠️ Powered by DocAI
-
-Pustak is powered by **DocAI**, an intelligent documentation agent that:
-
-- Analyzes code changes automatically
-- Generates comprehensive documentation
-- Maintains consistency across repositories
-- Scales with your organization
-
-## 🎯 Getting Started
-
-1. **Explore Repositories**: Use the sidebar to navigate between different repositories
-2. **Search Documentation**: Use the search feature (⌘K) to find specific topics
-3. **Browse by Category**: Navigate through different documentation sections
-4. **Stay Updated**: Check the Changes section for recent updates
-
-## 🔮 Future Roadmap
-
-- **Collaborative Editing**: Real-time collaborative documentation editing
-- **Version Control**: Git-like versioning for documentation
-- **API Integration**: REST API for programmatic access
-- **Advanced Search**: AI-powered semantic search
-- **Custom Themes**: Customizable themes and branding
-- **Export Options**: PDF, HTML, and other export formats
-
----
-
-*Pustak is continuously evolving. Stay tuned for more features and improvements!*
-`;
 
 export default function HomePage() {
   const [stats, setStats] = useState({
@@ -280,11 +188,50 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Main Content */}
+        {/* Welcome Section */}
         <div className="max-w-4xl mx-auto px-6 pb-16">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-            <div className="p-8">
-              <MarkdownRenderer content={mockContent} />
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+              Welcome to Pustak
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Pustak (पुस्तक) is an AI-powered documentation platform that automatically generates
+              and maintains documentation for your repositories. Select a repository from the sidebar
+              to explore its documentation.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                  🚀 AI-Powered
+                </h3>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  Automatically generates documentation from your code changes using advanced AI
+                </p>
+              </div>
+              <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                <h3 className="font-semibold text-green-900 dark:text-green-100 mb-2">
+                  🔄 Real-time Updates
+                </h3>
+                <p className="text-sm text-green-700 dark:text-green-300">
+                  Automatic synchronization with repository changes and live updates
+                </p>
+              </div>
+              <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                <h3 className="font-semibold text-purple-900 dark:text-purple-100 mb-2">
+                  📚 Multi-Repository
+                </h3>
+                <p className="text-sm text-purple-700 dark:text-purple-300">
+                  Organize documentation across multiple repositories with automatic discovery
+                </p>
+              </div>
+              <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                <h3 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">
+                  🎨 Beautiful Interface
+                </h3>
+                <p className="text-sm text-orange-700 dark:text-orange-300">
+                  Clean, GitBook-inspired design with dark mode and responsive layout
+                </p>
+              </div>
             </div>
           </div>
         </div>

@@ -6,9 +6,40 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Pustak - Documentation Platform",
-  description: "Beautiful documentation platform powered by DocAI",
-  keywords: ["documentation", "docs", "gitbook", "ai", "markdown"],
+  title: {
+    default: "Pustak - AI-Powered Documentation Platform",
+    template: "%s | Pustak"
+  },
+  description: "Beautiful, AI-powered documentation platform that automatically generates and maintains documentation for your repositories. Powered by DocAI.",
+  keywords: ["documentation", "docs", "gitbook", "ai", "markdown", "github", "automatic documentation", "code documentation"],
+  authors: [{ name: "Pustak Team" }],
+  creator: "Pustak",
+  publisher: "Pustak",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    url: 'https://pustak.dev',
+    title: 'Pustak - AI-Powered Documentation Platform',
+    description: 'Beautiful, AI-powered documentation platform that automatically generates and maintains documentation for your repositories.',
+    siteName: 'Pustak',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Pustak - AI-Powered Documentation Platform',
+    description: 'Beautiful, AI-powered documentation platform that automatically generates and maintains documentation for your repositories.',
+    creator: '@pustak',
+  },
 };
 
 export default function RootLayout({

@@ -29,34 +29,6 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Mock search results
-  const mockResults: SearchResult[] = [
-    {
-      id: "1",
-      title: "Authentication System",
-      content: "OAuth2 authentication with JWT tokens...",
-      type: "api",
-      repo: "hivemind-poc",
-      lastUpdated: new Date().toISOString(),
-    },
-    {
-      id: "2",
-      title: "System Architecture",
-      content: "Microservices architecture with Redis...",
-      type: "architecture",
-      repo: "hivemind-poc",
-      lastUpdated: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "3",
-      title: "Recent Changes",
-      content: "Added new authentication features...",
-      type: "changes",
-      repo: "doc-ai",
-      lastUpdated: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    },
-  ];
-
   useEffect(() => {
     if (isOpen && inputRef.current) {
       inputRef.current.focus();
@@ -64,19 +36,38 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
   }, [isOpen]);
 
   useEffect(() => {
-    if (query.length > 2) {
-      // Simulate search - in real app, this would be an API call
-      const filtered = mockResults.filter(
-        (result) =>
-          result.title.toLowerCase().includes(query.toLowerCase()) ||
-          result.content.toLowerCase().includes(query.toLowerCase()) ||
-          result.repo.toLowerCase().includes(query.toLowerCase())
-      );
-      setResults(filtered);
-      setSelectedIndex(0);
-    } else {
-      setResults([]);
+    let isCancelled = false;
+    
+    async function performSearch() {
+      if (query.length > 2) {
+        try {
+          // Real API call to backend search
+          const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+          if (!response.ok) throw new Error('Search failed');
+          
+          const data = await response.json();
+          
+          if (!isCancelled) {
+            setResults(data);
+            setSelectedIndex(0);
+          }
+        } catch (error) {
+          console.error('Search error:', error);
+          if (!isCancelled) {
+            setResults([]);
+          }
+        }
+      } else {
+        setResults([]);
+      }
     }
+    
+    const debounceTimer = setTimeout(performSearch, 300);
+    
+    return () => {
+      isCancelled = true;
+      clearTimeout(debounceTimer);
+    };
   }, [query]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
