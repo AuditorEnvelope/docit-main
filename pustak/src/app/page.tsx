@@ -93,22 +93,26 @@ export default function HomePage() {
               {/* Quick Search */}
               <div className="max-w-xl mx-auto mb-8">
                 <button
-                  onClick={() => {
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     // Trigger search modal via keyboard shortcut
                     const event = new KeyboardEvent('keydown', {
                       key: 'k',
                       metaKey: true,
-                      bubbles: true
+                      bubbles: true,
+                      cancelable: true
                     });
                     document.dispatchEvent(event);
                   }}
-                  className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-400 dark:hover:border-blue-600 transition-colors group"
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-400 dark:hover:border-blue-600 transition-colors group cursor-pointer"
                 >
-                  <Search className="w-5 h-5 text-gray-400 group-hover:text-blue-500" />
-                  <span className="flex-1 text-left text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300">
+                  <Search className="w-5 h-5 text-gray-400 group-hover:text-blue-500 pointer-events-none" />
+                  <span className="flex-1 text-left text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300 pointer-events-none">
                     Search documentation...
                   </span>
-                  <kbd className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded">
+                  <kbd className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded pointer-events-none">
                     ⌘K
                   </kbd>
                 </button>
