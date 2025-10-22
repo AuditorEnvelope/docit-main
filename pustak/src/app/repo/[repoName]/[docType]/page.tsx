@@ -16,13 +16,50 @@ import {
 import Link from "next/link";
 import { loadRepoDocumentation } from "@/lib/dynamicGitHubLoader";
 import { fetchAllRepositoriesFromGitHub } from "@/lib/realGitHubAPI";
+import type { Metadata } from 'next';
 
 interface RepoPageProps {
   params: Promise<{
     repoName: string;
     docType: string;
   }>;
-}``
+}
+
+// Generate metadata for SEO and LLM crawling
+export async function generateMetadata({ params }: RepoPageProps): Promise<Metadata> {
+  const { repoName, docType } = await params;
+  
+  // Fetch repository info
+  const allRepos = await fetchAllRepositoriesFromGitHub();
+  const repoInfo = allRepos.find(r => r.name === repoName);
+  
+  const docTypeNames: Record<string, string> = {
+    summary: 'Summary',
+    architecture: 'Architecture',
+    workflow: 'Workflow',
+    api: 'API Documentation',
+    changes: 'Recent Changes',
+    changelog: 'Changelog',
+  };
+  
+  const title = `${docTypeNames[docType] || docType} - ${repoName} | Pustak`;
+  const description = repoInfo?.description || `${docTypeNames[docType] || docType} documentation for ${repoName}`;
+  
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: 'article',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+    },
+  };
+}
 
 // Helper functions to safely extract content and fileName
 function getContent(

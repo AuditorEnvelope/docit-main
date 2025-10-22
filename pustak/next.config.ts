@@ -1,13 +1,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Enable strict TypeScript and ESLint for production
   eslint: {
-    // Disable ESLint during build (warnings won't block production builds)
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false, // Enable ESLint checks
   },
   typescript: {
-    // Disable TypeScript errors during build (for faster deployments)
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false, // Enable TypeScript checks
+  },
+  // Enable React strict mode
+  reactStrictMode: true,
+  // Optimize images
+  images: {
+    domains: ['avatars.githubusercontent.com', 'github.com'],
   },
 };
 
