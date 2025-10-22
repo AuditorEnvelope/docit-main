@@ -2,6 +2,7 @@
 import os, subprocess, tempfile, shutil, datetime, json
 import asyncio
 import time  # Added for retry delays
+import re  # Added for regex pattern matching
 from aiolimiter import AsyncLimiter
 from github_app import get_installation_token
 from llm_provider_v2 import get_rotator
