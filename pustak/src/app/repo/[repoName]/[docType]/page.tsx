@@ -81,14 +81,11 @@ function getFileName(
 export default async function RepoPage({ params }: RepoPageProps) {
   const { repoName, docType } = await params;
 
-  // Fetch repository info to get the full name and org
-  const allRepos = await fetchAllRepositoriesFromGitHub();
-  const repoInfo = allRepos.find(r => r.name === repoName);
-  const githubUrl = repoInfo?.full_name 
-    ? `https://github.com/${repoInfo.full_name}` 
-    : `https://github.com/${repoName}`;
+  // repoName is already the full name (org/repo) from URL
+  // Use it directly for GitHub operations
+  const githubUrl = `https://github.com/${repoName}`;
 
-  // Load documentation from GitHub
+  // Load documentation from GitHub using full repo name
   const githubDocs = await loadRepoDocumentation(repoName);
   const lastUpdated = new Date();
   

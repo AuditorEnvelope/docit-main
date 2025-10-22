@@ -25,7 +25,7 @@ export default function PricingPage() {
         "Dark mode",
       ],
       cta: "Get Started",
-      href: "/signup?plan=free",
+      href: "/",  // Free plan goes to home
       popular: false,
     },
     {
@@ -45,7 +45,7 @@ export default function PricingPage() {
         "Version history",
       ],
       cta: "Start Free Trial",
-      href: "/signup?plan=pro",
+      href: "/checkout?plan=pro",
       popular: true,
     },
     {
@@ -67,7 +67,7 @@ export default function PricingPage() {
         "Advanced analytics",
       ],
       cta: "Start Free Trial",
-      href: "/signup?plan=team",
+      href: "/checkout?plan=team",
       popular: false,
     },
     {

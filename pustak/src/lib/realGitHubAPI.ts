@@ -25,13 +25,14 @@ export interface GitHubFile {
   encoding?: string;
 }
 
-// Get GitHub token from environment
+// Get GitHub token from environment or backend
+// NOTE: This is only used as fallback. Authenticated user's token should come from backend.
 function getGitHubToken(): string | null {
   if (typeof window !== "undefined") {
     // Client-side: token should be passed from server
     return null;
   }
-  // Server-side: get from environment
+  // Server-side: get from environment (fallback only)
   return process.env.GITHUB_TOKEN || null;
 }
 
@@ -99,19 +100,20 @@ export async function fetchAllRepositoriesFromGitHub(): Promise<GitHubRepo[]> {
 // Fetch file content from GitHub
 export async function fetchFileFromGitHub(
   repo: string,
-  path: string
+  filePath: string
 ): Promise<string | null> {
   try {
     const token = getGitHubToken();
-    const org = getGitHubOrg();
 
-    if (!token || !org) {
-      console.error("GITHUB_TOKEN or GITHUB_ORG not found. Cannot fetch file content.");
+    if (!token) {
+      console.error("GITHUB_TOKEN not found. Cannot fetch file.");
       return null;
     }
 
+    const org = getGitHubOrg();
+    const repoPath = repo.includes('/') ? repo : `${org}/${repo}`;
     const response = await fetch(
-      `https://api.github.com/repos/${org}/${repo}/contents/${path}`,
+      `https://api.github.com/repos/${repoPath}/contents/${filePath}`,
       {
         headers: {
           Authorization: `token ${token}`,
@@ -124,7 +126,7 @@ export async function fetchFileFromGitHub(
 
     if (!response.ok) {
       if (response.status === 404) {
-        console.log(`File not found: ${repo}/${path}`);
+        console.log(`File not found: ${repo}/${filePath}`);
         return null;
       }
       throw new Error(
@@ -135,7 +137,7 @@ export async function fetchFileFromGitHub(
     const fileData = await response.json();
 
     if (fileData.type !== "file") {
-      console.log(`Path is not a file: ${repo}/${path}`);
+      console.log(`Path is not a file: ${repo}/${filePath}`);
       return null;
     }
 
@@ -148,7 +150,7 @@ export async function fetchFileFromGitHub(
 
     return fileData.content || null;
   } catch (error) {
-    console.error(`Failed to fetch file ${path} from ${repo}:`, error);
+    console.error(`Failed to fetch file ${filePath} from ${repo}:`, error);
     return null;
   }
 }
@@ -160,15 +162,16 @@ export async function listDirectoryContents(
 ): Promise<string[]> {
   try {
     const token = getGitHubToken();
-    const org = getGitHubOrg();
 
-    if (!token || !org) {
-      console.error("GITHUB_TOKEN or GITHUB_ORG not found. Cannot list directory contents.");
+    if (!token) {
+      console.error("GITHUB_TOKEN not found. Cannot list directory contents.");
       return [];
     }
 
+    const org = getGitHubOrg();
+    const repoPath = repo.includes('/') ? repo : `${org}/${repo}`;
     const response = await fetch(
-      `https://api.github.com/repos/${org}/${repo}/contents/${path}`,
+      `https://api.github.com/repos/${repoPath}/contents/${path}`,
       {
         headers: {
           Authorization: `token ${token}`,
@@ -210,14 +213,16 @@ export async function listDirectoryContents(
 export async function hasDocsFolder(repo: string): Promise<boolean> {
   try {
     const token = getGitHubToken();
-    const org = getGitHubOrg();
 
-    if (!token || !org) {
+    if (!token) {
       return false;
     }
 
+    const org = getGitHubOrg();
+    const repoPath = repo.includes('/') ? repo : `${org}/${repo}`;
+
     const response = await fetch(
-      `https://api.github.com/repos/${org}/${repo}/contents/docs`,
+      `https://api.github.com/repos/${repoPath}/contents/docs`,
       {
         headers: {
           Authorization: `token ${token}`,
