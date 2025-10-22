@@ -18,7 +18,7 @@ import {
   History,
 } from "lucide-react";
 import { EnhancedSidebar } from "./EnhancedSidebar";
-import { SearchModal } from "./SearchModal";
+import { GlobalSearch } from "./GlobalSearch";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -115,8 +115,8 @@ export function Layout({ children }: LayoutProps) {
         <main className="flex-1">{children}</main>
       </div>
 
-      {/* Search Modal */}
-      <SearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
+      {/* Global Search */}
+      <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* Keyboard shortcuts */}
       <div className="hidden">
