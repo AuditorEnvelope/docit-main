@@ -69,10 +69,10 @@ export async function getRepoDocs(repoName: string): Promise<RepoDocs> {
 
   // For other repos, this would fetch from GitHub API
   return {
-    readme: null,
-    changelog: null,
-    summary: null,
-    api: null,
+    readme: undefined,
+    changelog: undefined,
+    summary: undefined,
+    api: undefined,
     changes: [],
   };
 }
