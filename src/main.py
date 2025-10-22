@@ -232,6 +232,9 @@ async def get_repo_docs(repo_name: str):
 # ============================================
 # HIERARCHICAL DOCUMENTATION ROUTES (NEW)
 # ============================================
+# These routes provide access to the hierarchical documentation tree
+# Architecture: Repo → SDK → Module → Feature → Function → Class/Method
+# Each level has AI-generated descriptions and maintains relationships
 
 @app.get("/api/repos/{repo_name}/tree")
 async def get_repo_tree(repo_name: str, commit_sha: str = None):
