@@ -372,11 +372,50 @@ async def get_node_details(repo_name: str, node_id: str):
         print(f"Error fetching node: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/repos/{repo_name}/search")
-async def search_hierarchy(repo_name: str, query: str):
-    """Search across hierarchical documentation"""
+@app.get("/api/search")
+async def global_search(query: str):
+    """Search across ALL documentation (global search)"""
     if not commit_bus or not commit_bus.pool:
         raise HTTPException(status_code=503, detail="Database not available")
+    
+    if not query or len(query) < 3:
+        return []
+    
+    try:
+        async with commit_bus.pool.acquire() as conn:
+            results = await conn.fetch("""
+                SELECT 
+                    id, repo_id, type, title, slug, path,
+                    content, created_at
+                FROM doc_nodes
+                WHERE 
+                    title ILIKE $1 
+                    OR content::text ILIKE $1
+                    OR path ILIKE $1
+                ORDER BY 
+                    CASE 
+                        WHEN title ILIKE $1 THEN 1
+                        WHEN path ILIKE $1 THEN 2
+                        ELSE 3
+                    END,
+                    created_at DESC
+                LIMIT 50
+            """, f"%{query}%")
+            
+            return [dict(r) for r in results]
+            
+    except Exception as e:
+        print(f"Error in global search: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/repos/{repo_name}/search")
+async def search_hierarchy(repo_name: str, query: str):
+    """Search across hierarchical documentation for a specific repo"""
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    if not query or len(query) < 3:
+        return []
     
     try:
         async with commit_bus.pool.acquire() as conn:
