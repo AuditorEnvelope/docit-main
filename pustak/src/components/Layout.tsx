@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
+import { useRouter } from "next/navigation";
 import {
   BookOpen,
   Search,
@@ -16,9 +17,14 @@ import {
   Building2,
   Code,
   History,
+  User,
+  LogOut,
+  Settings,
+  Crown,
 } from "lucide-react";
 import { EnhancedSidebar } from "./EnhancedSidebar";
 import { GlobalSearch } from "./GlobalSearch";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -27,7 +33,10 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { theme, setTheme } = useTheme();
+  const { user, logout, isAuthenticated } = useAuth();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -107,6 +116,115 @@ export function Layout({ children }: LayoutProps) {
                   <Moon className="w-5 h-5" />
                 )}
               </button>
+
+              {/* User Menu */}
+              {isAuthenticated && user ? (
+                <div className="relative">
+                  <button
+                    onClick={() => setUserMenuOpen(!userMenuOpen)}
+                    className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    {user.avatar_url ? (
+                      <img
+                        src={user.avatar_url}
+                        alt={user.name || user.username || 'User'}
+                        className="w-8 h-8 rounded-full border-2 border-blue-500"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-bold">
+                        {(user.name || user.username || 'U')[0].toUpperCase()}
+                      </div>
+                    )}
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {userMenuOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setUserMenuOpen(false)}
+                      />
+                      <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50">
+                        {/* User Info */}
+                        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                          <p className="font-semibold text-gray-900 dark:text-white">
+                            {user.name || user.username}
+                          </p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {user.email || `@${user.username}`}
+                          </p>
+                          <div className="mt-2">
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
+                              user.plan === 'free' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300' :
+                              user.plan === 'pro' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
+                              user.plan === 'team' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
+                              'bg-gradient-to-r from-yellow-400 to-orange-500 text-white'
+                            }`}>
+                              {user.plan !== 'free' && <Crown className="w-3 h-3" />}
+                              {user.plan.toUpperCase()}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Menu Items */}
+                        <div className="py-2">
+                          <button
+                            onClick={() => {
+                              setUserMenuOpen(false);
+                              router.push('/dashboard');
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          >
+                            <User className="w-4 h-4" />
+                            Dashboard
+                          </button>
+                          <button
+                            onClick={() => {
+                              setUserMenuOpen(false);
+                              router.push('/pricing');
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          >
+                            <Crown className="w-4 h-4" />
+                            Upgrade Plan
+                          </button>
+                          <button
+                            onClick={() => {
+                              setUserMenuOpen(false);
+                              router.push('/settings');
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          >
+                            <Settings className="w-4 h-4" />
+                            Settings
+                          </button>
+                        </div>
+
+                        {/* Logout */}
+                        <div className="border-t border-gray-200 dark:border-gray-700 py-2">
+                          <button
+                            onClick={() => {
+                              setUserMenuOpen(false);
+                              logout();
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          >
+                            <LogOut className="w-4 h-4" />
+                            Logout
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => router.push('/login')}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
+                >
+                  Login
+                </button>
+              )}
             </div>
           </div>
         </header>

@@ -7,7 +7,7 @@ import os
 import hmac
 import hashlib
 import json
-from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import uvicorn
@@ -18,6 +18,7 @@ from subscription_service import SubscriptionService
 from overlay_service import OverlayService
 from smart_processor import handle_push_event as legacy_handle_push
 from quality_checker import DocumentationQualityChecker, DocumentationQuality
+from auth_service import AuthService, get_current_user, get_optional_user, User
 
 load_dotenv()
 
@@ -51,11 +52,12 @@ commit_bus = None
 subscription_service = None
 overlay_service = None
 quality_checker = None
+auth_service = None
 
 @app.on_event("startup")
 async def startup():
     """Initialize all services on startup"""
-    global commit_bus, subscription_service, overlay_service, quality_checker
+    global commit_bus, subscription_service, overlay_service, quality_checker, auth_service
     
     print("🚀 Starting Lekhak AI...")
     
@@ -77,6 +79,15 @@ async def startup():
         except Exception as e:
             print(f"⚠️  Commit Bus failed: {e}")
             commit_bus = None
+    
+    # Initialize Auth Service
+    if commit_bus and commit_bus.pool:
+        try:
+            auth_service = AuthService(commit_bus.pool)
+            print("✅ Auth Service initialized")
+        except Exception as e:
+            print(f"⚠️  Auth Service failed: {e}")
+            auth_service = None
     
     # Initialize Subscription Service
     if HAS_SUBSCRIPTIONS:
@@ -172,6 +183,148 @@ async def process_commit_event(payload: dict):
 
 # ============================================
 # API ROUTES
+# ============================================
+
+# ============================================
+# AUTHENTICATION ENDPOINTS
+# ============================================
+
+@app.get("/auth/github")
+async def start_github_oauth(redirect_uri: str, scope: str = None):
+    """Start GitHub OAuth flow - Returns GitHub OAuth URL"""
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+    
+    oauth_url = auth_service.get_oauth_url(redirect_uri, scope=scope)
+    return {"url": oauth_url}
+
+
+@app.get("/auth/callback")
+async def handle_github_callback(code: str, request: Request):
+    """Handle GitHub OAuth callback - Exchanges code for tokens"""
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+    
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    
+    result = await auth_service.handle_oauth_callback(
+        code=code,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+    
+    return result
+
+
+async def get_auth_user(authorization: str = Header(None)):
+    """Dependency to get current authenticated user"""
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+    
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = authorization.split(" ")[1]
+    
+    # Verify JWT token
+    payload = auth_service.verify_token(token)
+    
+    # Validate session
+    session = await auth_service.validate_session(token)
+    if not session:
+        raise HTTPException(status_code=401, detail="Session expired or invalid")
+    
+    # Get user
+    user = await auth_service.get_user_by_id(payload["user_id"])
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User account is disabled")
+    
+    return user
+
+
+@app.get("/auth/me")
+async def get_current_user(user = Depends(get_auth_user)):
+    """Get current authenticated user"""
+    return {
+        "id": user.id,
+        "github_id": user.github_id,
+        "email": user.email,
+        "name": user.name,
+        "username": user.username,
+        "avatar_url": user.avatar_url,
+        "plan": user.plan,
+    }
+
+
+@app.get("/auth/repositories")
+async def get_user_repositories(user = Depends(get_auth_user)):
+    """Get user's GitHub repositories"""
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+    
+    repos = await auth_service.get_user_repositories(user.id)
+    return {"repositories": repos}
+
+
+@app.post("/docs/generate")
+async def generate_documentation(repo_name: str, user = Depends(get_auth_user), background_tasks: BackgroundTasks = None):
+    """Generate documentation for a repository"""
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+    
+    try:
+        from doc_generation_endpoint import generate_repository_documentation
+        
+        github_token = await auth_service.get_github_token(user.id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        print(f"🚀 Generating docs for {repo_name}...")
+        
+        docs = await generate_repository_documentation(repo_name, github_token)
+        
+        print(f"✅ Documentation generated for {repo_name}")
+        return {
+            "status": "success",
+            "message": f"Documentation generated for {repo_name}",
+            "documentation": docs
+        }
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/webhook/github")
+async def github_webhook(request: Request):
+    """GitHub webhook for automatic documentation generation on push"""
+    from webhook_handler import verify_github_signature, handle_push_webhook
+    
+    # Verify signature
+    body = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    
+    if not verify_github_signature(body, signature):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+    
+    payload = await request.json()
+    event_type = request.headers.get("X-GitHub-Event", "")
+    
+    if event_type == "push":
+        # Get the repository's GitHub token from database
+        # For now, use the environment token as fallback
+        github_token = os.getenv("GITHUB_TOKEN")
+        if github_token:
+            await handle_push_webhook(payload, github_token)
+    
+    return {"status": "received"}
+
+
+# ============================================
+# GENERAL ROUTES
 # ============================================
 
 @app.get("/")
