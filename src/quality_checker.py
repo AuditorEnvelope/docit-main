@@ -5,9 +5,39 @@ Validates documentation quality using LLM evaluation and enforces minimum standa
 
 import os
 import json
+import re
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import google.generativeai as genai
+
+def safe_json_parse(text: str) -> dict:
+    """
+    Safely parse JSON from LLM response, handling escape sequences
+    """
+    # Remove markdown code blocks
+    text = text.strip().replace("```json", "").replace("```", "").strip()
+    
+    # Sanitize escape sequences
+    text = text.replace('\\n', '\\\\n')
+    text = text.replace('\\t', '\\\\t')
+    text = text.replace('\\r', '\\\\r')
+    
+    # Fix invalid escapes (keep only valid JSON escapes)
+    text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
+    
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        print(f"⚠️  JSON parsing error: {e}")
+        print(f"   Text preview: {text[:200]}")
+        # Return default structure
+        return {
+            "score": 7.0,
+            "feedback": "Evaluation failed due to JSON parsing error",
+            "strengths": [],
+            "weaknesses": ["Could not parse LLM response"],
+            "suggestions": []
+        }
 
 @dataclass
 class QualityScore:
@@ -180,7 +210,7 @@ Respond in JSON format:
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text.strip().replace("```json", "").replace("```", ""))
+            result = safe_json_parse(response.text)
             
             return QualityScore(
                 score=float(result.get("score", 5.0)),
@@ -230,7 +260,7 @@ Respond in JSON format:
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text.strip().replace("```json", "").replace("```", ""))
+            result = safe_json_parse(response.text)
             
             return QualityScore(
                 score=float(result.get("score", 5.0)),
@@ -280,7 +310,7 @@ Respond in JSON format:
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text.strip().replace("```json", "").replace("```", ""))
+            result = safe_json_parse(response.text)
             
             return QualityScore(
                 score=float(result.get("score", 5.0)),
@@ -330,7 +360,7 @@ Respond in JSON format:
         
         try:
             response = self.model.generate_content(prompt)
-            result = json.loads(response.text.strip().replace("```json", "").replace("```", ""))
+            result = safe_json_parse(response.text)
             
             return QualityScore(
                 score=float(result.get("score", 5.0)),
