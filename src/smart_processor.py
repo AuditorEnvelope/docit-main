@@ -183,6 +183,9 @@ ANALYSIS REQUIREMENTS:
 4. Understand which parts of the system are affected
 5. Determine what documentation needs updating
 
+IMPORTANT: Respond with VALID JSON only. Do NOT use backslashes except for escaping quotes.
+Use forward slashes (/) for paths. Keep strings simple and avoid special characters.
+
 Respond in JSON format:
 {{
     "type": "feature|bug_fix|refactor|breaking_change|security|performance|chore|docs",
@@ -210,13 +213,62 @@ Respond in JSON format:
         result = rotator.generate_with_rotation(analysis_prompt)
         
         if result:
-            # Parse JSON response
+            # Parse JSON response with sanitization
             json_match = re.search(r'\{.*\}', result, re.DOTALL)
             if json_match:
-                analysis = json.loads(json_match.group())
-                return analysis
+                json_str = json_match.group()
+                
+                # Sanitize JSON: fix common escape issues
+                # Replace invalid escape sequences
+                json_str = json_str.replace('\\n', '\\\\n')  # Fix newlines
+                json_str = json_str.replace('\\t', '\\\\t')  # Fix tabs
+                json_str = json_str.replace('\\r', '\\\\r')  # Fix carriage returns
+                
+                # Remove any remaining single backslashes that aren't part of valid escapes
+                # Valid escapes: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
+                json_str = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', json_str)
+                
+                try:
+                    analysis = json.loads(json_str)
+                    return analysis
+                except json.JSONDecodeError as json_err:
+                    print(f"⚠️  JSON parsing failed: {json_err}")
+                    print(f"   Attempting alternative parsing...")
+                    
+                    # Try to extract key fields manually as fallback
+                    try:
+                        # Use regex to extract key fields
+                        type_match = re.search(r'"type"\s*:\s*"([^"]+)"', result)
+                        title_match = re.search(r'"title"\s*:\s*"([^"]+)"', result)
+                        significance_match = re.search(r'"significance"\s*:\s*(\d+)', result)
+                        
+                        if type_match and title_match:
+                            print(f"   ✅ Extracted key fields manually")
+                            return {
+                                "type": type_match.group(1),
+                                "title": title_match.group(1),
+                                "significance": int(significance_match.group(1)) if significance_match else 7,
+                                "is_significant": True,
+                                "summary": title_match.group(1),
+                                "impact_scope": ["general"],
+                                "affected_components": list(changed_files)[:5],
+                                "breaking_changes": False,
+                                "new_features": [],
+                                "technical_details": f"Files changed: {', '.join(sorted(changed_files)[:5])}",
+                                "documentation_needs": {
+                                    "update_readme": True,
+                                    "create_changelog": True,
+                                    "update_api_docs": True,
+                                    "create_migration_guide": False
+                                },
+                                "reason": "Partial analysis from malformed JSON"
+                            }
+                    except Exception as extract_err:
+                        print(f"   ❌ Manual extraction failed: {extract_err}")
+                        raise json_err
     except Exception as e:
         print(f"❌ Analysis failed: {e}")
+        print(f"   LLM response preview: {result[:200] if 'result' in locals() else 'No response'}")
     
     # Fallback analysis
     return {
