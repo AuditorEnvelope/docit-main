@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import {
@@ -22,7 +22,10 @@ import {
   Settings,
   Crown,
 } from "lucide-react";
-import { EnhancedSidebar } from "./EnhancedSidebar";
+import { EnhancedSidebar as EnhancedSidebarComponent } from "./EnhancedSidebar";
+
+// Memoize sidebar to prevent re-mounts on parent re-renders
+const EnhancedSidebar = memo(EnhancedSidebarComponent);
 import { GlobalSearch } from "./GlobalSearch";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -65,7 +68,7 @@ export function Layout({ children }: LayoutProps) {
         lg:translate-x-0
       `}
       >
-        <EnhancedSidebar onClose={() => setSidebarOpen(false)} />
+        <EnhancedSidebar key="sidebar" onClose={() => setSidebarOpen(false)} />
       </div>
 
       {/* Main content */}

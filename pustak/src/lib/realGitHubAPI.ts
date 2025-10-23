@@ -25,15 +25,13 @@ export interface GitHubFile {
   encoding?: string;
 }
 
-// Get GitHub token from environment or backend
-// NOTE: This is only used as fallback. Authenticated user's token should come from backend.
+// Get GitHub token from environment
 function getGitHubToken(): string | null {
-  if (typeof window !== "undefined") {
-    // Client-side: token should be passed from server
-    return null;
+  // Only available on server-side
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env.GITHUB_TOKEN || null;
   }
-  // Server-side: get from environment (fallback only)
-  return process.env.GITHUB_TOKEN || null;
+  return null;
 }
 
 // Get GitHub organization from environment
@@ -97,60 +95,89 @@ export async function fetchAllRepositoriesFromGitHub(): Promise<GitHubRepo[]> {
   }
 }
 
-// Fetch file content from GitHub
+// Fetch file content from GitHub via backend
 export async function fetchFileFromGitHub(
   repo: string,
   filePath: string
 ): Promise<string | null> {
   try {
-    const token = getGitHubToken();
+    console.log("[fetchFileFromGitHub] Called with:", { repo, filePath });
+    const isServer = typeof window === 'undefined';
+    console.log("[fetchFileFromGitHub] Is server-side:", isServer);
+    
+    if (isServer) {
+      // Server-side: use env token
+      console.log("[fetchFileFromGitHub] Using server-side fetch");
+      const token = getGitHubToken();
+      console.log("[fetchFileFromGitHub] Token available:", !!token);
+      if (!token) {
+        console.log("[fetchFileFromGitHub] No token, returning null");
+        return null;
+      }
+      const org = getGitHubOrg();
+      const repoPath = repo.includes('/') ? repo : `${org}/${repo}`;
+      console.log("[fetchFileFromGitHub] Repo path:", repoPath);
+      const url = `https://api.github.com/repos/${repoPath}/contents/${filePath}`;
+      console.log("[fetchFileFromGitHub] GitHub API URL:", url);
+      const response = await fetch(
+        url,
+        {
+          headers: {
+            Authorization: `token ${token}`,
+            Accept: "application/vnd.github.v3+json",
+            "User-Agent": "Pustak-Documentation-Platform",
+          },
+          next: { revalidate: 10 },
+        }
+      );
+      console.log("[fetchFileFromGitHub] Response status:", response.status);
+      if (!response.ok) {
+        console.log("[fetchFileFromGitHub] Response not OK, returning null");
+        return null;
+      }
+      const fileData = await response.json();
+      console.log("[fetchFileFromGitHub] File data received, encoding:", fileData.encoding);
+      if (fileData.encoding === "base64" && fileData.content) {
+        const base64Content = fileData.content.replace(/\n/g, '');
+        const decoded = Buffer.from(base64Content, "base64").toString("utf-8");
+        console.log("[fetchFileFromGitHub] Decoded content length:", decoded.length);
+        return decoded;
+      }
+      console.log("[fetchFileFromGitHub] Returning raw content, length:", fileData.content?.length || 0);
+      return fileData.content || null;
+    }
 
-    if (!token) {
-      console.error("GITHUB_TOKEN not found. Cannot fetch file.");
+    // Client-side: use backend endpoint
+    console.log("[fetchFileFromGitHub] Using client-side fetch");
+    const userToken = localStorage.getItem('pustak_access_token');
+    console.log("[fetchFileFromGitHub] User token available:", !!userToken);
+    if (!userToken) {
+      console.log("[fetchFileFromGitHub] No user token, returning null");
       return null;
     }
 
-    const org = getGitHubOrg();
-    const repoPath = repo.includes('/') ? repo : `${org}/${repo}`;
+    const url = `/api/fetch-doc?repo=${encodeURIComponent(repo)}&filePath=${encodeURIComponent(filePath)}`;
+    console.log("[fetchFileFromGitHub] API URL:", url);
     const response = await fetch(
-      `https://api.github.com/repos/${repoPath}/contents/${filePath}`,
+      url,
       {
         headers: {
-          Authorization: `token ${token}`,
-          Accept: "application/vnd.github.v3+json",
-          "User-Agent": "Pustak-Documentation-Platform",
+          'Authorization': `Bearer ${userToken}`,
         },
-        next: { revalidate: 10 }, // Cache for 10 seconds (faster updates)
       }
     );
 
+    console.log("[fetchFileFromGitHub] API response status:", response.status);
     if (!response.ok) {
-      if (response.status === 404) {
-        console.log(`File not found: ${repo}/${filePath}`);
-        return null;
-      }
-      throw new Error(
-        `GitHub API error: ${response.status} ${response.statusText}`
-      );
-    }
-
-    const fileData = await response.json();
-
-    if (fileData.type !== "file") {
-      console.log(`Path is not a file: ${repo}/${filePath}`);
+      console.log("[fetchFileFromGitHub] API response not OK, returning null");
       return null;
     }
 
-    // Decode base64 content
-    if (fileData.encoding === "base64" && fileData.content) {
-      // Remove newlines from base64 content (GitHub API adds them)
-      const base64Content = fileData.content.replace(/\n/g, '');
-      return Buffer.from(base64Content, "base64").toString("utf-8");
-    }
-
-    return fileData.content || null;
+    const data = await response.json();
+    console.log("[fetchFileFromGitHub] API data received, content length:", data.content?.length || 0);
+    return data.content || null;
   } catch (error) {
-    console.error(`Failed to fetch file ${filePath} from ${repo}:`, error);
+    console.error("[fetchFileFromGitHub] Error:", error);
     return null;
   }
 }
@@ -185,6 +212,10 @@ export async function listDirectoryContents(
     if (!response.ok) {
       if (response.status === 404) {
         console.log(`Directory not found: ${repo}/${path}`);
+        return [];
+      }
+      if (response.status === 401 || response.status === 403) {
+        console.error(`Auth error (${response.status}): Token may not have access to ${repoPath}`);
         return [];
       }
       throw new Error(
@@ -417,4 +448,146 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
 // Get GitHub organization name (for use in components)
 export function getGitHubOrgName(): string {
   return getGitHubOrg();
+}
+
+// Check doc structure status
+export interface DocStructureStatus {
+  hasDocsFolder: boolean;
+  hasReadme: boolean;
+  hasChangelog: boolean;
+  hasSummary: boolean;
+  hasArchitecture: boolean;
+  hasWorkflow: boolean;
+  hasApi: boolean;
+  architectureVersions: string[];
+  workflowVersions: string[];
+}
+
+export async function checkDocStructure(
+  repo: string,
+  userToken?: string
+): Promise<DocStructureStatus> {
+  try {
+    const token = userToken || getGitHubToken();
+    if (!token) {
+      return {
+        hasDocsFolder: false,
+        hasReadme: false,
+        hasChangelog: false,
+        hasSummary: false,
+        hasArchitecture: false,
+        hasWorkflow: false,
+        hasApi: false,
+        architectureVersions: [],
+        workflowVersions: [],
+      };
+    }
+
+    const repoPath = repo.includes('/') ? repo : `${getGitHubOrg()}/${repo}`;
+    const baseUrl = `https://api.github.com/repos/${repoPath}`;
+
+    // Check each file/folder
+    const checks = await Promise.all([
+      // Check docs folder
+      fetch(`${baseUrl}/contents/docs`, {
+        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
+      }).then(r => r.ok),
+      // Check README
+      fetch(`${baseUrl}/contents/README.md`, {
+        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
+      }).then(r => r.ok),
+      // Check CHANGELOG
+      fetch(`${baseUrl}/contents/CHANGELOG.md`, {
+        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
+      }).then(r => r.ok),
+      // Check docs/SUMMARY.md
+      fetch(`${baseUrl}/contents/docs/SUMMARY.md`, {
+        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
+      }).then(r => r.ok),
+      // Check docs/ARCHITECTURE.md
+      fetch(`${baseUrl}/contents/docs/ARCHITECTURE.md`, {
+        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
+      }).then(r => r.ok),
+      // Check docs/WORKFLOW.md
+      fetch(`${baseUrl}/contents/docs/WORKFLOW.md`, {
+        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
+      }).then(r => r.ok),
+      // Check docs/API.md
+      fetch(`${baseUrl}/contents/docs/API.md`, {
+        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
+      }).then(r => r.ok),
+    ]);
+
+    const [hasDocsFolder, hasReadme, hasChangelog, hasSummary, hasArchitecture, hasWorkflow, hasApi] = checks;
+
+    // Get architecture versions
+    const archVersions = await getVersionsFromFolder(repo, 'docs/architecture', token);
+    const workflowVersions = await getVersionsFromFolder(repo, 'docs/workflow', token);
+
+    return {
+      hasDocsFolder,
+      hasReadme,
+      hasChangelog,
+      hasSummary,
+      hasArchitecture,
+      hasWorkflow,
+      hasApi,
+      architectureVersions: archVersions,
+      workflowVersions: workflowVersions,
+    };
+  } catch (error) {
+    console.error(`Failed to check doc structure for ${repo}:`, error);
+    return {
+      hasDocsFolder: false,
+      hasReadme: false,
+      hasChangelog: false,
+      hasSummary: false,
+      hasArchitecture: false,
+      hasWorkflow: false,
+      hasApi: false,
+      architectureVersions: [],
+      workflowVersions: [],
+    };
+  }
+}
+
+// Helper: Get versions from a folder
+async function getVersionsFromFolder(
+  repo: string,
+  folderPath: string,
+  token: string
+): Promise<string[]> {
+  try {
+    const repoPath = repo.includes('/') ? repo : `${getGitHubOrg()}/${repo}`;
+    const response = await fetch(
+      `https://api.github.com/repos/${repoPath}/contents/${folderPath}`,
+      {
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: 'application/vnd.github.v3+json',
+        },
+      }
+    );
+
+    if (!response.ok) return [];
+
+    const files = await response.json();
+    return files
+      .filter((f: any) => f.type === 'file' && f.name.endsWith('.md') && f.name !== 'current.md')
+      .map((f: any) => f.name.replace('.md', ''))
+      .sort((a: string, b: string) => {
+        // Sort versions numerically
+        const aParts = a.split('.').map(Number);
+        const bParts = b.split('.').map(Number);
+        for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+          const aNum = aParts[i] || 0;
+          const bNum = bParts[i] || 0;
+          if (aNum !== bNum) return bNum - aNum;
+        }
+        return 0;
+      });
+  } catch (error) {
+    console.error(`Failed to get versions from ${folderPath}:`, error);
+    return [];
+  }
 }

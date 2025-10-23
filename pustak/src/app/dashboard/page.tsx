@@ -35,7 +35,7 @@ export default function DashboardPage() {
   // Fetch repositories
   useEffect(() => {
     const fetchRepositories = async () => {
-      if (!token || !user) return;
+      if (!token) return;
       
       setLoadingRepos(true);
       try {
@@ -60,7 +60,7 @@ export default function DashboardPage() {
     };
 
     fetchRepositories();
-  }, [token, user]);
+  }, [token, user?.id]);
 
   if (loading) {
     return (

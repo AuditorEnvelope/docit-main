@@ -28,7 +28,20 @@ export default function HomePage() {
   useEffect(() => {
     async function loadStats() {
       try {
-        const response = await fetch('/api/repositories');
+        // Get JWT token from localStorage
+        const userToken = localStorage.getItem('pustak_access_token');
+        
+        if (!userToken) {
+          console.log('No user token available - skipping stats');
+          setLoading(false);
+          return;
+        }
+
+        const response = await fetch('/api/repositories', {
+          headers: {
+            'Authorization': `Bearer ${userToken}`,
+          },
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch repositories');
         }

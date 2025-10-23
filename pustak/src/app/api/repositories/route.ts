@@ -1,32 +1,47 @@
-import { NextResponse } from "next/server";
-import { fetchAllRepositoriesFromGitHub, hasDocsFolder } from "@/lib/realGitHubAPI";
+import { NextResponse, NextRequest } from "next/server";
 
-export async function GET() {
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
+export async function GET(request: NextRequest) {
   try {
-    const repositories = await fetchAllRepositoriesFromGitHub();
+    // Get user's JWT token from Authorization header
+    const authHeader = request.headers.get("Authorization");
+    const userToken = authHeader?.replace("Bearer ", "");
 
-    // Check which repos have docs folders
-    const reposWithDocsCheck = await Promise.all(
-      repositories.map(async (repo) => {
-        const hasDocs = await hasDocsFolder(repo.name);
-        return {
-          name: repo.name,
-          fullName: repo.full_name,
-          description: repo.description || "No description available",
-          lastUpdated: repo.updated_at,
-          hasLocalDocs: hasDocs,
-        };
-      })
-    );
+    if (!userToken) {
+      return NextResponse.json(
+        { error: "No authorization token provided" },
+        { status: 401 }
+      );
+    }
 
-    // Filter to only show repos with docs
-    const reposWithDocs = reposWithDocsCheck.filter(repo => repo.hasLocalDocs);
+    console.log("📡 Calling backend /auth/repositories with token...");
 
-    return NextResponse.json(reposWithDocs);
+    // Call backend /auth/repositories endpoint
+    const response = await fetch(`${BACKEND_URL}/auth/repositories`, {
+      headers: {
+        Authorization: `Bearer ${userToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`Backend error: ${response.status}`);
+      throw new Error(`Backend error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log(`✅ Got ${data.repositories?.length || 0} repos from backend`);
+
+    // Return repos from backend
+    return NextResponse.json(data.repositories || []);
   } catch (error) {
-    console.error("Failed to fetch repositories:", error);
+    console.error("❌ Failed to fetch repositories:", error);
     return NextResponse.json(
-      { error: "Failed to fetch repositories" },
+      {
+        error: "Failed to fetch repositories",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
       { status: 500 }
     );
   }
