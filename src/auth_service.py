@@ -106,7 +106,7 @@ class AuthService:
         
         # Default scope for basic auth, can be overridden for repo access
         if not scope:
-            scope = "user:email read:org"
+            scope = "user:email read:org repo"
         
         params = {
             "client_id": GITHUB_CLIENT_ID,

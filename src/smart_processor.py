@@ -678,8 +678,16 @@ def commit_and_push_changes(repo_dir, analysis, commit_sha, token, repo_full):
             print("🔄 Fetching latest changes from remote...")
             run_cmd("git fetch origin", cwd=repo_dir)
 
-            # Reset to ensure we have latest main
-            run_cmd("git reset --hard origin/main", cwd=repo_dir)
+            # Get default branch name
+            try:
+                default_branch = run_cmd("git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@'", cwd=repo_dir, capture_output=True).strip()
+                if not default_branch:
+                    default_branch = "main"  # Fallback to main
+            except:
+                default_branch = "main"  # Fallback to main
+            
+            print(f"🌿 Using default branch: {default_branch}")
+            run_cmd(f"git reset --hard origin/{default_branch}", cwd=repo_dir)
 
             # Add all documentation files (changes is now inside docs/)
             run_cmd("git add docs/ README.md CHANGELOG.md || true", cwd=repo_dir)
@@ -699,7 +707,7 @@ def commit_and_push_changes(repo_dir, analysis, commit_sha, token, repo_full):
             # Push with force if needed (for non-fast-forward updates)
             print("⬆️  Pushing changes to remote...")
             try:
-                run_cmd(f"git push https://x-access-token:{token}@github.com/{repo_full}.git HEAD:main", cwd=repo_dir)
+                run_cmd(f"git push https://x-access-token:{token}@github.com/{repo_full}.git HEAD:{default_branch}", cwd=repo_dir)
                 print("✅ Documentation changes committed and pushed")
                 return
 
