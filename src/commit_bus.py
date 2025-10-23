@@ -31,6 +31,7 @@ class CommitEvent(BaseModel):
     org_id: Optional[str] = None  # Organization name
     github_token_id: Optional[str] = None  # Reference to encrypted token
     webhook_secret: Optional[str] = None  # Org's webhook secret
+    installation_id: Optional[int] = None  # GitHub App installation ID
 
 class CommitBusService:
     """
@@ -63,8 +64,8 @@ class CommitBusService:
                 INSERT INTO commit_events (
                     repo_id, commit_sha, parent_sha, author_name, author_email,
                     timestamp, branch, files_changed, commit_message, push_id,
-                    source, metadata, user_id, org_id, github_token_id
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                    source, metadata, user_id, org_id, github_token_id, installation_id
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                 ON CONFLICT (repo_id, commit_sha) DO UPDATE
                 SET metadata = EXCLUDED.metadata, updated_at = NOW()
                 RETURNING event_id
@@ -74,7 +75,7 @@ class CommitBusService:
                 event.branch, json.dumps(event.files_changed),
                 event.commit_message, event.push_id, event.source,
                 json.dumps(event.metadata),
-                event.user_id, event.org_id, event.github_token_id
+                event.user_id, event.org_id, event.github_token_id, event.installation_id
             )
             return str(event_id)
     
@@ -98,7 +99,7 @@ class CommitBusService:
                     event_id, repo_id, commit_sha, parent_sha, author_name,
                     author_email, timestamp, branch, files_changed, commit_message,
                     push_id, source, metadata, created_at,
-                    user_id, org_id, github_token_id
+                    user_id, org_id, github_token_id, installation_id
                 FROM commit_events
                 WHERE processed = FALSE AND retry_count < 3
             """

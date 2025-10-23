@@ -97,7 +97,7 @@ class EventConsumer:
             except:
                 files_changed = []
         
-        return {
+        payload = {
             "repository": {
                 "full_name": event["repo_id"],
                 "name": event["repo_id"].split("/")[-1] if "/" in event["repo_id"] else event["repo_id"]
@@ -118,6 +118,12 @@ class EventConsumer:
             "after": event["commit_sha"],
             "before": event["parent_sha"][0] if event.get("parent_sha") else None
         }
+        
+        # Add installation if available (for GitHub App)
+        if event.get("installation_id"):
+            payload["installation"] = {"id": event["installation_id"]}
+        
+        return payload
     
     async def get_github_token(self, user_id: str, token_id: str) -> Optional[str]:
         """
