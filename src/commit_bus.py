@@ -25,6 +25,12 @@ class CommitEvent(BaseModel):
     push_id: Optional[str] = None
     source: str = "github"  # github|gitlab|cli
     metadata: Optional[dict] = {}
+    
+    # Multi-org support fields (optional for backward compatibility)
+    user_id: Optional[str] = None  # UUID of user who owns the repo
+    org_id: Optional[str] = None  # Organization name
+    github_token_id: Optional[str] = None  # Reference to encrypted token
+    webhook_secret: Optional[str] = None  # Org's webhook secret
 
 class CommitBusService:
     """
@@ -57,8 +63,8 @@ class CommitBusService:
                 INSERT INTO commit_events (
                     repo_id, commit_sha, parent_sha, author_name, author_email,
                     timestamp, branch, files_changed, commit_message, push_id,
-                    source, metadata
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    source, metadata, user_id, org_id, github_token_id
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                 ON CONFLICT (repo_id, commit_sha) DO UPDATE
                 SET metadata = EXCLUDED.metadata, updated_at = NOW()
                 RETURNING event_id
@@ -67,7 +73,8 @@ class CommitBusService:
                 event.author_name, event.author_email, event.timestamp,
                 event.branch, json.dumps(event.files_changed),
                 event.commit_message, event.push_id, event.source,
-                json.dumps(event.metadata)
+                json.dumps(event.metadata),
+                event.user_id, event.org_id, event.github_token_id
             )
             return str(event_id)
     
@@ -90,7 +97,8 @@ class CommitBusService:
                 SELECT 
                     event_id, repo_id, commit_sha, parent_sha, author_name,
                     author_email, timestamp, branch, files_changed, commit_message,
-                    push_id, source, metadata, created_at
+                    push_id, source, metadata, created_at,
+                    user_id, org_id, github_token_id
                 FROM commit_events
                 WHERE processed = FALSE AND retry_count < 3
             """

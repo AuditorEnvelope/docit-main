@@ -38,8 +38,12 @@ def clone_repo_via_token(repo_full_name, token, target_dir):
     # Remove --depth 1 to get full history for commit checkout
     run_cmd(f"git clone {url} {target_dir}")
 
-def handle_push_event(payload):
+def handle_push_event(payload, github_token=None):
     """Enhanced push event handler with smart analysis"""
+    # Use provided token or fall back to env var
+    if not github_token:
+        github_token = os.getenv("GITHUB_TOKEN")
+    
     repo = payload.get("repository", {})
     repo_full = repo.get("full_name")
     installation = payload.get("installation", {})
