@@ -165,7 +165,7 @@ dump.rdb
 *.rdb
 
 # PostgreSQL
-*.sql
+# *.sql
 *.dump
 
 # Docker

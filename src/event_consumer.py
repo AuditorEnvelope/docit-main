@@ -119,6 +119,34 @@ class EventConsumer:
             "before": event["parent_sha"][0] if event.get("parent_sha") else None
         }
     
+    async def get_github_token(self, user_id: str, token_id: str) -> Optional[str]:
+        """
+        Get decrypted GitHub token for user/org
+        
+        Args:
+            user_id: UUID of user
+            token_id: UUID of token record
+        
+        Returns:
+            GitHub token string or None if not found
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow("""
+                    SELECT github_token FROM user_github_tokens
+                    WHERE user_id = $1 AND token_id = $2 AND is_active = TRUE
+                """, user_id, token_id)
+                
+                if result:
+                    token = result['github_token']
+                    # TODO: Decrypt token here if encrypted in database
+                    return token
+                
+                return None
+        except Exception as e:
+            print(f"⚠️  Error getting GitHub token: {e}")
+            return None
+    
     async def process_event(self, event: dict) -> bool:
         """
         Process a single event
@@ -139,6 +167,33 @@ class EventConsumer:
             # Log start
             await self.log_processing(event_id, "started", started_at)
             
+            # Extract context (multi-org mode)
+            user_id = event.get("user_id")
+            org_id = event.get("org_id")
+            token_id = event.get("github_token_id")
+            
+            # Get GitHub token
+            github_token = None
+            
+            # Try multi-org mode first (get token for this user/org)
+            if user_id and token_id:
+                github_token = await self.get_github_token(user_id, token_id)
+                
+                if github_token:
+                    print(f"✅ Got GitHub token for user {user_id} org {org_id}")
+                else:
+                    print(f"⚠️  No GitHub token found for user {user_id} org {org_id}")
+            
+            # Fall back to env var (single-org mode)
+            if not github_token:
+                github_token = os.getenv("GITHUB_TOKEN")
+                
+                if github_token:
+                    print(f"⚠️  Using GITHUB_TOKEN from env (single-org mode)")
+                else:
+                    print(f"❌ No GitHub token available (multi-org or env)")
+                    raise Exception(f"No GitHub token for user {user_id}")
+            
             # Convert to webhook format
             payload = self.convert_to_webhook_payload(event)
             
@@ -147,7 +202,8 @@ class EventConsumer:
             await asyncio.get_event_loop().run_in_executor(
                 None, 
                 handle_push_event, 
-                payload
+                payload,
+                github_token
             )
             
             # Mark as processed

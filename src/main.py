@@ -21,6 +21,7 @@ from overlay_service import OverlayService
 from smart_processor import handle_push_event as legacy_handle_push
 from quality_checker import DocumentationQualityChecker, DocumentationQuality
 from auth_service import AuthService, get_current_user, get_optional_user, User
+from webhook_multi_org import webhook_multi_org
 
 load_dotenv()
 
@@ -124,6 +125,9 @@ def verify_signature(secret: str, payload_body: bytes, signature: str) -> bool:
 async def process_commit_event(payload: dict):
     """Process commit event through commit bus or legacy processor"""
     
+    # Extract webhook context if available (multi-org mode)
+    webhook_context = payload.pop('_webhook_context', None)
+    
     # Try commit bus first (durable, never loses commits)
     if commit_bus:
         try:
@@ -164,7 +168,11 @@ async def process_commit_event(payload: dict):
                     commit_message=commit.get('message', ''),
                     push_id=payload.get('push_id'),
                     source='github',
-                    metadata={'payload': payload}
+                    metadata={'payload': payload},
+                    user_id=webhook_context.get('user_id') if webhook_context else None,
+                    org_id=webhook_context.get('org_id') if webhook_context else None,
+                    github_token_id=webhook_context.get('github_token_id') if webhook_context else None,
+                    webhook_secret=webhook_context.get('webhook_secret') if webhook_context else None
                 )
                 
                 event_id = await commit_bus.store_event(event)
@@ -412,22 +420,15 @@ async def webhook(
     x_hub_signature_256: str = Header(None),
     x_github_event: str = Header(None)
 ):
-    """GitHub webhook handler"""
-    
-    # Verify signature
-    body = await request.body()
-    if not verify_signature(WEBHOOK_SECRET, body, x_hub_signature_256):
-        raise HTTPException(status_code=403, detail="Invalid signature")
-    
-    payload = json.loads(body)
-    
-    # Handle push events
-    if x_github_event == "push":
-        # Process in background
-        background_tasks.add_task(process_commit_event, payload)
-        return {"status": "accepted"}
-    
-    return {"status": "ignored", "event": x_github_event}
+    """GitHub webhook handler with multi-org support"""
+    return await webhook_multi_org(
+        request=request,
+        background_tasks=background_tasks,
+        x_hub_signature_256=x_hub_signature_256,
+        x_github_event=x_github_event,
+        db_pool=commit_bus.pool if commit_bus else None,
+        process_commit_event_func=process_commit_event
+    )
 
 @app.get("/repos/{repo_name}/docs")
 async def get_repo_docs(repo_name: str):
