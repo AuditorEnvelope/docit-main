@@ -49,6 +49,16 @@ def handle_push_event(payload, github_token=None):
     installation = payload.get("installation", {})
     installation_id = installation.get("id")
     
+    # If no token provided but we have installation_id, try to get app token
+    if not github_token and installation_id:
+        try:
+            github_token = get_installation_token(installation_id)
+            if github_token:
+                print(f"✅ Using GitHub App installation token")
+        except Exception as e:
+            print(f"⚠️  Failed to get app token: {e}")
+            github_token = os.getenv("GITHUB_TOKEN")
+    
     # Get changed files
     changed_files = set()
     removed_files = set()

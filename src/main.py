@@ -10,6 +10,7 @@ import json
 import base64
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from dotenv import load_dotenv
 import uvicorn
 import aiohttp
@@ -137,6 +138,13 @@ async def process_commit_event(payload: dict):
             # Extract commit info from payload
             repo = payload.get('repository', {})
             commits = payload.get('commits', [])
+            installation = payload.get('installation', {})
+            installation_id = installation.get('id')
+            
+            # DEBUG: Log what we're receiving
+            print(f"🔍 DEBUG: Webhook payload repo: {repo.get('full_name')}")
+            print(f"🔍 DEBUG: Webhook context: {webhook_context}")
+            print(f"🔍 DEBUG: Installation ID: {installation_id}")
             
             if commits:
                 commit = commits[-1]  # Use last commit
@@ -149,8 +157,12 @@ async def process_commit_event(payload: dict):
                 if timestamp.tzinfo is not None:
                     timestamp = timestamp.replace(tzinfo=None)
                 
+                # Extract repo info
+                repo_full_name = repo.get('full_name', 'unknown')
+                repo_org = repo_full_name.split('/')[0] if '/' in repo_full_name else 'unknown'
+                
                 event = CommitEvent(
-                    repo_id=repo.get('full_name', 'unknown'),
+                    repo_id=repo_full_name,
                     commit_sha=commit.get('id', payload.get('after', 'unknown')),
                     parent_sha=[payload.get('before', '')] if payload.get('before') else [],
                     author_name=commit.get('author', {}).get('name', 'unknown'),
@@ -170,9 +182,10 @@ async def process_commit_event(payload: dict):
                     source='github',
                     metadata={'payload': payload},
                     user_id=webhook_context.get('user_id') if webhook_context else None,
-                    org_id=webhook_context.get('org_id') if webhook_context else None,
+                    org_id=repo_org,
                     github_token_id=webhook_context.get('github_token_id') if webhook_context else None,
-                    webhook_secret=webhook_context.get('webhook_secret') if webhook_context else None
+                    webhook_secret=webhook_context.get('webhook_secret') if webhook_context else None,
+                    installation_id=installation_id
                 )
                 
                 event_id = await commit_bus.store_event(event)
@@ -278,6 +291,37 @@ async def get_user_repositories(user = Depends(get_auth_user)):
     
     repos = await auth_service.get_user_repositories(user.id)
     return {"repositories": repos}
+
+
+@app.get("/auth/user-organizations")
+async def get_user_organizations(user = Depends(get_auth_user)):
+    """Get user's GitHub organizations"""
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+    
+    try:
+        github_token = await auth_service.get_github_token(user.id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://api.github.com/user/orgs",
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                }
+            ) as response:
+                if response.status == 200:
+                    orgs = await response.json()
+                    return {"organizations": orgs}
+                else:
+                    raise HTTPException(status_code=response.status, detail="Failed to fetch organizations")
+    except Exception as e:
+        print(f"❌ Error fetching organizations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/docs/fetch-file")
@@ -429,6 +473,138 @@ async def webhook(
         db_pool=commit_bus.pool if commit_bus else None,
         process_commit_event_func=process_commit_event
     )
+
+@app.get("/webhook/check-app-installation")
+async def check_app_installation(
+    org_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Check if GitHub App is installed in the organization
+    
+    Returns:
+    - app_installed: bool - Whether the app is installed
+    - connected: bool - Whether the org is already connected
+    """
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+    
+    try:
+        # Extract user_id from dict
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        
+        # Get user's GitHub token from OAuth (not personal token)
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            print(f"❌ No GitHub token found for user {user_id}")
+            raise HTTPException(status_code=401, detail="No GitHub token found. Please log in again.")
+        
+        # Check if app is installed in this org using GitHub App JWT
+        from github_app import create_jwt
+        
+        try:
+            jwt_token = create_jwt()
+            async with aiohttp.ClientSession() as session:
+                headers = {
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Accept": "application/vnd.github.v3+json"
+                }
+                
+                # Get all app installations (using app JWT, not user token)
+                async with session.get(
+                    "https://api.github.com/app/installations",
+                    headers=headers
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # The endpoint returns an array directly, not an object
+                        installations = data if isinstance(data, list) else data.get('installations', [])
+                        print(f"🔍 Checking org: {org_id}")
+                        print(f"📦 Found {len(installations)} installations:")
+                        for inst in installations:
+                            account_login = inst.get('account', {}).get('login')
+                            print(f"   - {account_login}")
+                        app_installed = any(
+                            inst.get('account', {}).get('login') == org_id 
+                            for inst in installations
+                        )
+                        print(f"✅ App installed for {org_id}: {app_installed}")
+                    else:
+                        print(f"❌ Failed to get installations: {resp.status}")
+                        app_installed = False
+        except Exception as e:
+            print(f"❌ Error checking app installation: {e}")
+            app_installed = False
+        
+        # Check if org is already connected
+        connected = False
+        if commit_bus and commit_bus.pool:
+            async with commit_bus.pool.acquire() as conn:
+                result = await conn.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM org_registrations WHERE user_id = $1 AND org_id = $2)",
+                    user_id, org_id
+                )
+                connected = result or False
+        
+        return {
+            "app_installed": app_installed,
+            "connected": connected,
+            "org_id": org_id
+        }
+    except Exception as e:
+        print(f"❌ Error checking app installation: {e}")
+        return {
+            "app_installed": False,
+            "connected": False,
+            "org_id": org_id
+        }
+
+class WebhookRegisterRequest(BaseModel):
+    org_id: str
+
+@app.post("/webhook/register")
+async def register_webhook(
+    request: WebhookRegisterRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Register webhook for an organization (multi-org support)
+    
+    This endpoint:
+    1. Stores the org_id + user_id mapping
+    2. Returns webhook URL for user to configure on GitHub
+    3. Enables multi-org support via GitHub App
+    """
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        # Extract org_id from request
+        org_id = request.org_id
+        
+        # Extract user_id from dict (get_current_user returns dict)
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        
+        async with commit_bus.pool.acquire() as conn:
+            # Store org registration (user can register multiple orgs)
+            await conn.execute("""
+                INSERT INTO org_registrations (user_id, org_id, registered_at)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (user_id, org_id) DO UPDATE
+                SET registered_at = NOW()
+            """, user_id, org_id)
+        
+        webhook_url = os.getenv("WEBHOOK_URL", os.getenv("NGROK_URL", "http://localhost:8000")) + "/webhook"
+        
+        return {
+            "status": "registered",
+            "org_id": org_id,
+            "webhook_url": webhook_url,
+            "message": f"Organization '{org_id}' registered! Configure webhook on GitHub with this URL."
+        }
+    except Exception as e:
+        print(f"❌ Error registering webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/repos/{repo_name}/docs")
 async def get_repo_docs(repo_name: str):
