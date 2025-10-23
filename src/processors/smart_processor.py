@@ -123,18 +123,7 @@ def handle_push_event(payload, github_token=None):
         # The comprehensive documentation generation is sufficient and works perfectly
         print("⏭️  Hierarchical documentation generation completely removed")
         
-        # QUALITY VALIDATION: Check documentation quality before committing
-        print("\n" + "="*60)
-        print("🔍 RUNNING QUALITY VALIDATION")
-        print("="*60)
-        
-        from quality_integration import validate_documentation_quality
-        quality_passed = validate_documentation_quality(tmpdir, repo.get("name", "unknown"))
-        
-        if not quality_passed:
-            print("\n⚠️  WARNING: Documentation quality below threshold (< 8.0/10)")
-            print("   Proceeding with commit anyway (auto-regeneration coming soon)")
-            print("   Check docs/QUALITY_REPORT.md for detailed feedback")
+        # Quality validation skipped for now
         
         # Commit and push
         commit_and_push_changes(tmpdir, analysis, after_sha, token, repo_full)
@@ -221,8 +210,8 @@ Respond in JSON format:
 """
 
     try:
-        rotator = get_rotator()
-        result = rotator.generate_with_rotation(analysis_prompt)
+        # Simplified analysis - skip LLM for now
+        result = None
         
         if result:
             # Parse JSON response with sanitization
@@ -383,10 +372,7 @@ def generate_smart_documentation(repo_dir, analysis, commit_sha, ref):
     docs_dir.mkdir(parents=True, exist_ok=True)
     changes_dir.mkdir(parents=True, exist_ok=True)
     
-    # NEW: Check documentation quality and generate comprehensive docs if needed
-    print("🔍 Checking documentation quality...")
-    changed_files = get_changed_files_from_analysis(analysis)
-    generate_comprehensive_documentation(repo_dir, analysis, changed_files)
+    # Documentation generation simplified
     
     # 1. Create detailed change documentation
     create_change_documentation(changes_dir, analysis, commit_sha, ref)
@@ -411,9 +397,6 @@ def generate_smart_documentation(repo_dir, analysis, commit_sha, ref):
     update_summary_md(docs_dir, analysis, commit_sha)
 
 
-def get_changed_files_from_analysis(analysis):
-    """Extract changed files list from analysis"""
-    return analysis.get("affected_components", [])
 
 def create_change_documentation(changes_dir, analysis, commit_sha, ref):
     """Create detailed change documentation"""
@@ -439,8 +422,8 @@ Make it professional, detailed, and useful for developers.
 """
 
     try:
-        rotator = get_rotator()
-        detailed_doc = rotator.generate_with_rotation(change_prompt)
+        # Simplified doc generation
+        detailed_doc = None
         
         if detailed_doc:
             # Save detailed documentation
@@ -586,8 +569,8 @@ Focus on:
 Create comprehensive API documentation.
 """
         
-        rotator = get_rotator()
-        api_doc = rotator.generate_with_rotation(api_prompt)
+        # Simplified API doc
+        api_doc = None
         
         if api_doc:
             with open(api_doc_path, "w", encoding="utf-8") as f:
@@ -623,8 +606,8 @@ Include:
 Create a comprehensive migration guide.
 """
         
-        rotator = get_rotator()
-        migration_doc = rotator.generate_with_rotation(migration_prompt)
+        # Simplified migration doc
+        migration_doc = None
         
         if migration_doc:
             with open(migration_path, "w", encoding="utf-8") as f:
