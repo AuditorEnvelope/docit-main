@@ -16,13 +16,14 @@ import uvicorn
 import aiohttp
 
 # Import services
-from commit_bus import CommitBusService
-from subscription_service import SubscriptionService
-from overlay_service import OverlayService
-from smart_processor import handle_push_event as legacy_handle_push
-from quality_checker import DocumentationQualityChecker, DocumentationQuality
-from auth_service import AuthService, get_current_user, get_optional_user, User
-from webhook_multi_org import webhook_multi_org
+from services.commit_bus import CommitBusService
+from services.subscription_service import SubscriptionService
+from services.overlay_service import OverlayService
+from processors.smart_processor import handle_push_event as legacy_handle_push
+from services.quality_checker import DocumentationQualityChecker, DocumentationQuality
+from services.auth_service import AuthService, get_current_user, get_optional_user, User
+from integrations.webhook_multi_org import webhook_multi_org
+from integrations.github_app import create_jwt
 
 load_dotenv()
 
