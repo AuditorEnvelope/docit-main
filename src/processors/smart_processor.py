@@ -210,10 +210,9 @@ Respond in JSON format:
 """
 
     try:
-        # Simplified analysis - skip LLM for now
+        # Skip LLM, use fallback analysis directly
         result = None
-        
-        if result:
+        if False:  # Disabled LLM
             # Parse JSON response with sanitization
             json_match = re.search(r'\{.*\}', result, re.DOTALL)
             if json_match:
@@ -268,14 +267,14 @@ Respond in JSON format:
                         print(f"   ❌ Manual extraction failed: {extract_err}")
                         raise json_err
     except Exception as e:
-        print(f"❌ Analysis failed: {e}")
-        print(f"   LLM response preview: {result[:200] if 'result' in locals() else 'No response'}")
+        print(f"⚠️  LLM skipped, using fallback analysis")
     
     # Fallback analysis
+    is_sig = len(changed_files) > 10 or any(f.endswith(('.py', '.js', '.ts')) for f in changed_files)
     return {
         "type": "unknown",
-        "significance": 5,
-        "is_significant": len(changed_files) > 10,  # Heuristic: many files = significant
+        "significance": 7 if is_sig else 5,
+        "is_significant": is_sig,
         "title": f"Code changes in {len(changed_files)} files",
         "summary": f"Modified {len(changed_files)} files, removed {len(removed_files)} files",
         "impact_scope": ["general"],
@@ -289,7 +288,7 @@ Respond in JSON format:
             "update_api_docs": False,
             "create_migration_guide": False
         },
-        "reason": "Fallback analysis due to LLM failure"
+        "reason": "Using heuristic-based analysis (LLM disabled)"
     }
 
 def analyze_file_patterns(changed_files, removed_files):
