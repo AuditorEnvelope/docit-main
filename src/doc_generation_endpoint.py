@@ -29,8 +29,15 @@ def clone_repo_via_token(repo_full_name, token, target_dir):
 
 async def generate_repository_documentation(repo_name: str, github_token: str) -> dict:
     """
-    Generate comprehensive documentation for a repository
-    Clones repo, generates docs in docs/ folder, and pushes to GitHub
+    Generate comprehensive documentation for a repository with proper versioning
+    Creates:
+    - /docs/SUMMARY.md
+    - /docs/architecture/v1.0-architecture.md
+    - /docs/workflow/v1.0-workflow.md
+    - /docs/api.md
+    - /docs/changes/ folder
+    - /README.md at root
+    - /CHANGELOG.md at root
     
     Args:
         repo_name: Repository full name (owner/repo)
@@ -49,10 +56,16 @@ async def generate_repository_documentation(repo_name: str, github_token: str) -
         clone_repo_via_token(repo_name, github_token, tmpdir)
         print(f"✅ Repository cloned")
         
-        # Create docs directory
+        # Create docs directory structure
         docs_dir = Path(tmpdir) / "docs"
         docs_dir.mkdir(exist_ok=True)
-        print(f"📁 Created docs directory")
+        arch_dir = docs_dir / "architecture"
+        arch_dir.mkdir(exist_ok=True)
+        workflow_dir = docs_dir / "workflow"
+        workflow_dir.mkdir(exist_ok=True)
+        changes_dir = docs_dir / "changes"
+        changes_dir.mkdir(exist_ok=True)
+        print(f"📁 Created docs directory structure")
         
         # Generate documentation using LLM
         from llm_provider_v2 import get_rotator
@@ -94,7 +107,7 @@ Format as markdown."""
         summary_file.write_text(summary)
         print(f"✅ Generated SUMMARY.md ({len(summary)} chars)")
         
-        # Generate ARCHITECTURE.md
+        # Generate versioned ARCHITECTURE.md (v1.0)
         architecture_prompt = f"""Based on this repository, create architecture documentation:
 
 Repository: {repo_name}
@@ -111,9 +124,34 @@ Generate detailed architecture documentation covering:
 Format as markdown."""
 
         architecture = llm_rotator.generate_with_rotation(architecture_prompt)
-        arch_file = docs_dir / "ARCHITECTURE.md"
+        arch_file = arch_dir / "v1.0-architecture.md"
         arch_file.write_text(architecture)
-        print(f"✅ Generated ARCHITECTURE.md ({len(architecture)} chars)")
+        current_arch = arch_dir / "current.md"
+        current_arch.write_text(architecture)
+        print(f"✅ Generated v1.0-architecture.md ({len(architecture)} chars)")
+        
+        # Generate versioned WORKFLOW.md (v1.0)
+        workflow_prompt = f"""Based on this repository, create workflow/process documentation:
+
+Repository: {repo_name}
+README: {readme_content[:1500]}
+Files: {tree_content}
+
+Generate workflow documentation covering:
+1. Development workflow
+2. Build and deployment process
+3. Testing procedures
+4. CI/CD pipeline
+5. Release process
+
+Format as markdown."""
+
+        workflow = llm_rotator.generate_with_rotation(workflow_prompt)
+        workflow_file = workflow_dir / "v1.0-workflow.md"
+        workflow_file.write_text(workflow)
+        current_workflow = workflow_dir / "current.md"
+        current_workflow.write_text(workflow)
+        print(f"✅ Generated v1.0-workflow.md ({len(workflow)} chars)")
         
         # Generate API.md
         api_prompt = f"""Based on this repository, create API documentation:
@@ -132,9 +170,36 @@ Generate API documentation covering:
 Format as markdown."""
 
         api_docs = llm_rotator.generate_with_rotation(api_prompt)
-        api_file = docs_dir / "API.md"
+        api_file = docs_dir / "api.md"
         api_file.write_text(api_docs)
-        print(f"✅ Generated API.md ({len(api_docs)} chars)")
+        print(f"✅ Generated api.md ({len(api_docs)} chars)")
+        
+        # Create/update README.md at root
+        root_readme = Path(tmpdir) / "README.md"
+        root_readme.write_text(summary)
+        print(f"✅ Updated README.md at root")
+        
+        # Create CHANGELOG.md at root
+        changelog_content = f"""# Changelog
+
+## [1.0.0] - {datetime.now().strftime('%Y-%m-%d')}
+
+### Added
+- Initial documentation generation
+- Architecture documentation (v1.0)
+- Workflow documentation (v1.0)
+- API documentation
+- Summary and README
+
+### Documentation
+- See `/docs` folder for complete documentation
+- Architecture: `/docs/architecture/v1.0-architecture.md`
+- Workflow: `/docs/workflow/v1.0-workflow.md`
+- API: `/docs/api.md`
+"""
+        changelog_file = Path(tmpdir) / "CHANGELOG.md"
+        changelog_file.write_text(changelog_content)
+        print(f"✅ Created CHANGELOG.md at root")
         
         # Commit and push changes
         print("\n" + "="*60)
@@ -148,14 +213,14 @@ Format as markdown."""
         run_cmd("git fetch origin", cwd=tmpdir)
         run_cmd("git reset --hard origin/main", cwd=tmpdir)
         
-        # Add docs
-        run_cmd("git add docs/ || true", cwd=tmpdir)
+        # Add docs, README, and CHANGELOG
+        run_cmd("git add docs/ README.md CHANGELOG.md || true", cwd=tmpdir)
         
         # Check if there are changes
         status = run_cmd("git status --porcelain", cwd=tmpdir, capture_output=True).strip()
         if status:
             # Commit
-            commit_msg = f"docs: Auto-generated documentation for {repo_name}"
+            commit_msg = f"docs: Auto-generated documentation v1.0 for {repo_name}"
             run_cmd(f"git commit -m '{commit_msg}'", cwd=tmpdir)
             
             # Push
@@ -170,9 +235,23 @@ Format as markdown."""
             "generated_at": datetime.now().isoformat(),
             "summary": summary,
             "architecture": architecture,
+            "workflow": workflow,
             "api": api_docs,
             "status": "success",
-            "message": f"Documentation generated and pushed to GitHub in docs/ folder"
+            "message": f"Documentation v1.0 generated with proper versioning and pushed to GitHub",
+            "structure": {
+                "docs": {
+                    "SUMMARY.md": "Project summary",
+                    "architecture": "v1.0-architecture.md + current.md",
+                    "workflow": "v1.0-workflow.md + current.md",
+                    "api.md": "API documentation",
+                    "changes": "Changes folder"
+                },
+                "root": {
+                    "README.md": "Updated with summary",
+                    "CHANGELOG.md": "Created with v1.0 entry"
+                }
+            }
         }
         
         print(f"\n✅ Documentation generation complete for {repo_name}")

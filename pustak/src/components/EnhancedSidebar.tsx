@@ -26,6 +26,7 @@ interface RepoData {
   lastUpdated: string;
   description: string;
   hasDocs: boolean;
+  hasDocsFolder: boolean;
   architectureVersions: Array<{ version: string; fileName: string }>;
   workflowVersions: Array<{ version: string; fileName: string }>;
 }
@@ -40,47 +41,40 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
   useEffect(() => {
     const loadRepos = async () => {
       try {
-        const response = await fetch('/api/repositories');
+        // Get user's GitHub token from localStorage
+        const userToken = localStorage.getItem('pustak_access_token');
+        
+        if (!userToken) {
+          console.log('No user token available - using default repos');
+          setLoading(false);
+          return;
+        }
+
+        // Pass user token to backend
+        const response = await fetch('/api/repositories', {
+          headers: {
+            'Authorization': `Bearer ${userToken}`,
+          },
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch repositories');
         }
         
         const reposData = await response.json();
 
-        // Fetch versions for each repo
-        const reposWithVersions = await Promise.all(
-          reposData.map(async (repo: any) => {
-            try {
-              const docsResponse = await fetch(`/api/docs/${repo.name}`);
-              if (docsResponse.ok) {
-                const docs = await docsResponse.json();
-                return {
-                  name: repo.name,
-                  fullName: repo.fullName,
-                  lastUpdated: repo.lastUpdated,
-                  description: repo.description,
-                  hasDocs: repo.hasLocalDocs,
-                  architectureVersions: docs.architectureVersions || [],
-                  workflowVersions: docs.workflowVersions || [],
-                };
-              }
-            } catch (e) {
-              console.error(`Failed to fetch docs for ${repo.name}:`, e);
-            }
-            
-            return {
-              name: repo.name,
-              fullName: repo.fullName,
-              lastUpdated: repo.lastUpdated,
-              description: repo.description,
-              hasDocs: repo.hasLocalDocs,
-              architectureVersions: [],
-              workflowVersions: [],
-            };
-          })
-        );
+        // Map repos directly - versions come from backend
+        const mappedRepos = reposData.map((repo: any) => ({
+          name: repo.name,
+          fullName: repo.full_name || repo.fullName,
+          lastUpdated: repo.updated_at || repo.lastUpdated,
+          description: repo.description || 'No description available',
+          hasDocs: repo.hasDocsFolder || false,  // Use hasDocsFolder from backend
+          hasDocsFolder: repo.hasDocsFolder || false,
+          architectureVersions: repo.architectureVersions || [],
+          workflowVersions: repo.workflowVersions || [],
+        }));
 
-        setRepos(reposWithVersions);
+        setRepos(mappedRepos);
         setLoading(false);
       } catch (error) {
         console.error("Failed to load repositories:", error);
@@ -242,9 +236,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                       <div className="space-y-1">
                         {/* Summary */}
                         <a
-                          href={`/repo/${repo.name}/summary`}
+                          href={`/repo/${repo.fullName}/summary`}
                           className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.name}/summary`)
+                            isActive(`/repo/${repo.fullName}/summary`)
                               ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                               : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                           }`}
@@ -256,9 +250,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                         {/* Architecture with versions */}
                         <div>
                           <button
-                            onClick={() => toggleSection(`${repo.name}-architecture`)}
+                            onClick={() => toggleSection(`${repo.fullName}-architecture`)}
                             className={`flex items-center justify-between w-full p-2 text-sm rounded-md transition-colors ${
-                              isActive(`/repo/${repo.name}/architecture`)
+                              isActive(`/repo/${repo.fullName}/architecture`)
                                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                                 : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             }`}
@@ -268,7 +262,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                               <span>Architecture</span>
                             </div>
                             {repo.architectureVersions.length > 0 && (
-                              expandedSections.has(`${repo.name}-architecture`) ? (
+                              expandedSections.has(`${repo.fullName}-architecture`) ? (
                                 <ChevronDown className="w-3 h-3" />
                               ) : (
                                 <ChevronRight className="w-3 h-3" />
@@ -276,14 +270,14 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                             )}
                           </button>
                           
-                          {expandedSections.has(`${repo.name}-architecture`) && repo.architectureVersions.length > 0 && (
+                          {expandedSections.has(`${repo.fullName}-architecture`) && repo.architectureVersions.length > 0 && (
                             <div className="ml-6 mt-1 space-y-1">
                               {repo.architectureVersions.map((v) => (
                                 <a
                                   key={v.version}
-                                  href={`/repo/${repo.name}/architecture/${v.version}`}
+                                  href={`/repo/${repo.fullName}/architecture/${v.version}`}
                                   className={`block p-1.5 text-xs rounded transition-colors ${
-                                    isActive(`/repo/${repo.name}/architecture/${v.version}`)
+                                    isActive(`/repo/${repo.fullName}/architecture/${v.version}`)
                                       ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
                                       : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
                                   }`}
@@ -298,9 +292,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                         {/* Workflow with versions */}
                         <div>
                           <button
-                            onClick={() => toggleSection(`${repo.name}-workflow`)}
+                            onClick={() => toggleSection(`${repo.fullName}-workflow`)}
                             className={`flex items-center justify-between w-full p-2 text-sm rounded-md transition-colors ${
-                              isActive(`/repo/${repo.name}/workflow`)
+                              isActive(`/repo/${repo.fullName}/workflow`)
                                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                                 : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             }`}
@@ -310,7 +304,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                               <span>Workflow</span>
                             </div>
                             {repo.workflowVersions.length > 0 && (
-                              expandedSections.has(`${repo.name}-workflow`) ? (
+                              expandedSections.has(`${repo.fullName}-workflow`) ? (
                                 <ChevronDown className="w-3 h-3" />
                               ) : (
                                 <ChevronRight className="w-3 h-3" />
@@ -318,14 +312,14 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                             )}
                           </button>
                           
-                          {expandedSections.has(`${repo.name}-workflow`) && repo.workflowVersions.length > 0 && (
+                          {expandedSections.has(`${repo.fullName}-workflow`) && repo.workflowVersions.length > 0 && (
                             <div className="ml-6 mt-1 space-y-1">
                               {repo.workflowVersions.map((v) => (
                                 <a
                                   key={v.version}
-                                  href={`/repo/${repo.name}/workflow/${v.version}`}
+                                  href={`/repo/${repo.fullName}/workflow/${v.version}`}
                                   className={`block p-1.5 text-xs rounded transition-colors ${
-                                    isActive(`/repo/${repo.name}/workflow/${v.version}`)
+                                    isActive(`/repo/${repo.fullName}/workflow/${v.version}`)
                                       ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
                                       : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
                                   }`}
@@ -339,9 +333,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
                         {/* API */}
                         <a
-                          href={`/repo/${repo.name}/api`}
+                          href={`/repo/${repo.fullName}/api`}
                           className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.name}/api`)
+                            isActive(`/repo/${repo.fullName}/api`)
                               ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                               : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                           }`}
@@ -352,9 +346,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
                         {/* Changes */}
                         <a
-                          href={`/repo/${repo.name}/changes`}
+                          href={`/repo/${repo.fullName}/changes`}
                           className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.name}/changes`)
+                            isActive(`/repo/${repo.fullName}/changes`)
                               ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                               : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                           }`}
@@ -365,9 +359,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
                         {/* Changelog */}
                         <a
-                          href={`/repo/${repo.name}/changelog`}
+                          href={`/repo/${repo.fullName}/changelog`}
                           className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.name}/changelog`)
+                            isActive(`/repo/${repo.fullName}/changelog`)
                               ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                               : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                           }`}
@@ -376,11 +370,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                           <span>Changelog</span>
                         </a>
                       </div>
-                    ) : (
-                      <p className="text-yellow-600 dark:text-yellow-400">
-                        No documentation yet. DocAI will generate it soon!
-                      </p>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               )}

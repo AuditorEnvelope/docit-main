@@ -38,7 +38,8 @@ export default function AuthCallbackPage() {
 
         // Exchange code for tokens
         const response = await fetch(
-          `${BACKEND_URL}/auth/callback?code=${encodeURIComponent(code)}`
+          `${BACKEND_URL}/auth/callback?code=${encodeURIComponent(code)}`,
+          { credentials: 'include' }
         );
 
         if (!response.ok) {
@@ -50,6 +51,11 @@ export default function AuthCallbackPage() {
 
         // Store tokens and user data
         login(data.access_token, data.refresh_token, data.user);
+
+        // Store GitHub token in cookie for server-side API calls
+        if (data.github_token) {
+          document.cookie = `github_token=${encodeURIComponent(data.github_token)}; path=/; max-age=2592000; SameSite=Lax`;
+        }
 
         setStatus('success');
 

@@ -17,6 +17,7 @@ import hashlib
 import secrets
 import uuid
 import aiohttp
+import asyncio
 from typing import Dict, Optional, Tuple, List
 from datetime import datetime, timedelta
 from fastapi import HTTPException, Header, Depends
@@ -252,12 +253,13 @@ class AuthService:
     async def get_user_repositories(self, user_id: str) -> List[Dict]:
         """
         Fetch user's GitHub repositories using stored access token
+        Checks each repo for /docs folder
         
         Args:
             user_id: User ID
         
         Returns:
-            List of repository data
+            List of repository data with hasDocsFolder flag
         """
         async with self.db_pool.acquire() as conn:
             # Get user's GitHub token
@@ -291,7 +293,37 @@ class AuthService:
                         if response.status == 200:
                             repos = await response.json()
                             print(f"📚 Fetched {len(repos)} repositories for user {user_id}")
-                            return repos
+                            
+                            # Check for /docs folder and get versions for each repo
+                            repos_with_docs_check = []
+                            for repo in repos:
+                                has_docs = await self._check_repo_has_docs_async(
+                                    repo['full_name'],
+                                    github_token
+                                )
+                                repo['hasDocsFolder'] = has_docs
+                                
+                                # Get architecture and workflow versions
+                                if has_docs:
+                                    arch_versions = await self._get_versions_from_folder(
+                                        repo['full_name'],
+                                        'docs/architecture',
+                                        github_token
+                                    )
+                                    workflow_versions = await self._get_versions_from_folder(
+                                        repo['full_name'],
+                                        'docs/workflow',
+                                        github_token
+                                    )
+                                    repo['architectureVersions'] = arch_versions
+                                    repo['workflowVersions'] = workflow_versions
+                                else:
+                                    repo['architectureVersions'] = []
+                                    repo['workflowVersions'] = []
+                                
+                                repos_with_docs_check.append(repo)
+                            
+                            return repos_with_docs_check
                         else:
                             error_text = await response.text()
                             print(f"❌ GitHub API error: {response.status} - {error_text}")
@@ -299,6 +331,96 @@ class AuthService:
             except Exception as e:
                 print(f"❌ Error fetching repositories: {str(e)}")
                 return []
+    
+    async def _check_repo_has_docs_async(self, repo_full_name: str, github_token: str) -> bool:
+        """
+        Check if a repository has a /docs folder
+        Creates its own session to avoid issues
+        
+        Args:
+            repo_full_name: Full repo name (owner/repo)
+            github_token: GitHub access token
+        
+        Returns:
+            True if /docs folder exists, False otherwise
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"https://api.github.com/repos/{repo_full_name}/contents/docs",
+                    headers={
+                        "Authorization": f"Bearer {github_token}",
+                        "Accept": "application/vnd.github.v3+json",
+                        "User-Agent": "Pustak-AI"
+                    },
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as response:
+                    has_docs = response.status == 200
+                    if has_docs:
+                        print(f"✅ {repo_full_name} has /docs folder")
+                    else:
+                        print(f"⚠️  {repo_full_name} has NO /docs folder (status: {response.status})")
+                    return has_docs
+        except asyncio.TimeoutError:
+            print(f"⏱️  Timeout checking docs for {repo_full_name}")
+            return False
+        except Exception as e:
+            print(f"⚠️  Error checking docs for {repo_full_name}: {str(e)}")
+            return False
+    
+    async def _get_versions_from_folder(self, repo_full_name: str, folder_path: str, github_token: str) -> list:
+        """
+        Get version files from a folder (architecture or workflow)
+        
+        Args:
+            repo_full_name: Full repo name (owner/repo)
+            folder_path: Path to folder (e.g., docs/architecture)
+            github_token: GitHub access token
+        
+        Returns:
+            List of version dicts [{version: "v3.6", fileName: "v3.6-architecture.md"}, ...]
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"https://api.github.com/repos/{repo_full_name}/contents/{folder_path}",
+                    headers={
+                        "Authorization": f"Bearer {github_token}",
+                        "Accept": "application/vnd.github.v3+json",
+                        "User-Agent": "Pustak-AI"
+                    },
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as response:
+                    if response.status == 200:
+                        files = await response.json()
+                        # Filter markdown files and extract version
+                        versions = []
+                        for file in files:
+                            if file['type'] == 'file' and file['name'].endswith('.md'):
+                                # Extract version from filename (e.g., v3.6-architecture.md -> v3.6)
+                                name = file['name'].replace('.md', '')
+                                # Remove suffix like -architecture or -workflow
+                                parts = name.split('-')
+                                if parts[0].startswith('v'):
+                                    version = parts[0]
+                                    versions.append({
+                                        'version': version,
+                                        'fileName': file['name']
+                                    })
+                        
+                        # Sort versions numerically
+                        def parse_version(v_str):
+                            return [int(x) for x in v_str[1:].split('.')]
+                        
+                        versions.sort(key=lambda x: parse_version(x['version']), reverse=True)
+                        print(f"📚 Found {len(versions)} versions in {folder_path}")
+                        return versions
+                    else:
+                        print(f"⚠️  Folder {folder_path} not found (status: {response.status})")
+                        return []
+        except Exception as e:
+            print(f"⚠️  Error getting versions from {folder_path}: {str(e)}")
+            return []
     
     async def get_github_token(self, user_id: str) -> str:
         """Get GitHub token for user"""

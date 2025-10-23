@@ -7,10 +7,12 @@ import os
 import hmac
 import hashlib
 import json
-from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Header, Depends
+import base64
+from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import uvicorn
+import aiohttp
 
 # Import services
 from commit_bus import CommitBusService
@@ -268,6 +270,53 @@ async def get_user_repositories(user = Depends(get_auth_user)):
     
     repos = await auth_service.get_user_repositories(user.id)
     return {"repositories": repos}
+
+
+@app.get("/docs/fetch-file")
+async def fetch_file_from_github(repo: str, filePath: str, user = Depends(get_auth_user)):
+    """Fetch a file from GitHub using user's token"""
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+    
+    try:
+        # Get user's GitHub token from database
+        github_token = await auth_service.get_github_token(user.id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        # Fetch file from GitHub
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"https://api.github.com/repos/{repo}/contents/{filePath}",
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                }
+            ) as response:
+                if response.status == 404:
+                    raise HTTPException(status_code=404, detail="File not found")
+                if response.status == 401 or response.status == 403:
+                    raise HTTPException(status_code=403, detail="Access denied")
+                if not response.ok:
+                    raise HTTPException(status_code=response.status, detail="Failed to fetch file")
+                
+                data = await response.json()
+                
+                # Decode base64 content
+                if data.get("encoding") == "base64" and data.get("content"):
+                    import base64
+                    content = base64.b64decode(data["content"].replace("\n", "")).decode("utf-8")
+                    return {"content": content, "fileName": filePath}
+                
+                return {"content": data.get("content", ""), "fileName": filePath}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching file: {str(e)}")
 
 
 @app.post("/docs/generate")
