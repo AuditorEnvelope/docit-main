@@ -218,7 +218,7 @@ export default function DashboardPage() {
                           const redirectUri = `${window.location.origin}/auth/callback`;
                           
                           const response = await fetch(
-                            `${backendUrl}/auth/github?redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo`
+                            `${backendUrl}/auth/github?redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent('user:email read:org repo')}`
                           );
                           
                           if (!response.ok) {

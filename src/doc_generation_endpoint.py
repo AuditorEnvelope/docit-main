@@ -211,7 +211,17 @@ Format as markdown."""
         
         # Fetch latest
         run_cmd("git fetch origin", cwd=tmpdir)
-        run_cmd("git reset --hard origin/main", cwd=tmpdir)
+        
+        # Get default branch name
+        try:
+            default_branch = run_cmd("git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@'", cwd=tmpdir, capture_output=True).strip()
+            if not default_branch:
+                default_branch = "main"  # Fallback to main
+        except:
+            default_branch = "main"  # Fallback to main
+        
+        print(f"🌿 Using default branch: {default_branch}")
+        run_cmd(f"git reset --hard origin/{default_branch}", cwd=tmpdir)
         
         # Add docs, README, and CHANGELOG
         run_cmd("git add docs/ README.md CHANGELOG.md || true", cwd=tmpdir)
@@ -225,10 +235,21 @@ Format as markdown."""
             
             # Push
             print("⬆️  Pushing to GitHub...")
-            run_cmd(f"git push https://x-access-token:{github_token}@github.com/{repo_name}.git HEAD:main", cwd=tmpdir)
-            print("✅ Documentation pushed to GitHub")
+            try:
+                run_cmd(f"git push https://x-access-token:{github_token}@github.com/{repo_name}.git HEAD:{default_branch}", cwd=tmpdir)
+                print("✅ Documentation pushed to GitHub")
+                push_status = "pushed"
+            except Exception as push_error:
+                error_msg = str(push_error)
+                if "403" in error_msg or "Permission denied" in error_msg:
+                    print(f"⚠️  Permission denied: User doesn't have push access to {repo_name}")
+                    print(f"   Docs generated locally but not pushed. Admin needs to push manually.")
+                    push_status = "generated_not_pushed"
+                else:
+                    raise push_error
         else:
             print("ℹ️  No changes to commit")
+            push_status = "no_changes"
         
         documentation = {
             "repo_name": repo_name,
@@ -238,7 +259,8 @@ Format as markdown."""
             "workflow": workflow,
             "api": api_docs,
             "status": "success",
-            "message": f"Documentation v1.0 generated with proper versioning and pushed to GitHub",
+            "push_status": push_status,
+            "message": f"Documentation v1.0 generated (push_status: {push_status})",
             "structure": {
                 "docs": {
                     "SUMMARY.md": "Project summary",
@@ -254,7 +276,7 @@ Format as markdown."""
             }
         }
         
-        print(f"\n✅ Documentation generation complete for {repo_name}")
+        print(f"\n✅ Documentation generation complete for {repo_name} (push_status: {push_status})")
         return documentation
         
     except Exception as e:
