@@ -109,9 +109,9 @@ async def webhook_multi_org(
     # ========================================================================
     
     if not webhook_secret:
-        webhook_secret = os.getenv("WEBHOOK_SECRET", "")
+        webhook_secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
         if webhook_secret:
-            print(f"⚠️  Single-org mode: Using WEBHOOK_SECRET from env")
+            print(f"⚠️  Single-org mode: Using GITHUB_WEBHOOK_SECRET from env")
     
     # ========================================================================
     # STEP 3: Verify signature
@@ -248,6 +248,6 @@ HOW TO INTEGRATE INTO main.py:
 BACKWARD COMPATIBILITY:
 - Old events (without webhook context) still work
 - webhook_context is optional (defaults to None)
-- Falls back to env var WEBHOOK_SECRET if no org webhook found
+- Falls back to env var GITHUB_WEBHOOK_SECRET if no org webhook found
 - Existing code continues to function unchanged
 """
