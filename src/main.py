@@ -133,7 +133,7 @@ async def process_commit_event(payload: dict):
     # Try commit bus first (durable, never loses commits)
     if commit_bus:
         try:
-            from commit_bus import CommitEvent
+            from services.commit_bus import CommitEvent
             from datetime import datetime
             
             # Extract commit info from payload
