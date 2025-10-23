@@ -26,7 +26,6 @@ import { EnhancedSidebar as EnhancedSidebarComponent } from "./EnhancedSidebar";
 
 // Memoize sidebar to prevent re-mounts on parent re-renders
 const EnhancedSidebar = memo(EnhancedSidebarComponent);
-import { GlobalSearch } from "./GlobalSearch";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface LayoutProps {
@@ -236,8 +235,6 @@ export function Layout({ children }: LayoutProps) {
         <main className="flex-1">{children}</main>
       </div>
 
-      {/* Global Search */}
-      <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* Keyboard shortcuts */}
       <div className="hidden">

@@ -4,10 +4,8 @@ import asyncio
 import time  # Added for retry delays
 import re  # Added for regex pattern matching
 from aiolimiter import AsyncLimiter
-from github_app import get_installation_token
-from llm_provider_v2 import get_rotator
+from integrations.github_app import get_installation_token
 from pathlib import Path
-from comprehensive_doc_generator import generate_comprehensive_documentation
 
 # Rate limiters (global instances)
 github_rate_limiter = AsyncLimiter(4000, 3600)  # 4000 requests per hour (safe margin)
