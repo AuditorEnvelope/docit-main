@@ -16,13 +16,13 @@ import uvicorn
 import aiohttp
 
 # Import services
-from commit_bus import CommitBusService
-from subscription_service import SubscriptionService
-from overlay_service import OverlayService
-from smart_processor import handle_push_event as legacy_handle_push
-from quality_checker import DocumentationQualityChecker, DocumentationQuality
-from auth_service import AuthService, get_current_user, get_optional_user, User
-from webhook_multi_org import webhook_multi_org
+from core.commit_bus import CommitBusService
+from services.subscription_service import SubscriptionService
+from services.overlay_service import OverlayService
+from processors.smart_processor import handle_push_event as legacy_handle_push
+from utilities.quality_checker import DocumentationQualityChecker, DocumentationQuality
+from services.auth_service import AuthService, get_current_user, get_optional_user, User
+from core.webhook_multi_org import webhook_multi_org
 
 load_dotenv()
 
@@ -402,7 +402,7 @@ async def generate_documentation(repo_name: str, user = Depends(get_auth_user), 
 @app.post("/webhook/github")
 async def github_webhook(request: Request):
     """GitHub webhook for automatic documentation generation on push"""
-    from webhook_handler import verify_github_signature, handle_push_webhook
+    from utilities.webhook_handler import verify_github_signature, handle_push_webhook
     
     # Verify signature
     body = await request.body()

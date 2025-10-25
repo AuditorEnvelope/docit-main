@@ -4,10 +4,10 @@ import asyncio
 import time  # Added for retry delays
 import re  # Added for regex pattern matching
 from aiolimiter import AsyncLimiter
-from github_app import get_installation_token
-from llm_provider_v2 import get_rotator
+from utilities.github_app import get_installation_token
+from utilities.llm_provider_v2 import get_rotator
 from pathlib import Path
-from comprehensive_doc_generator import generate_comprehensive_documentation
+from processors.comprehensive_doc_generator import generate_comprehensive_documentation
 
 # Rate limiters (global instances)
 github_rate_limiter = AsyncLimiter(4000, 3600)  # 4000 requests per hour (safe margin)
@@ -130,7 +130,7 @@ def handle_push_event(payload, github_token=None):
         print("🔍 RUNNING QUALITY VALIDATION")
         print("="*60)
         
-        from quality_integration import validate_documentation_quality
+        from processors.quality_integration import validate_documentation_quality
         quality_passed = validate_documentation_quality(tmpdir, repo.get("name", "unknown"))
         
         if not quality_passed:

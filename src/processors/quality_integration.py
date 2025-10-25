@@ -7,7 +7,7 @@ import os
 import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional
-from quality_checker import DocumentationQualityChecker, DocumentationQuality
+from utilities.quality_checker import DocumentationQualityChecker, DocumentationQuality
 
 class QualityValidationWrapper:
     """
