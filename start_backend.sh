@@ -18,6 +18,5 @@ if [ ! -f ".env" ]; then
 fi
 
 # Start the server
-cd src
 echo "✅ Starting FastAPI server on http://localhost:8000"
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+uvicorn src.core.main:app --host 0.0.0.0 --port 8000 --reload

@@ -51,6 +51,55 @@ CREATE INDEX idx_commit_events_timestamp ON commit_events(timestamp DESC);
 CREATE INDEX idx_commit_events_sha ON commit_events(commit_sha);
 CREATE INDEX idx_commit_events_unprocessed ON commit_events(processed) WHERE processed = FALSE;
 
+-- ============================================================================
+-- MULTI-ORG SUPPORT - Webhook Registration and Token Management
+-- ============================================================================
+
+-- Organization webhook registrations (one per org)
+CREATE TABLE org_webhooks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    org_id VARCHAR(255) NOT NULL,
+    webhook_secret VARCHAR(255) UNIQUE NOT NULL,
+    github_token_id UUID NOT NULL,
+    registered_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(user_id, org_id)
+);
+
+CREATE INDEX idx_org_webhooks_secret ON org_webhooks(webhook_secret);
+CREATE INDEX idx_org_webhooks_user_org ON org_webhooks(user_id, org_id);
+CREATE INDEX idx_org_webhooks_org ON org_webhooks(org_id);
+
+-- User GitHub tokens (encrypted, per-org)
+CREATE TABLE user_github_tokens (
+    token_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    org_id VARCHAR(255),
+    github_token TEXT NOT NULL,  -- Encrypted in production
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    expires_at TIMESTAMP,
+    last_used_at TIMESTAMP
+);
+
+CREATE INDEX idx_user_tokens_user ON user_github_tokens(user_id);
+CREATE INDEX idx_user_tokens_user_token ON user_github_tokens(user_id, token_id);
+CREATE INDEX idx_user_tokens_active ON user_github_tokens(is_active) WHERE is_active = TRUE;
+
+-- Add multi-org context columns to commit_events
+ALTER TABLE commit_events
+ADD COLUMN user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+ADD COLUMN org_id VARCHAR(255),
+ADD COLUMN github_token_id UUID REFERENCES user_github_tokens(token_id) ON DELETE SET NULL,
+ADD COLUMN installation_id INTEGER,
+ADD COLUMN webhook_secret VARCHAR(255);
+
+CREATE INDEX idx_commit_events_user_id ON commit_events(user_id);
+CREATE INDEX idx_commit_events_org_id ON commit_events(org_id);
+CREATE INDEX idx_commit_events_user_org ON commit_events(user_id, org_id);
+CREATE INDEX idx_commit_events_installation ON commit_events(installation_id);
+
 -- Processing log for audit trail
 CREATE TABLE event_processing_log (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

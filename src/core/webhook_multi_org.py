@@ -105,21 +105,16 @@ async def webhook_multi_org(
             print(f"✅ Multi-org mode: Found webhook for org {webhook_context['org_id']}")
     
     # ========================================================================
-    # STEP 2: Fall back to single-org mode (env var)
+    # STEP 2: Verify webhook is registered (PURELY DYNAMIC - NO FALLBACK)
     # ========================================================================
     
     if not webhook_secret:
-        webhook_secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
-        if webhook_secret:
-            print(f"⚠️  Single-org mode: Using GITHUB_WEBHOOK_SECRET from env")
+        print(f"❌ Webhook not registered for this organization")
+        raise HTTPException(status_code=403, detail="Webhook not registered. Please register your organization first.")
     
     # ========================================================================
     # STEP 3: Verify signature
     # ========================================================================
-    
-    if not webhook_secret:
-        print(f"❌ No webhook secret found (multi-org or env)")
-        raise HTTPException(status_code=403, detail="No webhook secret configured")
     
     if not verify_signature(webhook_secret, body, x_hub_signature_256):
         print(f"❌ Invalid webhook signature")

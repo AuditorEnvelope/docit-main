@@ -16,13 +16,13 @@ import uvicorn
 import aiohttp
 
 # Import services
-from core.commit_bus import CommitBusService
-from services.subscription_service import SubscriptionService
-from services.overlay_service import OverlayService
-from processors.smart_processor import handle_push_event as legacy_handle_push
-from utilities.quality_checker import DocumentationQualityChecker, DocumentationQuality
-from services.auth_service import AuthService, get_current_user, get_optional_user, User
-from core.webhook_multi_org import webhook_multi_org
+from .commit_bus import CommitBusService
+from ..services.subscription_service import SubscriptionService
+from ..services.overlay_service import OverlayService
+from ..processors.smart_processor import handle_push_event as legacy_handle_push
+from ..utilities.quality_checker import DocumentationQualityChecker, DocumentationQuality
+from ..services.auth_service import AuthService, get_current_user, get_optional_user, User
+from .webhook_multi_org import webhook_multi_org
 
 load_dotenv()
 
@@ -500,7 +500,7 @@ async def check_app_installation(
             raise HTTPException(status_code=401, detail="No GitHub token found. Please log in again.")
         
         # Check if app is installed in this org using GitHub App JWT
-        from github_app import create_jwt
+        from ..utilities.github_app import create_jwt
         
         try:
             jwt_token = create_jwt()
@@ -585,6 +585,13 @@ async def register_webhook(
         # Extract user_id from dict (get_current_user returns dict)
         user_id = user.get('id') if isinstance(user, dict) else user.id
         
+        # Use app's webhook secret (not generate new one!)
+        # The app already has webhook configured with this secret
+        webhook_secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+        
+        if not webhook_secret:
+            raise HTTPException(status_code=500, detail="GitHub App webhook secret not configured in environment")
+        
         async with commit_bus.pool.acquire() as conn:
             # Store org registration (user can register multiple orgs)
             await conn.execute("""
@@ -593,14 +600,20 @@ async def register_webhook(
                 ON CONFLICT (user_id, org_id) DO UPDATE
                 SET registered_at = NOW()
             """, user_id, org_id)
-        
-        webhook_url = os.getenv("WEBHOOK_URL", os.getenv("NGROK_URL", "http://localhost:8000")) + "/webhook"
+            
+            # Store app's webhook secret for this org (CRITICAL FOR MULTI-ORG!)
+            # This is the SAME secret the GitHub App uses
+            await conn.execute("""
+                INSERT INTO org_webhooks (user_id, org_id, webhook_secret, github_token_id)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (user_id, org_id) DO UPDATE
+                SET webhook_secret = $3, github_token_id = $4
+            """, user_id, org_id, webhook_secret, "00000000-0000-0000-0000-000000000000")
         
         return {
             "status": "registered",
             "org_id": org_id,
-            "webhook_url": webhook_url,
-            "message": f"Organization '{org_id}' registered! Configure webhook on GitHub with this URL."
+            "message": f"Organization '{org_id}' registered! The GitHub App webhook is already configured and will send events to our server."
         }
     except Exception as e:
         print(f"❌ Error registering webhook: {e}")

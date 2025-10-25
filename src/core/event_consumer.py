@@ -23,9 +23,9 @@ from dotenv import load_dotenv
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from core.commit_bus import CommitBusService, CommitEvent
-from processors.smart_processor import handle_push_event
-from utilities.github_sync import GitHubSync
+from .commit_bus import CommitBusService, CommitEvent
+from ..processors.smart_processor import handle_push_event
+from ..utilities.github_sync import GitHubSync
 
 load_dotenv()
 
@@ -178,27 +178,21 @@ class EventConsumer:
             org_id = event.get("org_id")
             token_id = event.get("github_token_id")
             
-            # Get GitHub token
+            # Get GitHub token (PURELY DYNAMIC - NO FALLBACK)
             github_token = None
             
-            # Try multi-org mode first (get token for this user/org)
+            # Get token for this user/org from database
             if user_id and token_id:
                 github_token = await self.get_github_token(user_id, token_id)
                 
                 if github_token:
                     print(f"✅ Got GitHub token for user {user_id} org {org_id}")
                 else:
-                    print(f"⚠️  No GitHub token found for user {user_id} org {org_id}")
-            
-            # Fall back to env var (single-org mode)
-            if not github_token:
-                github_token = os.getenv("GITHUB_TOKEN")
-                
-                if github_token:
-                    print(f"⚠️  Using GITHUB_TOKEN from env (single-org mode)")
-                else:
-                    print(f"❌ No GitHub token available (multi-org or env)")
-                    raise Exception(f"No GitHub token for user {user_id}")
+                    print(f"❌ No GitHub token found for user {user_id} org {org_id}")
+                    raise Exception(f"No GitHub token for user {user_id} org {org_id}")
+            else:
+                print(f"❌ No user_id or token_id in event")
+                raise Exception(f"Event missing user_id or token_id")
             
             # Convert to webhook format
             payload = self.convert_to_webhook_payload(event)
@@ -233,15 +227,23 @@ class EventConsumer:
             
             return False
     
-    async def check_missed_commits(self):
+    async def check_missed_commits_all_orgs(self):
         """
-        Check for missed commits on startup
+        Check for missed commits across ALL orgs (multi-org support)
         
-        This queries GitHub for recent commits and compares with our database
-        to find any commits that were missed during downtime.
+        This queries GitHub for recent commits in each org's repos
+        and recovers any commits that were missed during downtime.
+        
+        FLOW:
+        1. Get all unique (org_id, repo_id) pairs from database
+        2. For each org:
+           - Get org's GitHub token from user_github_tokens table
+           - Query GitHub for missed commits in that org's repo
+           - Store missed commits in database
+        3. Fall back to single-org mode if no multi-org data
         """
         try:
-            print("\n🔍 Checking for missed commits...")
+            print("\n🔍 Checking for missed commits across all orgs...")
             
             # Get unprocessed events from database
             stats = await self.bus.get_event_stats()
@@ -250,12 +252,112 @@ class EventConsumer:
                 print(f"📊 Found {stats['pending']} unprocessed events in database")
                 print(f"   These will be processed automatically")
             
+            total_missed = 0
+            enable_github_sync = os.getenv("ENABLE_GITHUB_SYNC", "false").lower() == "true"
+            
+            if not enable_github_sync:
+                print(f"⚠️  ENABLE_GITHUB_SYNC not set, skipping GitHub sync")
+                print(f"   Relying on GitHub webhook retries instead")
+                return
+            
+            # Get all unique (org_id, repo_id) pairs from database
+            async with self.pool.acquire() as conn:
+                repos = await conn.fetch("""
+                    SELECT DISTINCT org_id, repo_id, github_token_id, user_id
+                    FROM commit_events
+                    WHERE org_id IS NOT NULL AND github_token_id IS NOT NULL
+                    ORDER BY org_id, repo_id
+                """)
+            
+            if not repos:
+                print("⚠️  No events found in database yet")
+                print("   Waiting for first webhook...")
+                return
+            
+            print(f"📚 Found {len(repos)} unique repos across orgs")
+            
+            # For each repo, check for missed commits
+            for repo_record in repos:
+                org_id = repo_record["org_id"]
+                repo_id = repo_record["repo_id"]
+                token_id = repo_record["github_token_id"]
+                user_id = repo_record["user_id"]
+                
+                try:
+                    # Get THIS org's GitHub token
+                    github_token = await self.get_github_token(user_id, token_id)
+                    
+                    if not github_token:
+                        print(f"⚠️  No GitHub token for org {org_id}, skipping")
+                        continue
+                    
+                    # Get last processed commit for THIS repo
+                    last_sha = await self.get_last_processed_sha_for_repo(repo_id)
+                    
+                    if not last_sha:
+                        print(f"⏭️  No previous commits for {repo_id}, skipping")
+                        continue
+                    
+                    # Query GitHub for THIS org's repo
+                    print(f"🔍 Checking {org_id}/{repo_id}...")
+                    
+                    sync = GitHubSync(github_token)
+                    missed = await sync.find_missed_commits(
+                        repo_id,
+                        last_processed_sha=last_sha
+                    )
+                    
+                    if missed:
+                        print(f"✅ Found {len(missed)} missed commits for {org_id}/{repo_id}")
+                        
+                        # Store missed commits
+                        for event_dict in missed:
+                            try:
+                                event = CommitEvent(
+                                    repo_id=repo_id,
+                                    user_id=user_id,
+                                    org_id=org_id,
+                                    github_token_id=token_id,
+                                    **event_dict
+                                )
+                                await self.bus.store_event(event)
+                                print(f"   ✅ Stored: {event.commit_sha[:8]}")
+                            except Exception as e:
+                                print(f"   ⚠️  Failed to store {event_dict['commit_sha'][:8]}: {e}")
+                        
+                        total_missed += len(missed)
+                    
+                except Exception as e:
+                    print(f"⚠️  Error checking {org_id}/{repo_id}: {e}")
+                    continue
+            
+            if total_missed > 0:
+                print(f"\n🎉 Successfully recovered {total_missed} missed commits across all orgs!")
+                print(f"   They will be processed automatically")
+            else:
+                print(f"\n✅ No missed commits found")
+                print(f"   Last processed: {stats['processed']} events")
+            
+        except Exception as e:
+            print(f"⚠️  Error checking missed commits: {e}")
+            print(f"   Falling back to single-org mode...")
+            await self.check_missed_commits_single_org()
+    
+    async def check_missed_commits_single_org(self):
+        """
+        Check for missed commits in single-org mode (fallback)
+        
+        This is the legacy mode that checks only PUSTAK's repo.
+        Used as fallback when multi-org data is not available.
+        """
+        try:
+            print("\n🔍 Checking for missed commits (single-org mode)...")
+            
             # Check GitHub for missed commits
             github_token = os.getenv("GITHUB_TOKEN")
             github_org = os.getenv("GITHUB_ORG", "AuditorEnvelope")
-            enable_github_sync = os.getenv("ENABLE_GITHUB_SYNC", "false").lower() == "true"
             
-            if github_token and enable_github_sync:
+            if github_token:
                 try:
                     sync = GitHubSync(github_token)
                     
@@ -282,6 +384,8 @@ class EventConsumer:
                         
                         print(f"\n🎉 Successfully recovered {len(missed)} missed commits!")
                         print(f"   They will be processed automatically")
+                    else:
+                        print(f"\n✅ No missed commits found")
                     
                 except Exception as e:
                     print(f"⚠️  Error syncing with GitHub: {e}")
@@ -290,12 +394,16 @@ class EventConsumer:
                 print(f"⚠️  GITHUB_TOKEN not set, skipping GitHub sync")
                 print(f"   Relying on GitHub webhook retries instead")
             
-            if stats["pending"] == 0 and (not github_token or not missed):
-                print(f"\n✅ No missed commits found")
-                print(f"   Last processed: {stats['processed']} events")
-            
         except Exception as e:
-            print(f"⚠️  Error checking missed commits: {e}")
+            print(f"⚠️  Error checking missed commits (single-org): {e}")
+    
+    async def check_missed_commits(self):
+        """
+        Check for missed commits (dispatcher)
+        
+        Tries multi-org mode first, falls back to single-org mode.
+        """
+        await self.check_missed_commits_all_orgs()
     
     async def get_last_processed_sha(self) -> Optional[str]:
         """Get SHA of last successfully processed commit"""
@@ -307,6 +415,20 @@ class EventConsumer:
                     ORDER BY created_at DESC
                     LIMIT 1
                 """)
+                return result["commit_sha"] if result else None
+        except:
+            return None
+    
+    async def get_last_processed_sha_for_repo(self, repo_id: str) -> Optional[str]:
+        """Get SHA of last successfully processed commit for a specific repo"""
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow("""
+                    SELECT commit_sha FROM commit_events
+                    WHERE processed = TRUE AND repo_id = $1
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, repo_id)
                 return result["commit_sha"] if result else None
         except:
             return None
