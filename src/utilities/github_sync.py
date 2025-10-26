@@ -29,6 +29,35 @@ class GitHubSync:
             "Accept": "application/vnd.github.v3+json"
         }
     
+    async def get_latest_commit_sha(self, repo: str) -> Optional[str]:
+        """
+        Get the latest commit SHA for a repo (OPTIMIZATION)
+        
+        This is a lightweight check that only fetches the latest commit
+        to compare with our cached version. Much faster than fetching 50 commits.
+        
+        Args:
+            repo: Repository in format "owner/repo"
+        
+        Returns:
+            Latest commit SHA or None if error
+        """
+        url = f"{self.base_url}/repos/{repo}/commits"
+        params = {"per_page": 1}  # Only get 1 commit
+        
+        try:
+            response = requests.get(url, headers=self.headers, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                commits = response.json()
+                if commits:
+                    return commits[0].get("sha")
+            
+            return None
+        except Exception as e:
+            print(f"⚠️  Error getting latest commit SHA for {repo}: {e}")
+            return None
+    
     def get_recent_commits(self, repo: str, since: Optional[str] = None, limit: int = 100) -> List[Dict]:
         """
         Get recent commits from GitHub
@@ -130,17 +159,21 @@ class GitHubSync:
             }
         }
     
-    async def find_missed_commits(self, repo: str, last_processed_sha: Optional[str] = None) -> List[Dict]:
+    async def find_missed_commits(self, repo: str, last_processed_sha: Optional[str] = None, since_sha: Optional[str] = None) -> List[Dict]:
         """
         Find commits that were missed during downtime
         
         Args:
             repo: Repository in format "owner/repo"
-            last_processed_sha: SHA of last successfully processed commit
+            last_processed_sha: SHA of last successfully processed commit (legacy parameter)
+            since_sha: SHA to find commits after (new optimized parameter)
         
         Returns:
             List of missed commits as events
         """
+        # Support both parameter names for backward compatibility
+        if since_sha:
+            last_processed_sha = since_sha
         print(f"\n🔍 Checking GitHub for missed commits in {repo}...")
         
         # Get recent commits from GitHub
