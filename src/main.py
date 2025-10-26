@@ -43,7 +43,14 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
+        "http://192.168.1.2:3000",
+        "http://192.168.1.2:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -168,6 +175,23 @@ async def process_commit_event(payload: dict):
                 repo_full_name = repo.get('full_name', 'unknown')
                 repo_org = repo_full_name.split('/')[0] if '/' in repo_full_name else 'unknown'
                 
+                # Try to get user_id from org_registrations if webhook_context doesn't have it
+                user_id_for_event = None
+                if webhook_context and webhook_context.get('user_id'):
+                    user_id_for_event = webhook_context['user_id']
+                elif commit_bus and commit_bus.pool:
+                    # Check if org is registered
+                    try:
+                        async with commit_bus.pool.acquire() as conn:
+                            reg = await conn.fetchrow(
+                                "SELECT user_id FROM org_registrations WHERE org_id = $1 LIMIT 1",
+                                repo_org
+                            )
+                            if reg:
+                                user_id_for_event = str(reg['user_id'])
+                    except Exception as e:
+                        print(f"⚠️  Could not check org_registrations: {e}")
+                
                 event = CommitEvent(
                     repo_id=repo_full_name,
                     commit_sha=commit.get('id', payload.get('after', 'unknown')),
@@ -188,7 +212,7 @@ async def process_commit_event(payload: dict):
                     push_id=payload.get('push_id'),
                     source='github',
                     metadata={'payload': payload},
-                    user_id=webhook_context.get('user_id') if webhook_context else None,
+                    user_id=user_id_for_event,
                     org_id=repo_org,
                     github_token_id=webhook_context.get('github_token_id') if webhook_context else None,
                     webhook_secret=webhook_context.get('webhook_secret') if webhook_context else None,
@@ -600,6 +624,23 @@ async def register_webhook(
                 ON CONFLICT (user_id, org_id) DO UPDATE
                 SET registered_at = NOW()
             """, user_id, org_id)
+            
+            # Also register in org_webhooks for real-time webhook processing
+            # Get user's GitHub token
+            user_token_record = await conn.fetchrow("""
+                SELECT token_id FROM user_github_tokens 
+                WHERE user_id = $1 
+                LIMIT 1
+            """, user_id)
+            
+            if user_token_record:
+                await conn.execute("""
+                    INSERT INTO org_webhooks (user_id, org_id, webhook_secret, github_token_id)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (user_id, org_id) DO UPDATE
+                    SET updated_at = NOW()
+                """, user_id, org_id, f'webhook_{org_id}', user_token_record['token_id'])
+                print(f"✅ Registered org {org_id} for webhooks with user {user_id}")
         
         webhook_url = os.getenv("WEBHOOK_URL", os.getenv("NGROK_URL", "http://localhost:8000")) + "/webhook"
         
