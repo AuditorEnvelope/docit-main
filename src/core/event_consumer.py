@@ -127,28 +127,24 @@ class EventConsumer:
     
     async def get_github_token(self, user_id: str, token_id: str) -> Optional[str]:
         """
-        Get decrypted GitHub token for user/org
+        Get GitHub token for user from users table (same as frontend)
         
         Args:
             user_id: UUID of user
-            token_id: UUID of token record
+            token_id: UUID of token record (unused, for compatibility)
         
         Returns:
             GitHub token string or None if not found
         """
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.fetchrow("""
-                    SELECT github_token FROM user_github_tokens
-                    WHERE user_id = $1 AND token_id = $2 AND is_active = TRUE
-                """, user_id, token_id)
+                # Get the user's main GitHub token (same as frontend uses)
+                result = await conn.fetchval("""
+                    SELECT github_access_token FROM users
+                    WHERE id = $1
+                """, user_id)
                 
-                if result:
-                    token = result['github_token']
-                    # TODO: Decrypt token here if encrypted in database
-                    return token
-                
-                return None
+                return result
         except Exception as e:
             print(f"⚠️  Error getting GitHub token: {e}")
             return None
@@ -176,14 +172,13 @@ class EventConsumer:
             # Extract context (multi-org mode)
             user_id = event.get("user_id")
             org_id = event.get("org_id")
-            token_id = event.get("github_token_id")
             
             # Get GitHub token
             github_token = None
             
-            # Try multi-org mode first (get token for this user/org)
-            if user_id and token_id:
-                github_token = await self.get_github_token(user_id, token_id)
+            # Try multi-org mode first (get token for this user)
+            if user_id:
+                github_token = await self.get_github_token(user_id, None)
                 
                 if github_token:
                     print(f"✅ Got GitHub token for user {user_id} org {org_id}")
@@ -233,15 +228,146 @@ class EventConsumer:
             
             return False
     
-    async def check_missed_commits(self):
+    async def get_orgs_with_activity(self) -> list:
         """
-        Check for missed commits on startup
+        Get all organizations that have been registered (for multi-org support)
         
-        This queries GitHub for recent commits and compares with our database
-        to find any commits that were missed during downtime.
+        Returns: List of {user_id, org_id, github_token_id} dicts
         """
         try:
-            print("\n🔍 Checking for missed commits...")
+            async with self.pool.acquire() as conn:
+                # Get all registered orgs with their first active token
+                # This ensures we check newly registered orgs on startup
+                rows = await conn.fetch("""
+                    SELECT 
+                        r.user_id, 
+                        r.org_id,
+                        COALESCE((
+                            SELECT token_id FROM user_github_tokens 
+                            WHERE user_id = r.user_id AND is_active = TRUE 
+                            LIMIT 1
+                        ), '00000000-0000-0000-0000-000000000000'::uuid) as github_token_id
+                    FROM org_registrations r
+                    GROUP BY r.user_id, r.org_id
+                    ORDER BY r.org_id
+                """)
+                return [dict(row) for row in rows]
+        except Exception as e:
+            print(f"⚠️  Error getting orgs with activity: {e}")
+            return []
+    
+    async def get_org_repositories(self, github_token: str, org_id: str) -> list:
+        """
+        Get all repositories for an organization from GitHub
+        Uses user/repos endpoint with org affiliation filter (same as frontend)
+        
+        Args:
+            github_token: GitHub token for authentication
+            org_id: Organization ID (e.g., "microsoft")
+        
+        Returns: List of repo full names (e.g., ["microsoft/vscode", "microsoft/typescript"])
+        """
+        try:
+            import requests
+            
+            headers = {
+                "Authorization": f"token {github_token}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            
+            # Get all repos user has access to (including org repos)
+            # This is the same method the frontend uses
+            repos = []
+            page = 1
+            
+            while True:
+                url = "https://api.github.com/user/repos"
+                params = {
+                    "page": page,
+                    "per_page": 100,
+                    "affiliation": "owner,collaborator,organization_member",
+                    "sort": "updated"
+                }
+                
+                response = requests.get(url, headers=headers, params=params, timeout=10)
+                
+                if response.status_code == 401:
+                    print(f"⚠️  Unauthorized: GitHub token may be invalid or expired")
+                    return []
+                
+                if response.status_code != 200:
+                    print(f"⚠️  Error fetching repos: {response.status_code}")
+                    return repos
+                
+                page_repos = response.json()
+                if not page_repos:
+                    break
+                
+                repos.extend([r["full_name"] for r in page_repos])
+                page += 1
+            
+            # Filter repos by org_id (since we fetched all user repos)
+            org_repos = [r for r in repos if r.startswith(f"{org_id}/")]
+            return org_repos
+        
+        except Exception as e:
+            print(f"⚠️  Error getting repos for {org_id}: {e}")
+            return []
+    
+    async def get_last_processed_sha(self, repo_id: str) -> str:
+        """Get the last processed commit SHA for a repo from database"""
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval("""
+                    SELECT last_processed_sha FROM repo_sync_state
+                    WHERE repo_id = $1
+                """, repo_id)
+                return result
+        except Exception as e:
+            print(f"⚠️  Error getting last processed SHA for {repo_id}: {e}")
+            return None
+    
+    async def update_repo_sync_state(self, repo_id: str, org_id: str, latest_sha: str):
+        """Update repo sync state with latest commit SHA from GitHub"""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute("""
+                    INSERT INTO repo_sync_state (repo_id, org_id, latest_sha_on_github, last_checked_at)
+                    VALUES ($1, $2, $3, NOW())
+                    ON CONFLICT (repo_id) DO UPDATE
+                    SET latest_sha_on_github = $3, last_checked_at = NOW()
+                """, repo_id, org_id, latest_sha)
+        except Exception as e:
+            print(f"⚠️  Error updating sync state for {repo_id}: {e}")
+    
+    async def mark_repo_processed(self, repo_id: str, processed_sha: str):
+        """Mark a repo as processed up to a specific commit SHA"""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE repo_sync_state
+                    SET last_processed_sha = $2, updated_at = NOW()
+                    WHERE repo_id = $1
+                """, repo_id, processed_sha)
+        except Exception as e:
+            print(f"⚠️  Error marking repo as processed: {e}")
+    
+    async def check_missed_commits(self) -> int:
+        """
+        Check for missed commits on startup (MULTI-ORG SUPPORT)
+        
+        This queries GitHub for recent commits across ALL registered organizations
+        and compares with our database to find any commits that were missed during downtime.
+        
+        FLOW:
+        1. Get all organizations with activity from database
+        2. For each org, get their GitHub token
+        3. Get all repositories in that org
+        4. For each repo, check GitHub for missed commits
+        5. Store missed commits with proper org context
+        """
+        try:
+            print("\n🔍 Checking for missed commits (MULTI-ORG)...")
             
             # Get unprocessed events from database
             stats = await self.bus.get_event_stats()
@@ -250,66 +376,200 @@ class EventConsumer:
                 print(f"📊 Found {stats['pending']} unprocessed events in database")
                 print(f"   These will be processed automatically")
             
-            # Check GitHub for missed commits
-            github_token = os.getenv("GITHUB_TOKEN")
-            github_org = os.getenv("GITHUB_ORG", "AuditorEnvelope")
-            enable_github_sync = os.getenv("ENABLE_GITHUB_SYNC", "false").lower() == "true"
+            # ================================================================
+            # STEP 1: Get all organizations with activity
+            # ================================================================
             
-            if github_token and enable_github_sync:
+            orgs_with_activity = await self.get_orgs_with_activity()
+            
+            if not orgs_with_activity:
+                print(f"⚠️  No organizations found in database")
+                print(f"   Relying on GitHub webhook retries instead")
+                return
+            
+            print(f"\n📋 Found {len(orgs_with_activity)} organization(s) with activity:")
+            for org_context in orgs_with_activity:
+                print(f"   - {org_context['org_id']}")
+            
+            # ================================================================
+            # STEP 2: For each org, check for missed commits
+            # ================================================================
+            
+            total_missed = 0
+            
+            for org_context in orgs_with_activity:
+                user_id = org_context['user_id']
+                org_id = org_context['org_id']
+                token_id = org_context['github_token_id']
+                
+                print(f"\n{'='*60}")
+                print(f"🔍 Checking org: {org_id}")
+                print(f"{'='*60}")
+                
+                # Get GitHub token for this org
+                github_token = await self.get_github_token(user_id, token_id)
+                
+                if not github_token:
+                    print(f"⚠️  No GitHub token found for {org_id}")
+                    print(f"   💡 Please register this organization with a valid GitHub token")
+                    continue
+                
+                print(f"✅ Using GitHub token for {org_id}")
+                
+                # Get all repositories in this org
+                print(f"📚 Fetching repositories for {org_id}...")
+                repos = await self.get_org_repositories(github_token, org_id)
+                
+                if not repos:
+                    print(f"⚠️  No repositories found for {org_id}")
+                    continue
+                
+                print(f"✅ Found {len(repos)} repository(ies) in {org_id}")
+                
+                # Check each repository for missed commits (OPTIMIZED)
                 try:
                     sync = GitHubSync(github_token)
                     
-                    # Get last processed commit SHA
-                    last_sha = await self.get_last_processed_sha()
-                    
-                    # Find missed commits from GitHub
-                    missed = await sync.find_missed_commits(
-                        f"{github_org}/lekhak_ai",
-                        last_processed_sha=last_sha
-                    )
-                    
-                    # Store missed commits in database
-                    if missed:
-                        print(f"\n💾 Storing {len(missed)} missed commits in database...")
-                        for event_dict in missed:
-                            try:
-                                # Convert dict to CommitEvent object
-                                event = CommitEvent(**event_dict)
-                                await self.bus.store_event(event)
-                                print(f"   ✅ Stored: {event.commit_sha[:8]}")
-                            except Exception as e:
-                                print(f"   ⚠️  Failed to store {event_dict['commit_sha'][:8]}: {e}")
+                    for repo_full_name in repos:
+                        print(f"\n   📦 Checking {repo_full_name}...")
                         
-                        print(f"\n🎉 Successfully recovered {len(missed)} missed commits!")
-                        print(f"   They will be processed automatically")
-                    
+                        try:
+                            # OPTIMIZATION: Check if repo has changed since last check
+                            last_processed_sha = await self.get_last_processed_sha(repo_full_name)
+                            latest_sha = await sync.get_latest_commit_sha(repo_full_name)
+                            
+                            # Update sync state with latest SHA
+                            await self.update_repo_sync_state(repo_full_name, org_id, latest_sha)
+                            
+                            # If nothing changed, skip this repo
+                            if last_processed_sha and last_processed_sha == latest_sha:
+                                print(f"   ✅ No changes since {last_processed_sha[:8]}")
+                                continue
+                            
+                            # Find missed commits for this repo
+                            missed = await sync.find_missed_commits(repo_full_name, since_sha=last_processed_sha)
+                            
+                            if missed:
+                                print(f"   🎯 Found {len(missed)} missed commit(s)")
+                                
+                                # Store each missed commit with org context
+                                for event_dict in missed:
+                                    try:
+                                        # Add multi-org context
+                                        # Only set user_id if it's not None
+                                        if user_id:
+                                            event_dict['user_id'] = str(user_id)
+                                        else:
+                                            event_dict['user_id'] = None
+                                        
+                                        event_dict['org_id'] = org_id
+                                        
+                                        # Only set token_id if it's valid (not zero UUID)
+                                        if token_id and str(token_id) != '00000000-0000-0000-0000-000000000000':
+                                            event_dict['github_token_id'] = str(token_id)
+                                        else:
+                                            event_dict['github_token_id'] = None
+                                        
+                                        # Convert to CommitEvent and store
+                                        event = CommitEvent(**event_dict)
+                                        await self.bus.store_event(event)
+                                        
+                                        print(f"      ✅ Stored: {event.commit_sha[:8]} ({repo_full_name})")
+                                        total_missed += 1
+                                    
+                                    except Exception as e:
+                                        print(f"      ⚠️  Failed to store {event_dict['commit_sha'][:8]}: {e}")
+                                
+                                # OPTIMIZATION: Mark repo as processed up to latest SHA
+                                if missed and latest_sha:
+                                    await self.mark_repo_processed(repo_full_name, latest_sha)
+                            else:
+                                print(f"   ✅ No missed commits")
+                        
+                        except Exception as e:
+                            print(f"   ⚠️  Error checking {repo_full_name}: {e}")
+                
                 except Exception as e:
-                    print(f"⚠️  Error syncing with GitHub: {e}")
-                    print(f"   Relying on GitHub webhook retries instead")
-            else:
-                print(f"⚠️  GITHUB_TOKEN not set, skipping GitHub sync")
-                print(f"   Relying on GitHub webhook retries instead")
+                    print(f"⚠️  Error syncing with GitHub for {org_id}: {e}")
             
-            if stats["pending"] == 0 and (not github_token or not missed):
-                print(f"\n✅ No missed commits found")
+            # ================================================================
+            # SUMMARY
+            # ================================================================
+            
+            if total_missed > 0:
+                print(f"\n{'='*60}")
+                print(f"🎉 Successfully recovered {total_missed} missed commit(s)!")
+                print(f"   They will be processed automatically")
+                print(f"{'='*60}")
+            else:
+                print(f"\n✅ No missed commits found across all organizations")
                 print(f"   Last processed: {stats['processed']} events")
             
+            # Display summary of all orgs and repos
+            await self.display_org_summary()
+        
         except Exception as e:
-            print(f"⚠️  Error checking missed commits: {e}")
+            print(f"❌ Error checking missed commits: {e}")
+            import traceback
+            traceback.print_exc()
     
-    async def get_last_processed_sha(self) -> Optional[str]:
-        """Get SHA of last successfully processed commit"""
+    async def display_org_summary(self):
+        """
+        Display a clean CLI summary of all organizations and their repositories
+        """
         try:
-            async with self.pool.acquire() as conn:
-                result = await conn.fetchrow("""
-                    SELECT commit_sha FROM commit_events
-                    WHERE processed = TRUE
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                """)
-                return result["commit_sha"] if result else None
-        except:
-            return None
+            orgs_with_activity = await self.get_orgs_with_activity()
+            
+            if not orgs_with_activity:
+                return
+            
+            print(f"\n{'='*70}")
+            print(f"📊 ORGANIZATION & REPOSITORY SUMMARY")
+            print(f"{'='*70}")
+            
+            # Group repos by org
+            org_repos = {}
+            for org_context in orgs_with_activity:
+                org_id = org_context['org_id']
+                user_id = org_context['user_id']
+                
+                if org_id not in org_repos:
+                    org_repos[org_id] = {'user_id': user_id, 'repos': []}
+            
+            # Fetch repos for each org
+            for org_context in orgs_with_activity:
+                user_id = org_context['user_id']
+                org_id = org_context['org_id']
+                
+                # Get token
+                github_token = await self.get_github_token(user_id, None)
+                if not github_token:
+                    github_token = os.getenv("GITHUB_TOKEN")
+                
+                if github_token:
+                    repos = await self.get_org_repositories(github_token, org_id)
+                    org_repos[org_id]['repos'] = repos
+            
+            # Display summary
+            total_orgs = len(org_repos)
+            total_repos = sum(len(org['repos']) for org in org_repos.values())
+            
+            print(f"\n🏢 Total Organizations: {total_orgs}")
+            print(f"📦 Total Repositories: {total_repos}\n")
+            
+            for org_id, org_data in sorted(org_repos.items()):
+                repos = org_data['repos']
+                print(f"  🔷 {org_id}")
+                print(f"     └─ Repositories: {len(repos)}")
+                for repo in repos:
+                    repo_name = repo.split('/')[-1]
+                    print(f"        ├─ {repo_name}")
+                print()
+            
+            print(f"{'='*70}\n")
+        
+        except Exception as e:
+            print(f"⚠️  Error displaying org summary: {e}")
     
     async def process_event_with_limit(self, event):
         """Process single event with concurrency limit"""
@@ -365,6 +625,23 @@ class EventConsumer:
         print(f"   Poll interval: {self.poll_interval}s")
         print(f"   Database: {self.db_url.split('@')[-1] if '@' in self.db_url else 'local'}")
         print(f"\n{'='*60}\n")
+        
+        # Process any pending events from startup immediately
+        stats = await self.bus.get_event_stats()
+        if stats["pending"] > 0:
+            print(f"\n⚡ Processing {stats['pending']} pending events from startup...")
+            startup_attempts = 0
+            while stats["pending"] > 0 and startup_attempts < 5:
+                startup_attempts += 1
+                print(f"   Attempt {startup_attempts}: Processing batch...")
+                processed = await self.consume_batch()
+                print(f"   Processed {processed} events")
+                if processed == 0:
+                    print(f"   No events processed, breaking")
+                    break
+                stats = await self.bus.get_event_stats()
+                print(f"   Stats after batch: {stats['pending']} pending")
+            print(f"✅ Startup processing complete\n")
         
         while self.running:
             try:
