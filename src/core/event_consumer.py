@@ -23,9 +23,9 @@ from dotenv import load_dotenv
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from commit_bus import CommitBusService, CommitEvent
-from smart_processor import handle_push_event
-from github_sync import GitHubSync
+from core.commit_bus import CommitBusService, CommitEvent
+from processors.smart_processor import handle_push_event
+from utilities.github_sync import GitHubSync
 
 load_dotenv()
 

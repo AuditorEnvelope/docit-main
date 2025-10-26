@@ -1,0 +1,178 @@
+================================================================================
+FILE USAGE MATRIX - WHAT IMPORTS WHAT
+================================================================================
+
+MAIN.PY (Entry Point)
+├── ✅ core/commit_bus.py
+├── ✅ core/auth_service.py
+├── ✅ core/quality_checker.py
+├── ✅ services/subscription_service.py
+├── ✅ services/overlay_service.py
+├── ✅ processors/smart_processor.py
+└── ✅ webhooks/webhook_multi_org.py
+
+CORE/EVENT_CONSUMER.PY (Worker Process)
+├── ✅ core/commit_bus.py
+├── ✅ processors/smart_processor.py
+└── ✅ utilities/github_sync.py
+
+PROCESSORS/SMART_PROCESSOR.PY (Doc Generation)
+├── ✅ webhooks/github_app.py
+├── ✅ utilities/llm_provider_v2.py
+└── ✅ processors/comprehensive_doc_generator.py
+
+PROCESSORS/HIERARCHICAL_DOC_GENERATOR.PY (Doc Tree)
+├── ✅ utilities/universal_code_parser.py
+└── ✅ utilities/llm_provider_v2.py
+
+PROCESSORS/COMPREHENSIVE_DOC_GENERATOR.PY (Detailed Docs)
+└── ✅ utilities/llm_provider_v2.py
+
+SERVICES/AGENT_SERVICE.PY (Q&A System)
+└── ✅ services/indexer_service.py
+
+INTEGRATIONS/LEKHAK_AI_INTEGRATION.PY (Pipeline)
+├── ✅ core/commit_bus.py
+├── ✅ processors/hierarchical_doc_generator.py
+├── ✅ services/indexer_service.py
+├── ✅ services/agent_service.py
+├── ✅ services/overlay_service.py
+└── ✅ services/subscription_service.py
+
+================================================================================
+IMPORT DEPENDENCY GRAPH
+================================================================================
+
+TIER 1 - ENTRY POINTS:
+  main.py
+  core/event_consumer.py
+
+TIER 2 - CORE SERVICES:
+  core/commit_bus.py
+  core/auth_service.py
+  core/quality_checker.py
+  webhooks/webhook_multi_org.py
+  webhooks/github_app.py
+
+TIER 3 - BUSINESS SERVICES:
+  services/subscription_service.py
+  services/overlay_service.py
+  services/agent_service.py
+  services/indexer_service.py
+
+TIER 4 - PROCESSORS:
+  processors/smart_processor.py
+  processors/hierarchical_doc_generator.py
+  processors/comprehensive_doc_generator.py
+
+TIER 5 - UTILITIES:
+  utilities/llm_provider_v2.py
+  utilities/universal_code_parser.py
+  utilities/github_sync.py
+
+TIER 6 - INTEGRATIONS:
+  integrations/lekhak_ai_integration.py
+
+DEAD CODE (NOT IMPORTED):
+  ❌ core/canonical_model.py
+  ❌ services/stripe_service.py
+  ❌ processors/doc_generation_endpoint.py
+  ❌ processors/quality_integration.py
+  ❌ webhooks/webhook_handler.py
+  ❌ integrations/pustak_integration.py
+
+================================================================================
+ACTIVE FLOW
+================================================================================
+
+USER MAKES PUSH TO GITHUB
+    ↓
+GitHub sends webhook to /webhook endpoint
+    ↓
+webhooks/webhook_multi_org.py verifies signature
+    ↓
+main.py process_commit_event() stores in commit_bus
+    ↓
+core/commit_bus.py saves to database
+    ↓
+core/event_consumer.py polls database (separate process)
+    ↓
+processors/smart_processor.py generates docs
+    ↓
+utilities/llm_provider_v2.py calls LLM (Gemini/Groq/OpenAI)
+    ↓
+utilities/universal_code_parser.py parses code
+    ↓
+processors/comprehensive_doc_generator.py generates detailed docs
+    ↓
+webhooks/github_app.py authenticates with GitHub
+    ↓
+Docs committed and pushed to repository
+
+================================================================================
+OPTIONAL FLOWS (Not Currently Wired)
+================================================================================
+
+AGENT Q&A FLOW:
+  User asks question
+    ↓
+  services/agent_service.py classifies intent
+    ↓
+  services/indexer_service.py searches vector DB
+    ↓
+  utilities/llm_provider_v2.py calls GPT-4
+    ↓
+  Returns answer with sources and confidence
+
+HIERARCHICAL DOCS FLOW:
+  integrations/lekhak_ai_integration.py orchestrates
+    ↓
+  processors/hierarchical_doc_generator.py generates tree
+    ↓
+  services/indexer_service.py indexes docs
+    ↓
+  services/agent_service.py updates knowledge base
+    ↓
+  services/overlay_service.py merges admin edits
+    ↓
+  services/subscription_service.py enforces limits
+
+================================================================================
+FILE SIZES
+================================================================================
+
+LARGE FILES (>10KB):
+  - main.py: 40KB (CRITICAL)
+  - processors/smart_processor.py: 30KB (CRITICAL)
+  - processors/hierarchical_doc_generator.py: 39KB (OPTIONAL)
+  - processors/comprehensive_doc_generator.py: 39KB (USED)
+  - core/auth_service.py: 31KB (CRITICAL)
+
+MEDIUM FILES (5-10KB):
+  - core/commit_bus.py: 10KB (CRITICAL)
+  - core/quality_checker.py: 16KB (CRITICAL)
+  - core/event_consumer.py: 16KB (CRITICAL)
+  - services/subscription_service.py: 11KB (USEFUL)
+  - services/overlay_service.py: 11KB (USEFUL)
+  - services/agent_service.py: 8KB (OPTIONAL)
+  - utilities/llm_provider_v2.py: 10KB (CRITICAL)
+  - utilities/universal_code_parser.py: 15KB (CRITICAL)
+  - utilities/github_sync.py: 6.5KB (CRITICAL)
+  - webhooks/webhook_multi_org.py: 10KB (CRITICAL)
+  - integrations/lekhak_ai_integration.py: 8KB (OPTIONAL)
+
+SMALL FILES (<5KB):
+  - services/indexer_service.py: 11KB (OPTIONAL)
+  - processors/doc_generation_endpoint.py: 10KB (DEAD)
+  - processors/quality_integration.py: 9KB (DEAD)
+  - webhooks/github_app.py: 0.8KB (CRITICAL)
+  - integrations/pustak_integration.py: 6.8KB (DEAD)
+  - webhooks/webhook_handler.py: 1.7KB (DEAD)
+  - core/canonical_model.py: 11KB (DEAD)
+  - services/stripe_service.py: 11KB (DEAD)
+
+TOTAL CODEBASE: ~400KB
+DEAD CODE: ~49KB (12%)
+USEFUL CODE: ~351KB (88%)
+
+================================================================================

@@ -8,7 +8,7 @@ import json
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 import asyncpg
-from indexer_service import IndexerService
+from services.indexer_service import IndexerService
 import openai
 
 @dataclass
