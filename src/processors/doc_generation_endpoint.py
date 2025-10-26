@@ -68,7 +68,7 @@ async def generate_repository_documentation(repo_name: str, github_token: str) -
         print(f"📁 Created docs directory structure")
         
         # Generate documentation using LLM
-        from llm_provider_v2 import get_rotator
+        from utilities.llm_provider_v2 import get_rotator
         
         llm_rotator = get_rotator()
         
