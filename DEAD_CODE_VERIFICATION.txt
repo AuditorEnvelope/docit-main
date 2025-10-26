@@ -1,0 +1,253 @@
+================================================================================
+DEAD CODE VERIFICATION - LINE BY LINE ANALYSIS
+================================================================================
+
+VERDICT: 4 files are TRULY DEAD CODE (safe to delete)
+         2 files are ACTUALLY USED (DO NOT DELETE)
+
+================================================================================
+FILE 1: core/canonical_model.py (11KB)
+================================================================================
+
+WHAT IT CONTAINS:
+  - NodeType enum (PRODUCT, SDK, MODULE, FEATURE, FUNCTION, CLASS, METHOD, ENDPOINT)
+  - Example dataclass
+  - VersionInfo dataclass
+  - Reference dataclass
+  - Provenance dataclass
+  - DocNode dataclass (main model)
+  - DocumentationTree dataclass
+  - Helper functions: create_product_node(), create_sdk_node(), etc.
+
+PURPOSE: Canonical data models for hierarchical documentation
+
+IMPORTS: 
+  - grep -r "canonical_model" src/ → NO RESULTS ✅
+  - NOT IMPORTED ANYWHERE
+
+VERDICT: ❌ DELETE - DEAD CODE
+  - 361 lines of unused code
+  - No imports anywhere
+  - Safe to delete
+
+================================================================================
+FILE 2: services/stripe_service.py (11KB)
+================================================================================
+
+WHAT IT CONTAINS:
+  - StripeService class
+  - Methods: create_checkout_session(), handle_webhook(), cancel_subscription()
+  - Stripe integration code
+  - FastAPI endpoints for Stripe
+
+PURPOSE: Stripe payment integration
+
+IMPORTS:
+  - grep -r "stripe_service" src/ → FOUND IN stripe_service.py ITSELF ONLY
+  - NOT IMPORTED FROM OTHER FILES
+
+VERDICT: ❌ DELETE - DEAD CODE
+  - Self-referential code only
+  - No other file imports it
+  - Safe to delete
+
+================================================================================
+FILE 3: processors/doc_generation_endpoint.py (10KB)
+================================================================================
+
+WHAT IT CONTAINS:
+  - run_cmd() function
+  - clone_repo_via_token() function
+  - generate_repository_documentation() async function (main function)
+
+PURPOSE: On-demand documentation generation endpoint
+
+IMPORTS:
+  Line 388 in main.py:
+    from processors.doc_generation_endpoint import generate_repository_documentation
+  
+  Line 11 in webhooks/webhook_handler.py:
+    from doc_generation_endpoint import generate_repository_documentation
+
+USAGE:
+  Line 396 in main.py:
+    docs = await generate_repository_documentation(repo_name, github_token)
+    
+  Line 50 in webhooks/webhook_handler.py:
+    docs = await generate_repository_documentation(repo_name, github_token)
+
+VERDICT: ✅ KEEP - ACTUALLY USED
+  - Used in /docs/generate endpoint (main.py line 396)
+  - Used in /webhook/github endpoint (webhook_handler.py line 50)
+  - DO NOT DELETE
+
+================================================================================
+FILE 4: processors/quality_integration.py (9KB)
+================================================================================
+
+WHAT IT CONTAINS:
+  - QualityValidationWrapper class
+  - Methods: validate_and_improve(), _calculate_codebase_size(), _print_quality_summary()
+  - validate_documentation_quality() function (main function)
+
+PURPOSE: Quality checking integration
+
+IMPORTS:
+  Line 133 in processors/smart_processor.py:
+    from quality_integration import validate_documentation_quality
+
+USAGE:
+  Line 134 in processors/smart_processor.py:
+    quality_passed = validate_documentation_quality(tmpdir, repo.get("name", "unknown"))
+
+VERDICT: ✅ KEEP - ACTUALLY USED
+  - Used in smart_processor.py for quality validation
+  - Called during doc generation pipeline
+  - DO NOT DELETE
+
+================================================================================
+FILE 5: webhooks/webhook_handler.py (1.7KB)
+================================================================================
+
+WHAT IT CONTAINS:
+  - verify_github_signature() function
+  - handle_push_webhook() async function
+
+PURPOSE: Legacy webhook handler
+
+IMPORTS:
+  Line 412 in main.py:
+    from webhooks.webhook_handler import verify_github_signature, handle_push_webhook
+
+USAGE:
+  Line 418 in main.py:
+    if not verify_github_signature(body, signature):
+    
+  Line 428 in main.py:
+    await handle_push_webhook(payload, github_token)
+
+VERDICT: ✅ KEEP - ACTUALLY USED
+  - Used in /webhook/github endpoint
+  - Provides signature verification and webhook handling
+  - DO NOT DELETE
+
+================================================================================
+FILE 6: integrations/pustak_integration.py (6.8KB)
+================================================================================
+
+WHAT IT CONTAINS:
+  - PustakIntegration class
+  - Methods: sync_documentation(), notify_doc_generated()
+  - update_smart_processor_with_pustak() function
+  - create_pustak_config() function
+  - main() function
+
+PURPOSE: Pustak frontend integration
+
+IMPORTS:
+  Line 90 in integrations/pustak_integration.py:
+    from pustak_integration import PustakIntegration
+    (This is SELF-REFERENTIAL - inside the same file!)
+
+USAGE:
+  - Only used inside pustak_integration.py itself
+  - NOT imported from other files
+  - The import on line 90 is inside a string (not actual code)
+
+VERDICT: ❌ DELETE - DEAD CODE
+  - Self-referential only
+  - Not used anywhere else
+  - Safe to delete
+
+================================================================================
+SUMMARY
+================================================================================
+
+SAFE TO DELETE (4 files - 38KB):
+  ❌ core/canonical_model.py (11KB) - NOT IMPORTED ANYWHERE
+  ❌ services/stripe_service.py (11KB) - NOT IMPORTED ANYWHERE
+  ❌ integrations/pustak_integration.py (6.8KB) - SELF-REFERENTIAL ONLY
+  ❌ webhooks/webhook_handler.py (1.7KB) - WAIT! Actually used, see below
+
+MUST KEEP (2 files - 19KB):
+  ✅ processors/doc_generation_endpoint.py (10KB) - USED IN main.py & webhook_handler.py
+  ✅ processors/quality_integration.py (9KB) - USED IN smart_processor.py
+
+ACTUALLY SAFE TO DELETE (3 files - 28.8KB):
+  ❌ core/canonical_model.py (11KB)
+  ❌ services/stripe_service.py (11KB)
+  ❌ integrations/pustak_integration.py (6.8KB)
+
+================================================================================
+WAIT! WEBHOOK_HANDLER.PY IS ACTUALLY USED!
+================================================================================
+
+Looking at main.py line 412:
+  from webhooks.webhook_handler import verify_github_signature, handle_push_webhook
+
+And it's used:
+  Line 418: if not verify_github_signature(body, signature):
+  Line 428: await handle_push_webhook(payload, github_token)
+
+So webhook_handler.py is ACTUALLY USED and should NOT be deleted!
+
+================================================================================
+CORRECTED RECOMMENDATION
+================================================================================
+
+SAFE TO DELETE (3 files - 28.8KB):
+  ❌ core/canonical_model.py (11KB)
+  ❌ services/stripe_service.py (11KB)
+  ❌ integrations/pustak_integration.py (6.8KB)
+
+MUST KEEP (3 files - 29.7KB):
+  ✅ processors/doc_generation_endpoint.py (10KB)
+  ✅ processors/quality_integration.py (9KB)
+  ✅ webhooks/webhook_handler.py (1.7KB)
+
+================================================================================
+WHAT WILL BREAK IF YOU DELETE?
+================================================================================
+
+IF YOU DELETE doc_generation_endpoint.py:
+  ❌ /docs/generate endpoint will break (line 396 in main.py)
+  ❌ /webhook/github endpoint will break (line 50 in webhook_handler.py)
+  ❌ On-demand doc generation will fail
+
+IF YOU DELETE quality_integration.py:
+  ❌ Doc generation pipeline will break (line 134 in smart_processor.py)
+  ❌ Quality validation will fail
+  ❌ Docs will be generated without quality checks
+
+IF YOU DELETE webhook_handler.py:
+  ❌ /webhook/github endpoint will break (line 412 in main.py)
+  ❌ Webhook signature verification will fail
+  ❌ GitHub webhooks won't be processed
+
+IF YOU DELETE canonical_model.py:
+  ✅ NOTHING - It's not used anywhere
+
+IF YOU DELETE stripe_service.py:
+  ✅ NOTHING - It's not used anywhere
+
+IF YOU DELETE pustak_integration.py:
+  ✅ NOTHING - It's not used anywhere
+
+================================================================================
+FINAL VERDICT
+================================================================================
+
+DELETE THESE 3 FILES (SAFE):
+  rm -f src/core/canonical_model.py
+  rm -f src/services/stripe_service.py
+  rm -f src/integrations/pustak_integration.py
+
+KEEP THESE 3 FILES (REQUIRED):
+  ✅ src/processors/doc_generation_endpoint.py
+  ✅ src/processors/quality_integration.py
+  ✅ src/webhooks/webhook_handler.py
+
+SPACE SAVED: 28.8KB
+LOGIC BROKEN: NO - All required files are kept
+
+================================================================================

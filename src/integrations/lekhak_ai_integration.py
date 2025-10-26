@@ -11,12 +11,12 @@ import tempfile
 import shutil
 from git import Repo
 
-from commit_bus import CommitBusService
-from hierarchical_doc_generator import HierarchicalDocGenerator
-from indexer_service import IndexerService
-from agent_service import AgentService
-from overlay_service import OverlayService
-from subscription_service import SubscriptionService
+from core.commit_bus import CommitBusService
+from processors.hierarchical_doc_generator import HierarchicalDocGenerator
+from services.indexer_service import IndexerService
+from services.agent_service import AgentService
+from services.overlay_service import OverlayService
+from services.subscription_service import SubscriptionService
 
 class LekhakKiPipeline:
     """

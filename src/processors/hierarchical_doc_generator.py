@@ -13,8 +13,8 @@ from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, asdict
 import asyncpg
 from datetime import datetime
-from universal_code_parser import UniversalCodeParser
-from llm_provider_v2 import get_rotator
+from utilities.universal_code_parser import UniversalCodeParser
+from utilities.llm_provider_v2 import get_rotator
 
 @dataclass
 class DocNode:

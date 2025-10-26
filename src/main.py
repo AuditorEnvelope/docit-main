@@ -3,6 +3,10 @@ Lekhak AI - Main API Server
 Handles GitHub webhooks and stores events in commit bus for processing
 """
 
+# Load environment variables FIRST before any imports that use them
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import hmac
 import hashlib
@@ -11,20 +15,23 @@ import base64
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from dotenv import load_dotenv
 import uvicorn
 import aiohttp
 
-# Import services
-from commit_bus import CommitBusService
-from subscription_service import SubscriptionService
-from overlay_service import OverlayService
-from smart_processor import handle_push_event as legacy_handle_push
-from quality_checker import DocumentationQualityChecker, DocumentationQuality
-from auth_service import AuthService, get_current_user, get_optional_user, User
-from webhook_multi_org import webhook_multi_org
+# Import core services
+from core.commit_bus import CommitBusService
+from core.auth_service import AuthService, get_current_user, get_optional_user, User
+from core.quality_checker import DocumentationQualityChecker, DocumentationQuality
 
-load_dotenv()
+# Import business services
+from services.subscription_service import SubscriptionService
+from services.overlay_service import OverlayService
+
+# Import processors
+from processors.smart_processor import handle_push_event as legacy_handle_push
+
+# Import webhooks
+from webhooks.webhook_multi_org import webhook_multi_org
 
 # Initialize FastAPI
 app = FastAPI(
@@ -132,7 +139,7 @@ async def process_commit_event(payload: dict):
     # Try commit bus first (durable, never loses commits)
     if commit_bus:
         try:
-            from commit_bus import CommitEvent
+            from core.commit_bus import CommitEvent
             from datetime import datetime
             
             # Extract commit info from payload
@@ -378,7 +385,7 @@ async def generate_documentation(repo_name: str, user = Depends(get_auth_user), 
         raise HTTPException(status_code=503, detail="Auth service not available")
     
     try:
-        from doc_generation_endpoint import generate_repository_documentation
+        from processors.doc_generation_endpoint import generate_repository_documentation
         
         github_token = await auth_service.get_github_token(user.id)
         if not github_token:
@@ -402,7 +409,7 @@ async def generate_documentation(repo_name: str, user = Depends(get_auth_user), 
 @app.post("/webhook/github")
 async def github_webhook(request: Request):
     """GitHub webhook for automatic documentation generation on push"""
-    from webhook_handler import verify_github_signature, handle_push_webhook
+    from webhooks.webhook_handler import verify_github_signature, handle_push_webhook
     
     # Verify signature
     body = await request.body()
@@ -500,7 +507,7 @@ async def check_app_installation(
             raise HTTPException(status_code=401, detail="No GitHub token found. Please log in again.")
         
         # Check if app is installed in this org using GitHub App JWT
-        from github_app import create_jwt
+        from webhooks.github_app import create_jwt
         
         try:
             jwt_token = create_jwt()

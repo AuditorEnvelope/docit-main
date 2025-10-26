@@ -1,0 +1,198 @@
+================================================================================
+LEKHAK AI - CODEBASE STRUCTURE
+================================================================================
+
+PROJECT ROOT: /Users/harshsrivastava/Desktop/doc_ai/
+
+================================================================================
+DIRECTORY STRUCTURE
+================================================================================
+
+src/
+├── main.py                          # FastAPI application entry point
+├── core/                            # Core functionality
+│   ├── __init__.py
+│   ├── commit_bus.py               # Event store for reliable commit tracking
+│   ├── auth_service.py             # GitHub OAuth & authentication
+│   ├── event_consumer.py           # Event processing worker
+│   ├── quality_checker.py          # Documentation quality validation
+│   └── canonical_model.py          # Data models
+│
+├── services/                        # Business logic services
+│   ├── __init__.py
+│   ├── subscription_service.py     # Billing & subscription management
+│   ├── overlay_service.py          # Admin documentation overlays
+│   ├── stripe_service.py           # Stripe payment integration
+│   ├── agent_service.py            # AI agent orchestration
+│   └── indexer_service.py          # Documentation indexing
+│
+├── processors/                      # Documentation generation
+│   ├── __init__.py
+│   ├── smart_processor.py          # Main doc generation pipeline
+│   ├── comprehensive_doc_generator.py  # Detailed doc generation
+│   ├── hierarchical_doc_generator.py   # Tree-based doc structure
+│   ├── doc_generation_endpoint.py      # API endpoint for doc generation
+│   └── quality_integration.py          # Quality checking integration
+│
+├── webhooks/                        # GitHub webhook handling
+│   ├── __init__.py
+│   ├── webhook_multi_org.py        # Multi-org webhook handler
+│   ├── webhook_handler.py          # Legacy webhook handler
+│   └── github_app.py               # GitHub App JWT generation
+│
+├── utilities/                       # Helper utilities
+│   ├── __init__.py
+│   ├── universal_code_parser.py    # Multi-language code parsing
+│   ├── llm_provider_v2.py          # LLM provider abstraction
+│   └── github_sync.py              # GitHub API sync utilities
+│
+└── integrations/                    # External integrations
+    ├── __init__.py
+    ├── lekhak_ai_integration.py     # Lekhak AI integration
+    └── pustak_integration.py        # Pustak frontend integration
+
+pustak/                             # Frontend (Next.js)
+├── src/
+│   ├── app/
+│   ├── components/
+│   ├── contexts/
+│   └── ...
+├── package.json
+└── ...
+
+migrations/                         # Database migrations
+├── 001_auth_and_billing.sql
+├── 002_multi_org_support.sql
+└── 003_org_registrations.sql
+
+docs/                              # Documentation
+├── architecture/
+├── workflow/
+└── changes/
+
+tests/                             # Test files
+├── test_downtime.sh
+├── test_features.sh
+├── test_lekhak_ai.py
+└── test_manual_commit.sh
+
+================================================================================
+KEY FILES
+================================================================================
+
+Configuration:
+  .env                              # Environment variables
+  .env.example                      # Example env template
+  requirements.txt                  # Python dependencies
+  docker-compose.yml                # Docker compose setup
+
+Database:
+  schema.sql                        # Database schema
+  migrations/                       # SQL migrations
+
+Scripts:
+  start.sh                          # Start all services
+  start_backend.sh                  # Start backend only
+  start_frontend.sh                 # Start frontend only
+  cleanup_events.py                 # Event cleanup utility
+  cleanup_old_events.py             # Old event cleanup
+
+Documentation:
+  README.md                         # Project overview
+  CODEBASE_STRUCTURE.txt            # This file
+  CHANGELOG.md                      # Version history
+  FEATURES.md                       # Feature list
+  HOW_IT_WORKS.md                   # Architecture overview
+  QUICK_REFERENCE.md                # Quick start guide
+
+================================================================================
+REMOVED FILES (REDUNDANT/UNUSED)
+================================================================================
+
+Deleted:
+  - event_consumer_multi_org.py     (Merged into event_consumer.py)
+  - Multiple old markdown files     (Outdated documentation)
+
+================================================================================
+IMPORT STRUCTURE
+================================================================================
+
+From main.py:
+  from core.commit_bus import CommitBusService
+  from core.auth_service import AuthService
+  from core.quality_checker import DocumentationQualityChecker
+  from services.subscription_service import SubscriptionService
+  from services.overlay_service import OverlayService
+  from processors.smart_processor import handle_push_event
+  from webhooks.webhook_multi_org import webhook_multi_org
+
+From event_consumer.py:
+  from core.commit_bus import CommitBusService, CommitEvent
+  from processors.smart_processor import handle_push_event
+  from utilities.github_sync import GitHubSync
+
+================================================================================
+FOLDER PURPOSES
+================================================================================
+
+core/
+  Purpose: Core application logic
+  Contains: Database, auth, event processing, quality checking
+  Stability: Stable - rarely changes
+  
+services/
+  Purpose: Business logic and integrations
+  Contains: Subscriptions, overlays, payments, indexing
+  Stability: Stable - well-defined interfaces
+  
+processors/
+  Purpose: Documentation generation pipeline
+  Contains: Doc generators, quality integration, endpoints
+  Stability: Active - frequently improved
+  
+webhooks/
+  Purpose: GitHub webhook handling
+  Contains: Multi-org support, signature verification, JWT
+  Stability: Stable - core functionality
+  
+utilities/
+  Purpose: Helper functions and abstractions
+  Contains: Code parsing, LLM providers, GitHub sync
+  Stability: Stable - reusable components
+  
+integrations/
+  Purpose: External system integrations
+  Contains: Lekhak AI, Pustak frontend
+  Stability: Stable - well-defined interfaces
+
+================================================================================
+RUNNING THE APPLICATION
+================================================================================
+
+Backend:
+  cd /Users/harshsrivastava/Desktop/doc_ai
+  bash start_backend.sh
+
+Event Consumer:
+  cd /Users/harshsrivastava/Desktop/doc_ai
+  python -m src.core.event_consumer
+
+Frontend:
+  cd /Users/harshsrivastava/Desktop/doc_ai/pustak
+  npm run dev
+
+All Services:
+  cd /Users/harshsrivastava/Desktop/doc_ai
+  bash start.sh
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Test backend startup: bash start_backend.sh
+2. Verify imports work correctly
+3. Test webhook processing
+4. Run event consumer
+5. Test end-to-end flow
+
+================================================================================
