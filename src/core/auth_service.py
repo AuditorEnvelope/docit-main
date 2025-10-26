@@ -769,6 +769,7 @@ class AuthService:
             },
             "access_token": access_token,
             "refresh_token": refresh_token,
+            "github_token": github_token,
             "expires_in": JWT_EXPIRATION_HOURS * 3600,  # seconds
         }
     

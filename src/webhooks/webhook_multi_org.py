@@ -85,10 +85,32 @@ async def get_org_context_from_repo(db_pool, repo_full_name: str):
             if org_record:
                 return dict(org_record)
             
+            # If not found, check org_registrations (newly registered orgs)
+            reg_record = await conn.fetchrow("""
+                SELECT user_id, org_id FROM org_registrations
+                WHERE org_id = $1
+                LIMIT 1
+            """, org_id)
+            
+            if reg_record:
+                # Found in registrations, get their token
+                token_record = await conn.fetchrow("""
+                    SELECT token_id FROM user_github_tokens
+                    WHERE user_id = $1
+                    LIMIT 1
+                """, reg_record['user_id'])
+                
+                if token_record:
+                    return {
+                        'user_id': reg_record['user_id'],
+                        'org_id': org_id,
+                        'github_token_id': token_record['token_id']
+                    }
+            
             # If not found, try to find any user with access to this org
             # Look for users who have successfully processed this org's repos before
             user_record = await conn.fetchrow("""
-                SELECT DISTINCT ce.user_id, ce.org_id
+                SELECT ce.user_id, ce.org_id
                 FROM commit_events ce
                 WHERE ce.org_id = $1 
                   AND ce.user_id IS NOT NULL
@@ -102,12 +124,12 @@ async def get_org_context_from_repo(db_pool, repo_full_name: str):
                 # Auto-register this org for future use
                 try:
                     await conn.execute("""
-                        INSERT INTO org_webhooks (user_id, org_id, webhook_secret, github_token_id, is_active)
-                        VALUES ($1, $2, $3, $4, true)
-                        ON CONFLICT (org_id) DO UPDATE
-                        SET user_id = $1, updated_at = NOW()
+                        INSERT INTO org_webhooks (user_id, org_id, webhook_secret, github_token_id)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (user_id, org_id) DO UPDATE
+                        SET updated_at = NOW()
                     """, user_record['user_id'], org_id, 
-                    os.urandom(32).hex(),  # Generate random webhook secret
+                    'webhook_' + org_id,  # Simple webhook secret
                     None)  # Will use main token
                     
                     print(f"🎆 Auto-registered org {org_id} for user {user_record['user_id']}")
