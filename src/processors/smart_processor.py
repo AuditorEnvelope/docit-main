@@ -130,7 +130,7 @@ def handle_push_event(payload, github_token=None):
         print("🔍 RUNNING QUALITY VALIDATION")
         print("="*60)
         
-        from quality_integration import validate_documentation_quality
+        from processors.quality_integration import validate_documentation_quality
         quality_passed = validate_documentation_quality(tmpdir, repo.get("name", "unknown"))
         
         if not quality_passed:
