@@ -196,19 +196,27 @@ class EventConsumer:
                 
                 if github_token:
                     print(f"✅ Got GitHub token for user {user_id} org {org_id}")
-                    print(f"   Token starts with: {github_token[:20]}...")
                 else:
                     print(f"⚠️  No GitHub token found for user {user_id} org {org_id}")
             
-            # Fall back to env var (single-org mode)
-            if not github_token:
+            # IMPORTANT: Only fall back to env var if NO user context at all
+            # This prevents using wrong token for multi-org repos
+            if not github_token and not user_id:
                 github_token = os.getenv("GITHUB_TOKEN")
                 
                 if github_token:
-                    print(f"⚠️  Using GITHUB_TOKEN from env (single-org mode)")
+                    print(f"⚠️  Using GITHUB_TOKEN from env (legacy single-org mode)")
                 else:
-                    print(f"❌ No GitHub token available (multi-org or env)")
-                    raise Exception(f"No GitHub token for user {user_id}")
+                    print(f"❌ No GitHub token available")
+                    await self.bus.mark_failed(event_id, "No GitHub token available")
+                    return False
+            
+            # If we have user_id but no token, this is a critical error
+            if user_id and not github_token:
+                error_msg = f"No valid GitHub token for user {user_id} org {org_id}"
+                print(f"❌ {error_msg}")
+                await self.bus.mark_failed(event_id, error_msg)
+                return False
             
             # Convert to webhook format
             payload = self.convert_to_webhook_payload(event)

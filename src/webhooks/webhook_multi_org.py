@@ -56,6 +56,76 @@ async def get_org_webhook_context(db_pool, signature: str):
         return None
 
 
+async def get_org_context_from_repo(db_pool, repo_full_name: str):
+    """
+    Get org context from repository name when webhook is not registered
+    This is the KEY for multi-org support without registered webhooks
+    
+    Args:
+        db_pool: Database connection pool
+        repo_full_name: Full repository name (e.g., "AuditorEnvelope/lekhak_ai")
+    
+    Returns: {user_id, org_id, github_token_id} or None
+    """
+    if not repo_full_name or '/' not in repo_full_name:
+        return None
+    
+    org_id = repo_full_name.split('/')[0]
+    
+    try:
+        async with db_pool.acquire() as conn:
+            # First try to find in org_webhooks table
+            org_record = await conn.fetchrow("""
+                SELECT user_id, org_id, github_token_id
+                FROM org_webhooks
+                WHERE org_id = $1
+                LIMIT 1
+            """, org_id)
+            
+            if org_record:
+                return dict(org_record)
+            
+            # If not found, try to find any user with access to this org
+            # Look for users who have successfully processed this org's repos before
+            user_record = await conn.fetchrow("""
+                SELECT DISTINCT ce.user_id, ce.org_id
+                FROM commit_events ce
+                WHERE ce.org_id = $1 
+                  AND ce.user_id IS NOT NULL
+                  AND ce.processed = true
+                ORDER BY ce.created_at DESC
+                LIMIT 1
+            """, org_id)
+            
+            if user_record:
+                # Found a user who has processed this org before
+                # Auto-register this org for future use
+                try:
+                    await conn.execute("""
+                        INSERT INTO org_webhooks (user_id, org_id, webhook_secret, github_token_id, is_active)
+                        VALUES ($1, $2, $3, $4, true)
+                        ON CONFLICT (org_id) DO UPDATE
+                        SET user_id = $1, updated_at = NOW()
+                    """, user_record['user_id'], org_id, 
+                    os.urandom(32).hex(),  # Generate random webhook secret
+                    None)  # Will use main token
+                    
+                    print(f"🎆 Auto-registered org {org_id} for user {user_record['user_id']}")
+                except Exception as e:
+                    print(f"⚠️  Could not auto-register org: {e}")
+                
+                return {
+                    'user_id': user_record['user_id'],
+                    'org_id': org_id,
+                    'github_token_id': None  # Will use user's main token
+                }
+            
+        return None
+    except Exception as e:
+        print(f"⚠️  Error getting org context: {e}")
+        return None
+
+
 # ============================================================================
 # NEW WEBHOOK ENDPOINT - MULTI-ORG SUPPORT
 # ============================================================================
@@ -137,10 +207,28 @@ async def webhook_multi_org(
             payload['_webhook_context'] = {
                 'user_id': str(webhook_context['user_id']),
                 'org_id': webhook_context['org_id'],
-                'github_token_id': str(webhook_context['github_token_id']),
-                'webhook_secret': webhook_context['webhook_secret']
+                'github_token_id': str(webhook_context['github_token_id']) if webhook_context.get('github_token_id') else None,
+                'webhook_secret': webhook_context.get('webhook_secret')
             }
             print(f"📝 Added webhook context to payload: user_id={webhook_context['user_id']}, org_id={webhook_context['org_id']}")
+        else:
+            # CRITICAL: For unregistered webhooks, get org context from repo name
+            # This enables multi-org support without pre-registering webhooks
+            repo = payload.get('repository', {})
+            repo_full_name = repo.get('full_name', '')
+            
+            if db_pool and repo_full_name:
+                org_context = await get_org_context_from_repo(db_pool, repo_full_name)
+                if org_context:
+                    payload['_webhook_context'] = {
+                        'user_id': str(org_context['user_id']),
+                        'org_id': org_context['org_id'],
+                        'github_token_id': str(org_context['github_token_id']) if org_context.get('github_token_id') else None,
+                        'webhook_secret': None  # No registered webhook
+                    }
+                    print(f"🎯 Extracted org context from repo {repo_full_name}: user_id={org_context['user_id']}, org_id={org_context['org_id']}")
+                else:
+                    print(f"⚠️  No org context found for {repo_full_name}, will use ENV token (fallback)")
         
         # Process in background
         background_tasks.add_task(process_commit_event_func, payload)
