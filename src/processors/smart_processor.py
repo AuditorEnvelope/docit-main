@@ -85,21 +85,20 @@ def handle_push_event(payload, github_token=None):
 
     # Use provided token, or try app installation, or fallback to env
     token = github_token
-    print(f"🔍 DEBUG: github_token parameter = {github_token[:20] if github_token else 'None'}...")
     
     if not token:
         if installation_id:
             token = get_installation_token(installation_id)
-            print(f"🔍 DEBUG: Got app token")
+            print(f"✨ Using GitHub App installation token")
         else:
+            # Only use env token as last resort
             token = os.getenv("GITHUB_TOKEN")
-            print(f"🔍 DEBUG: Using env GITHUB_TOKEN")
+            if token:
+                print(f"⚠️  Using env GITHUB_TOKEN (no user token provided)")
     
     if not token:
         print("❌ No GitHub token available")
         return
-    
-    print(f"🔍 DEBUG: Final token = {token[:20]}...")
     tmpdir = tempfile.mkdtemp(prefix="docai_smart_")
     
     try:
