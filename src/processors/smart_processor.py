@@ -83,15 +83,23 @@ def handle_push_event(payload, github_token=None):
             print(f"⏭️  Skipping DocAI's own commit from {author}")
             return
 
-    # Use GitHub token (Personal Access Token or App Installation Token)
-    if installation_id:
-        token = get_installation_token(installation_id)
-    else:
-        # Fallback to personal access token
-        token = os.getenv("GITHUB_TOKEN")
-        if not token:
-            print("❌ No GitHub token available (neither app installation nor GITHUB_TOKEN)")
-            return
+    # Use provided token, or try app installation, or fallback to env
+    token = github_token
+    print(f"🔍 DEBUG: github_token parameter = {github_token[:20] if github_token else 'None'}...")
+    
+    if not token:
+        if installation_id:
+            token = get_installation_token(installation_id)
+            print(f"🔍 DEBUG: Got app token")
+        else:
+            token = os.getenv("GITHUB_TOKEN")
+            print(f"🔍 DEBUG: Using env GITHUB_TOKEN")
+    
+    if not token:
+        print("❌ No GitHub token available")
+        return
+    
+    print(f"🔍 DEBUG: Final token = {token[:20]}...")
     tmpdir = tempfile.mkdtemp(prefix="docai_smart_")
     
     try:
