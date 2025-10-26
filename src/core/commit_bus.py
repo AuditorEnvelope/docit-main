@@ -101,7 +101,7 @@ class CommitBusService:
                     push_id, source, metadata, created_at,
                     user_id, org_id, github_token_id, installation_id
                 FROM commit_events
-                WHERE processed = FALSE AND retry_count < 3
+                WHERE processed = FALSE AND retry_count < 5
             """
             params = []
             

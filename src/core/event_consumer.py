@@ -127,24 +127,37 @@ class EventConsumer:
     
     async def get_github_token(self, user_id: str, token_id: str) -> Optional[str]:
         """
-        Get GitHub token for user from users table (same as frontend)
+        Get GitHub token for user from database
+        Prefers user's main token (most reliable), falls back to org-specific token
         
         Args:
             user_id: UUID of user
-            token_id: UUID of token record (unused, for compatibility)
+            token_id: UUID of token record (ignored - always use main token)
         
         Returns:
             GitHub token string or None if not found
         """
         try:
             async with self.pool.acquire() as conn:
-                # Get the user's main GitHub token (same as frontend uses)
+                # Always prefer user's main GitHub token (most reliable)
                 result = await conn.fetchval("""
                     SELECT github_access_token FROM users
                     WHERE id = $1
                 """, user_id)
                 
-                return result
+                if result:
+                    return result
+                
+                # Fallback to org-specific token if main token not available
+                if token_id and str(token_id) != '00000000-0000-0000-0000-000000000000':
+                    result = await conn.fetchval("""
+                        SELECT github_token FROM user_github_tokens
+                        WHERE user_id = $1 AND token_id = $2 AND is_active = TRUE
+                    """, user_id, token_id)
+                    if result:
+                        return result
+                
+                return None
         except Exception as e:
             print(f"⚠️  Error getting GitHub token: {e}")
             return None
@@ -172,16 +185,18 @@ class EventConsumer:
             # Extract context (multi-org mode)
             user_id = event.get("user_id")
             org_id = event.get("org_id")
+            token_id = event.get("github_token_id")
             
             # Get GitHub token
             github_token = None
             
-            # Try multi-org mode first (get token for this user)
+            # Try multi-org mode first (get token for this user/org)
             if user_id:
-                github_token = await self.get_github_token(user_id, None)
+                github_token = await self.get_github_token(user_id, token_id)
                 
                 if github_token:
                     print(f"✅ Got GitHub token for user {user_id} org {org_id}")
+                    print(f"   Token starts with: {github_token[:20]}...")
                 else:
                     print(f"⚠️  No GitHub token found for user {user_id} org {org_id}")
             
@@ -340,15 +355,17 @@ class EventConsumer:
         except Exception as e:
             print(f"⚠️  Error updating sync state for {repo_id}: {e}")
     
-    async def mark_repo_processed(self, repo_id: str, processed_sha: str):
+    async def mark_repo_processed(self, repo_id: str, org_id: str, processed_sha: str):
         """Mark a repo as processed up to a specific commit SHA"""
         try:
             async with self.pool.acquire() as conn:
+                # Upsert: Insert if not exists, update if exists
                 await conn.execute("""
-                    UPDATE repo_sync_state
-                    SET last_processed_sha = $2, updated_at = NOW()
-                    WHERE repo_id = $1
-                """, repo_id, processed_sha)
+                    INSERT INTO repo_sync_state (repo_id, org_id, last_processed_sha)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (repo_id) DO UPDATE
+                    SET last_processed_sha = $3, updated_at = NOW()
+                """, repo_id, org_id, processed_sha)
         except Exception as e:
             print(f"⚠️  Error marking repo as processed: {e}")
     
@@ -438,9 +455,6 @@ class EventConsumer:
                             last_processed_sha = await self.get_last_processed_sha(repo_full_name)
                             latest_sha = await sync.get_latest_commit_sha(repo_full_name)
                             
-                            # Update sync state with latest SHA
-                            await self.update_repo_sync_state(repo_full_name, org_id, latest_sha)
-                            
                             # If nothing changed, skip this repo
                             if last_processed_sha and last_processed_sha == latest_sha:
                                 print(f"   ✅ No changes since {last_processed_sha[:8]}")
@@ -482,9 +496,12 @@ class EventConsumer:
                                 
                                 # OPTIMIZATION: Mark repo as processed up to latest SHA
                                 if missed and latest_sha:
-                                    await self.mark_repo_processed(repo_full_name, latest_sha)
+                                    await self.mark_repo_processed(repo_full_name, org_id, latest_sha)
                             else:
                                 print(f"   ✅ No missed commits")
+                                # Even if no missed commits, update sync state with latest SHA
+                                if latest_sha:
+                                    await self.mark_repo_processed(repo_full_name, org_id, latest_sha)
                         
                         except Exception as e:
                             print(f"   ⚠️  Error checking {repo_full_name}: {e}")
