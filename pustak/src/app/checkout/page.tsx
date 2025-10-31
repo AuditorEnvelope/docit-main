@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
 import { Loader2, CreditCard, CheckCircle } from "lucide-react";
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -99,6 +99,31 @@ export default function CheckoutPage() {
               </button>
             </div>
           ) : null}
+        </div>
+      </div>
+    </Layout>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={<CheckoutLoadingFallback />}>
+      <CheckoutContent />
+    </Suspense>
+  );
+}
+
+function CheckoutLoadingFallback() {
+  return (
+    <Layout>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center px-6">
+        <div className="max-w-md w-full">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-12 text-center">
+            <Loader2 className="w-16 h-16 text-blue-600 dark:text-blue-400 mx-auto mb-6 animate-spin" />
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+              Loading...
+            </h2>
+          </div>
         </div>
       </div>
     </Layout>
