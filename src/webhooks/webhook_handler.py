@@ -8,7 +8,6 @@ import hmac
 import hashlib
 import json
 from fastapi import Request, HTTPException
-from doc_generation_endpoint import generate_repository_documentation
 
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 
