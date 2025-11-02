@@ -37,6 +37,8 @@ export default function DashboardPage() {
   const [linkedDocbooks, setLinkedDocbooks] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<"getting-started" | "reviews">("getting-started");
   const [selectedOrgForReviews, setSelectedOrgForReviews] = useState<string>("");
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -571,29 +573,32 @@ export default function DashboardPage() {
                                 "✅ Documentation generated and published to staging"
                               );
                               
-                              // Show success message with review URL
-                              alert(
-                                `✅ Documentation published to staging!\n\nReview: ${data.review_url}\n\nCheck your Pustak dashboard to review and approve.`
+                              // Show success modal
+                              setSuccessMessage(
+                                `✅ Documentation published to staging!\n\nYour docs are now in the staging branch. Check your Pustak dashboard to review and approve.`
                               );
+                              setShowSuccessModal(true);
                               
-                              // Refresh page to show pending review
+                              // Refresh page after modal is closed
                               setTimeout(() => {
                                 window.location.reload();
-                              }, 1000);
+                              }, 2000);
                             } else {
                               const error = await response.json();
-                              alert(
-                                `Failed to generate documentation: ${error.detail}`
+                              setSuccessMessage(
+                                `❌ Failed to generate documentation: ${error.detail || 'Unknown error'}`
                               );
+                              setShowSuccessModal(true);
                             }
                           } catch (error) {
                             console.error(
                               "Error generating documentation:",
                               error
                             );
-                            alert(
-                              "Failed to generate documentation. Please try again."
+                            setSuccessMessage(
+                              "❌ Failed to generate documentation. Please try again."
                             );
+                            setShowSuccessModal(true);
                           } finally {
                             setGeneratingDocs(false);
                           }
@@ -679,6 +684,37 @@ export default function DashboardPage() {
             });
           }}
         />
+
+        {/* Success Modal */}
+        {showSuccessModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-8 border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in-95 duration-200">
+              <div className="text-center">
+                {successMessage.includes("❌") ? (
+                  <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-3xl">❌</span>
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-3xl">✅</span>
+                  </div>
+                )}
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
+                  {successMessage.includes("❌") ? "Error" : "Success!"}
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-6 whitespace-pre-line">
+                  {successMessage.replace(/✅|❌/g, "").trim()}
+                </p>
+                <button
+                  onClick={() => setShowSuccessModal(false)}
+                  className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                >
+                  Got it!
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );

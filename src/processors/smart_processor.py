@@ -9,17 +9,6 @@ from utilities.llm_provider_v2 import get_rotator
 from pathlib import Path
 from processors.comprehensive_doc_generator import generate_comprehensive_documentation
 
-# ⭐ NEW: Doc-Maintainer support
-try:
-    from services.doc_maintainer_pusher import get_doc_maintainer_pusher
-    DOC_MAINTAINER_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️  DocMaintainerPusher not available: {e}")
-    DOC_MAINTAINER_AVAILABLE = False
-except Exception as e:
-    print(f"❌ Error loading DocMaintainerPusher: {e}")
-    DOC_MAINTAINER_AVAILABLE = False
-
 # Rate limiters (global instances)
 github_rate_limiter = AsyncLimiter(4000, 3600)  # 4000 requests per hour (safe margin)
 llm_rate_limiter = AsyncLimiter(50, 60)  # 50 requests per minute (safe margin)

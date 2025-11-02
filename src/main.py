@@ -410,32 +410,8 @@ async def fetch_file_from_github(repo: str, filePath: str, user = Depends(get_au
         raise HTTPException(status_code=500, detail=f"Error fetching file: {str(e)}")
 
 
-@app.post("/docs/generate")
-async def generate_documentation(repo_name: str, user = Depends(get_auth_user), background_tasks: BackgroundTasks = None):
-    """Generate documentation for a repository (LEGACY - pushes to source repo)"""
-    if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not available")
-    
-    try:
-        from processors.doc_generation_endpoint import generate_repository_documentation
-        
-        github_token = await auth_service.get_github_token(user.id)
-        if not github_token:
-            raise HTTPException(status_code=401, detail="GitHub token not found")
-        
-        print(f"🚀 Generating docs for {repo_name}...")
-        
-        docs = await generate_repository_documentation(repo_name, github_token)
-        
-        print(f"✅ Documentation generated for {repo_name}")
-        return {
-            "status": "success",
-            "message": f"Documentation generated for {repo_name}",
-            "documentation": docs
-        }
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+# REMOVED: Old /docs/generate endpoint (legacy V3 code)
+# Use /docs/generate-v4 instead (V4 with docbook publishing)
 
 @app.post("/docs/generate-v4")
 async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user)):
@@ -448,10 +424,11 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
         raise HTTPException(status_code=503, detail="Services not available")
     
     try:
-        from processors.doc_generation_endpoint import generate_repository_documentation
-        from services.docbook_publisher import DocbookPublisher
         import tempfile
+        import shutil
         from pathlib import Path
+        from processors.comprehensive_doc_generator import generate_comprehensive_documentation
+        from processors.smart_processor import clone_repo_via_token
         
         # Get user's GitHub token
         github_token = await auth_service.get_github_token(user.id)
@@ -466,53 +443,67 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
         
         print(f"🚀 Generating docs for {repo_name} (V4)...")
         
-        # Generate docs (returns dict with docs content)
-        docs = await generate_repository_documentation(repo_name, github_token)
-        
-        print(f"✅ Documentation generated for {repo_name}")
-        
-        # Publish to docbook repo using user's token
-        publisher = DocbookPublisher(commit_bus.pool)
-        
-        # Create temp docs directory
-        tmpdir = tempfile.mkdtemp(prefix="docai_publish_")
-        docs_dir = Path(tmpdir) / "docs"
-        docs_dir.mkdir(parents=True, exist_ok=True)
-        
+        # Clone the repository
+        tmpdir = tempfile.mkdtemp(prefix="docai_manual_")
         try:
-            # Write docs to temp directory
-            (docs_dir / "SUMMARY.md").write_text(docs.get('summary', ''))
-            (docs_dir / "api.md").write_text(docs.get('api', ''))
+            clone_repo_via_token(repo_name, github_token, tmpdir)
+            print(f"✅ Cloned {repo_name}")
             
-            arch_dir = docs_dir / "architecture"
-            arch_dir.mkdir(exist_ok=True)
-            (arch_dir / "v1.0-architecture.md").write_text(docs.get('architecture', ''))
-            (arch_dir / "current.md").write_text(docs.get('architecture', ''))
+            # Generate comprehensive documentation
+            analysis = {
+                "title": f"Manual documentation generation for {source_repo}",
+                "type": "manual",
+                "significance": 5,
+                "impact_scope": []
+            }
             
-            workflow_dir = docs_dir / "workflow"
-            workflow_dir.mkdir(exist_ok=True)
-            (workflow_dir / "v1.0-workflow.md").write_text(docs.get('workflow', ''))
-            (workflow_dir / "current.md").write_text(docs.get('workflow', ''))
-            
-            # Publish to docbook
-            result = await publisher.publish_to_docbook(
-                user_id=user.id,
-                org_id=org_id,
-                source_repo_name=source_repo,
-                docs_dir=docs_dir,
-                user_token=github_token,
-                commit_message=f"docs: Auto-generated documentation for {source_repo}"
+            # Generate docs using comprehensive generator
+            generate_comprehensive_documentation(
+                tmpdir,
+                analysis,
+                [],  # No specific changed files for manual generation
+                doc_persona="internal"
             )
             
+            print(f"✅ Documentation generated for {repo_name}")
+            
+            # ⭐ NEW: Push to docbook repo (V4 mode)
+            from services.docbook_publisher import DocbookPublisher
+            from processors.smart_processor import push_to_docbook_v4
+            
+            print(f"📚 V4 Mode - Publishing to docbook repo (staging branch)")
+            
+            # Create synthetic payload for docbook publishing
+            payload = {
+                "repository": {
+                    "full_name": repo_name,
+                    "name": source_repo,
+                    "url": f"https://github.com/{repo_name}"
+                },
+                "commits": [{
+                    "id": "manual-trigger",
+                    "message": "Manual doc generation via dashboard",
+                    "author": {"name": user.email}
+                }],
+                # ⭐ NEW: Add required fields for docbook publishing
+                "_user_id": user.id,
+                "_org_id": org_id,
+                "_db_pool": commit_bus.pool
+            }
+            
+            # Push to docbook
+            await push_to_docbook_v4(tmpdir, {"full_name": repo_name, "name": source_repo}, analysis, "manual-trigger", github_token, payload)
+            
+            print(f"✅ Documentation published to docbook/staging")
+            
+            # Return success
             return {
-                "status": result.get('status'),
-                "message": result.get('message'),
-                "docbook_repo": result.get('docbook_repo'),
-                "branch": result.get('branch'),
-                "review_url": result.get('review_url')
+                "status": "success",
+                "message": f"Documentation generated and published to docbook/staging for {repo_name}",
+                "repo": repo_name
             }
         finally:
-            import shutil
+            # Clean up temp directory
             shutil.rmtree(tmpdir, ignore_errors=True)
             
     except Exception as e:
