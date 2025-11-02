@@ -11,6 +11,7 @@
 2. Fill in the details:
 
 ### **Basic Information**
+
 - **GitHub App name**: `Pustak AI` (or `pustak-ai-dev` for testing)
 - **Homepage URL**: `http://localhost:3000`
 - **Callback URL**: `http://localhost:3000/auth/github-app/callback`
@@ -21,17 +22,20 @@
 ### **Permissions**
 
 **Repository permissions:**
+
 - Contents: **Read-only** (to read code)
 - Metadata: **Read-only** (required)
 - Pull requests: **Read & write** (to comment on PRs)
 - Webhooks: **Read & write** (to manage webhooks)
 
 **Subscribe to events:**
+
 - [x] Push
 - [x] Pull request
 - [x] Repository
 
 ### **Where can this GitHub App be installed?**
+
 - Select: **Any account** (for public use)
 - Or: **Only on this account** (for testing)
 
@@ -59,7 +63,7 @@ Add these to your `.env` file:
 GITHUB_APP_ID=your_app_id_here
 GITHUB_APP_CLIENT_ID=your_client_id_here
 GITHUB_APP_CLIENT_SECRET=your_client_secret_here
-GITHUB_APP_PRIVATE_KEY_PATH=./pustak-ai.pem
+GITHUB_PRIVATE_KEY_PATH=./pustak-ai.pem
 GITHUB_APP_WEBHOOK_SECRET=your_webhook_secret_here
 ```
 
@@ -70,7 +74,10 @@ GITHUB_APP_WEBHOOK_SECRET=your_webhook_secret_here
 Replace the URL in `/pustak/src/app/dashboard/page.tsx`:
 
 ```typescript
-window.open('https://github.com/apps/YOUR-APP-NAME/installations/new', '_blank');
+window.open(
+  "https://github.com/apps/YOUR-APP-NAME/installations/new",
+  "_blank"
+);
 ```
 
 Replace `YOUR-APP-NAME` with your actual app name (e.g., `pustak-ai-dev`)
@@ -104,6 +111,7 @@ onClick={() => {
 ## What's Next?
 
 Once the GitHub App is installed:
+
 1. User installs app on their repos
 2. GitHub sends webhook to your backend
 3. Backend stores installation ID

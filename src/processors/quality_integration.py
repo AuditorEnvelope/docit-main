@@ -178,9 +178,9 @@ class QualityValidationWrapper:
             print(f"⚠️  Failed to save quality report: {e}")
 
 
-def validate_documentation_quality(repo_dir: str, repo_name: str) -> bool:
+async def validate_documentation_quality(repo_dir: str, repo_name: str) -> bool:
     """
-    Synchronous wrapper for quality validation
+    Async quality validation - no event loop conflicts!
     Returns True if quality check passes
     """
     
@@ -219,17 +219,10 @@ def validate_documentation_quality(repo_dir: str, repo_name: str) -> bool:
     # Run validation
     wrapper = QualityValidationWrapper(threshold=8.0, max_regenerations=0)
     
-    # Run async validation in sync context
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        passed, quality = loop.run_until_complete(
-            wrapper.validate_and_improve(repo_dir, repo_name, docs)
-        )
-        
-        # Save quality report
-        wrapper.save_quality_report(repo_dir, quality)
-        
-        return passed
-    finally:
-        loop.close()
+    # Directly await async function (no event loop creation needed!)
+    passed, quality = await wrapper.validate_and_improve(repo_dir, repo_name, docs)
+    
+    # Save quality report
+    wrapper.save_quality_report(repo_dir, quality)
+    
+    return passed

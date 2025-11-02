@@ -27,7 +27,9 @@ def verify_github_signature(request_body: bytes, signature: str) -> bool:
     return hmac.compare_digest(signature, expected_signature)
 
 async def handle_push_webhook(payload: dict, github_token: str):
-    """Handle GitHub push webhook"""
+    """Handle GitHub push webhook - V4 Flow"""
+    from processors.smart_processor import handle_push_event
+    
     repo_name = payload.get("repository", {}).get("full_name")
     
     if not repo_name:
@@ -46,8 +48,10 @@ async def handle_push_webhook(payload: dict, github_token: str):
     print(f"🚀 Webhook triggered for {repo_name}")
     
     try:
-        # Generate documentation
-        docs = await generate_repository_documentation(repo_name, github_token)
-        print(f"✅ Documentation auto-generated for {repo_name}")
+        # V4: Use smart processor with docbook publishing
+        await handle_push_event(payload, github_token, doc_persona="internal")
+        print(f"✅ Documentation processed for {repo_name}")
     except Exception as e:
         print(f"❌ Error in webhook: {str(e)}")
+        import traceback
+        traceback.print_exc()

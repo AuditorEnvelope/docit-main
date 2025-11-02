@@ -9,6 +9,17 @@ from utilities.llm_provider_v2 import get_rotator
 from pathlib import Path
 from processors.comprehensive_doc_generator import generate_comprehensive_documentation
 
+# ⭐ NEW: Doc-Maintainer support
+try:
+    from services.doc_maintainer_pusher import get_doc_maintainer_pusher
+    DOC_MAINTAINER_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  DocMaintainerPusher not available: {e}")
+    DOC_MAINTAINER_AVAILABLE = False
+except Exception as e:
+    print(f"❌ Error loading DocMaintainerPusher: {e}")
+    DOC_MAINTAINER_AVAILABLE = False
+
 # Rate limiters (global instances)
 github_rate_limiter = AsyncLimiter(4000, 3600)  # 4000 requests per hour (safe margin)
 llm_rate_limiter = AsyncLimiter(50, 60)  # 50 requests per minute (safe margin)
@@ -38,8 +49,14 @@ def clone_repo_via_token(repo_full_name, token, target_dir):
     # Remove --depth 1 to get full history for commit checkout
     run_cmd(f"git clone {url} {target_dir}")
 
-def handle_push_event(payload, github_token=None):
-    """Enhanced push event handler with smart analysis"""
+async def handle_push_event(payload, github_token=None, doc_persona="internal"):
+    """Enhanced push event handler with smart analysis
+    
+    Args:
+        payload: GitHub webhook payload
+        github_token: GitHub token for authentication
+        doc_persona: Documentation persona (internal|developer) - NEW!
+    """
     # Use provided token or fall back to env var
     if not github_token:
         github_token = os.getenv("GITHUB_TOKEN")
@@ -125,12 +142,15 @@ def handle_push_event(payload, github_token=None):
         print(f"✅ Significant change detected: {analysis['title']}")
         
         # Generate comprehensive documentation (flat docs - backward compatible)
-        generate_smart_documentation(tmpdir, analysis, after_sha, ref)
+        generate_smart_documentation(tmpdir, analysis, after_sha, ref, doc_persona)
         
         # NEW: Generate hierarchical documentation tree (stored in database)
         # COMPLETELY REMOVED - causing too many LLM calls and cache issues
         # The comprehensive documentation generation is sufficient and works perfectly
         print("⏭️  Hierarchical documentation generation completely removed")
+        
+        # ⭐ NEW: Pass doc_persona to doc generator
+        print(f"📚 Using doc_persona: {doc_persona}")
         
         # QUALITY VALIDATION: Check documentation quality before committing
         print("\n" + "="*60)
@@ -138,18 +158,28 @@ def handle_push_event(payload, github_token=None):
         print("="*60)
         
         from processors.quality_integration import validate_documentation_quality
-        quality_passed = validate_documentation_quality(tmpdir, repo.get("name", "unknown"))
+        quality_passed = await validate_documentation_quality(tmpdir, repo.get("name", "unknown"))
         
         if not quality_passed:
             print("\n⚠️  WARNING: Documentation quality below threshold (< 8.0/10)")
             print("   Proceeding with commit anyway (auto-regeneration coming soon)")
             print("   Check docs/QUALITY_REPORT.md for detailed feedback")
         
-        # Commit and push
-        commit_and_push_changes(tmpdir, analysis, after_sha, token, repo_full)
-        
+        # ⭐ V4: Push to docbook repo instead of source repo
+        print(f"📚 V4 Mode - Publishing to docbook repo (staging branch)")
+        await push_to_docbook_v4(tmpdir, repo, analysis, after_sha, token, payload)
+    
+    except Exception as e:
+        print(f"❌ Error in handle_push_event: {e}")
+        import traceback
+        traceback.print_exc()
+    
     finally:
-        shutil.rmtree(tmpdir)
+        # Clean up tmpdir AFTER publishing
+        try:
+            shutil.rmtree(tmpdir)
+        except:
+            pass
 
 def smart_analyze_change(payload, repo_dir, changed_files, removed_files):
     """Comprehensive analysis of the entire change impact"""
@@ -383,8 +413,12 @@ def get_codebase_context(repo_dir, changed_files):
         print(f"Warning: Could not get codebase context: {e}")
     return ""
 
-def generate_smart_documentation(repo_dir, analysis, commit_sha, ref):
-    """Generate comprehensive documentation based on analysis"""
+def generate_smart_documentation(repo_dir, analysis, commit_sha, ref, doc_persona="internal"):
+    """Generate comprehensive documentation based on analysis
+    
+    Args:
+        doc_persona: Documentation persona (internal|developer)
+    """
     
     # Create docs directory structure - everything goes in docs/
     docs_dir = Path(repo_dir) / "docs"
@@ -395,7 +429,7 @@ def generate_smart_documentation(repo_dir, analysis, commit_sha, ref):
     # NEW: Check documentation quality and generate comprehensive docs if needed
     print("🔍 Checking documentation quality...")
     changed_files = get_changed_files_from_analysis(analysis)
-    generate_comprehensive_documentation(repo_dir, analysis, changed_files)
+    generate_comprehensive_documentation(repo_dir, analysis, changed_files, doc_persona)
     
     # 1. Create detailed change documentation
     create_change_documentation(changes_dir, analysis, commit_sha, ref)
@@ -764,3 +798,68 @@ def has_already_processed_push(repo_dir, sha, changed_files):
     except Exception as e:
         print(f"Warning: could not check if push already processed: {e}")
     return False
+
+# ============================================================================
+# V4: PUSH TO DOCBOOK REPO (NEW!)
+# ============================================================================
+
+async def push_to_docbook_v4(tmpdir, repo, analysis, commit_sha, token, payload):
+    """
+    V4 Flow: Auto-publish generated docs to docbook repo (staging branch)
+    Called from handle_push_event BEFORE tmpdir is deleted
+    """
+    try:
+        from services.docbook_publisher import DocbookPublisher
+        from pathlib import Path
+        
+        # Get user_id and org_id from payload
+        user_id = payload.get('_user_id')
+        org_id = payload.get('_org_id')
+        
+        if not user_id or not org_id:
+            print(f"⚠️  No user_id/org_id in payload, skipping docbook publish")
+            return
+        
+        repo_full = repo.get("full_name")
+        if '/' not in repo_full:
+            print(f"❌ Invalid repo name: {repo_full}")
+            return
+        
+        org_id_from_repo, source_repo = repo_full.split('/', 1)
+        
+        # Check if docs exist
+        docs_dir = Path(tmpdir) / "docs"
+        if not docs_dir.exists():
+            print(f"⚠️  No docs directory found, skipping docbook publish")
+            return
+        
+        # Get database pool from payload (passed by event_consumer)
+        db_pool = payload.get('_db_pool')
+        if not db_pool:
+            print(f"⚠️  No database pool in payload, skipping docbook publish")
+            print(f"   (This is normal for webhook mode - use event_consumer for auto-publish)")
+            return
+        
+        # Publish to docbook
+        print(f"📚 AUTO-PUBLISHING to docbook/staging...")
+        publisher = DocbookPublisher(db_pool)
+        result = await publisher.publish_to_docbook(
+            user_id=user_id,
+            org_id=org_id,
+            source_repo_name=source_repo,
+            docs_dir=docs_dir,
+            user_token=token,
+            commit_message=f"docs: {analysis.get('type', 'update')} - {analysis.get('title', 'Auto-generated')}"
+        )
+        
+        if result.get('status') == 'published_to_staging':
+            print(f"✅ AUTO-PUBLISHED to docbook/staging!")
+            print(f"   Repo: {result.get('docbook_repo')}")
+            print(f"   User can review & approve in Pending Reviews tab")
+        else:
+            print(f"⚠️  Auto-publish result: {result.get('status')}")
+    
+    except Exception as e:
+        print(f"⚠️  Auto-publish error: {e}")
+        import traceback
+        traceback.print_exc()

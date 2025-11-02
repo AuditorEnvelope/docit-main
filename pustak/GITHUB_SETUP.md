@@ -50,7 +50,7 @@ If you prefer to use a GitHub App (since you mentioned "doc ai is already instal
 
 ```env
 GITHUB_APP_ID=your_app_id
-GITHUB_APP_PRIVATE_KEY=your_private_key
+GITHUB_PRIVATE_KEY=your_private_key
 GITHUB_APP_INSTALLATION_ID=your_installation_id
 ```
 

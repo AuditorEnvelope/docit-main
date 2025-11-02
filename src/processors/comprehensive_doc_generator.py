@@ -289,15 +289,23 @@ def analyze_architectural_impact(repo_dir, changed_files, analysis):
     return versioning_decision
 
 
-def generate_comprehensive_documentation(repo_dir, analysis, changed_files):
+def generate_comprehensive_documentation(repo_dir, analysis, changed_files, doc_persona="internal"):
     """
     Generate comprehensive documentation for the repository
     This is the main orchestrator function
+    
+    Args:
+        repo_dir: Path to repository
+        analysis: Change analysis dict
+        changed_files: List of changed files
+        doc_persona: Documentation persona (internal|developer) - NEW!
     """
     docs_dir = Path(repo_dir) / "docs"
     docs_dir.mkdir(parents=True, exist_ok=True)
     
-    print("📊 Checking documentation quality...")
+    # ⭐ NEW: Log doc_persona being used
+    print(f"📚 Generating docs with persona: {doc_persona}")
+    
     quality_report = check_documentation_quality(repo_dir)
     
     print(f"📋 Quality Report: {json.dumps(quality_report, indent=2)}")
@@ -305,22 +313,22 @@ def generate_comprehensive_documentation(repo_dir, analysis, changed_files):
     # Generate missing or low-quality documentation
     if "summary" in quality_report["needs_generation"]:
         print("📝 Generating comprehensive README/Summary...")
-        generate_comprehensive_summary(repo_dir, docs_dir, analysis)
+        generate_comprehensive_summary(repo_dir, docs_dir, analysis, doc_persona)
     
     # Check if we need new versions for architecture/workflow
     versioning = analyze_architectural_impact(repo_dir, changed_files, analysis)
     
     if "architecture" in quality_report["needs_generation"] or versioning["needs_new_architecture_version"]:
         print("🏗️  Generating architecture documentation...")
-        generate_versioned_architecture(repo_dir, docs_dir, analysis, versioning)
+        generate_versioned_architecture(repo_dir, docs_dir, analysis, versioning, doc_persona)
     
     if "workflow" in quality_report["needs_generation"] or versioning["needs_new_workflow_version"]:
         print("🔄 Generating workflow documentation...")
-        generate_versioned_workflow(repo_dir, docs_dir, analysis, versioning)
+        generate_versioned_workflow(repo_dir, docs_dir, analysis, versioning, doc_persona)
     
     if "api" in quality_report["needs_generation"]:
         print("📡 Generating API documentation...")
-        generate_api_documentation(repo_dir, docs_dir, analysis)
+        generate_api_documentation(repo_dir, docs_dir, analysis, doc_persona)
     
     # Always update SUMMARY.md for navigation
     update_summary_navigation(docs_dir)
@@ -328,8 +336,12 @@ def generate_comprehensive_documentation(repo_dir, analysis, changed_files):
     print("✅ Comprehensive documentation generation complete!")
 
 
-def generate_comprehensive_summary(repo_dir, docs_dir, analysis):
-    """Generate a comprehensive README/Summary for the repository"""
+def generate_comprehensive_summary(repo_dir, docs_dir, analysis, doc_persona="internal"):
+    """Generate a comprehensive README/Summary for the repository
+    
+    Args:
+        doc_persona: Documentation persona (internal|developer)
+    """
     
     # Analyze the entire codebase
     codebase_analysis = analyze_full_codebase(repo_dir)
@@ -423,7 +435,7 @@ Make it professional, clear, and comprehensive. Use proper markdown formatting.
         traceback.print_exc()
 
 
-def generate_versioned_architecture(repo_dir, docs_dir, analysis, versioning):
+def generate_versioned_architecture(repo_dir, docs_dir, analysis, versioning, doc_persona="internal"):
     """Generate versioned architecture documentation"""
     
     arch_dir = docs_dir / "architecture"
@@ -532,7 +544,7 @@ BE SPECIFIC. USE ONLY THE DATA FROM THE ANALYSIS. NO GENERIC TEMPLATES.
         traceback.print_exc()
 
 
-def generate_versioned_workflow(repo_dir, docs_dir, analysis, versioning):
+def generate_versioned_workflow(repo_dir, docs_dir, analysis, versioning, doc_persona="internal"):
     """Generate versioned workflow documentation"""
 
     workflow_dir = docs_dir / "workflow"
@@ -637,7 +649,7 @@ Make it practical, step-by-step, and focused on actual processes used in this co
         traceback.print_exc()
 
 
-def generate_api_documentation(repo_dir, docs_dir, analysis):
+def generate_api_documentation(repo_dir, docs_dir, analysis, doc_persona="internal"):
     """Generate comprehensive API documentation"""
     
     # Analyze API endpoints/modules
