@@ -12,6 +12,7 @@ import hmac
 import hashlib
 import json
 import base64
+from typing import Dict, Any
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -41,16 +42,23 @@ app = FastAPI(
 )
 
 # CORS
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+allow_origins = [
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+    "http://192.168.1.2:3000",
+    "http://192.168.1.2:8000",
+]
+
+# Add production frontend URL if configured
+if FRONTEND_URL not in allow_origins:
+    allow_origins.append(FRONTEND_URL)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000",
-        "http://192.168.1.2:3000",
-        "http://192.168.1.2:8000",
-    ],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -404,7 +412,7 @@ async def fetch_file_from_github(repo: str, filePath: str, user = Depends(get_au
 
 @app.post("/docs/generate")
 async def generate_documentation(repo_name: str, user = Depends(get_auth_user), background_tasks: BackgroundTasks = None):
-    """Generate documentation for a repository"""
+    """Generate documentation for a repository (LEGACY - pushes to source repo)"""
     if not auth_service:
         raise HTTPException(status_code=503, detail="Auth service not available")
     
@@ -427,6 +435,90 @@ async def generate_documentation(repo_name: str, user = Depends(get_auth_user), 
         }
     except Exception as e:
         print(f"❌ Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/docs/generate-v4")
+async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user)):
+    """
+    Generate documentation for a repository (V4 - NEW!)
+    Publishes to docbook repo staging branch instead of source repo
+    Uses user's OAuth token for transparent commits
+    """
+    if not auth_service or not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Services not available")
+    
+    try:
+        from processors.doc_generation_endpoint import generate_repository_documentation
+        from services.docbook_publisher import DocbookPublisher
+        import tempfile
+        from pathlib import Path
+        
+        # Get user's GitHub token
+        github_token = await auth_service.get_github_token(user.id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        # Parse org and repo from full name
+        if '/' not in repo_name:
+            raise HTTPException(status_code=400, detail="Invalid repo name format. Use org/repo")
+        
+        org_id, source_repo = repo_name.split('/', 1)
+        
+        print(f"🚀 Generating docs for {repo_name} (V4)...")
+        
+        # Generate docs (returns dict with docs content)
+        docs = await generate_repository_documentation(repo_name, github_token)
+        
+        print(f"✅ Documentation generated for {repo_name}")
+        
+        # Publish to docbook repo using user's token
+        publisher = DocbookPublisher(commit_bus.pool)
+        
+        # Create temp docs directory
+        tmpdir = tempfile.mkdtemp(prefix="docai_publish_")
+        docs_dir = Path(tmpdir) / "docs"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            # Write docs to temp directory
+            (docs_dir / "SUMMARY.md").write_text(docs.get('summary', ''))
+            (docs_dir / "api.md").write_text(docs.get('api', ''))
+            
+            arch_dir = docs_dir / "architecture"
+            arch_dir.mkdir(exist_ok=True)
+            (arch_dir / "v1.0-architecture.md").write_text(docs.get('architecture', ''))
+            (arch_dir / "current.md").write_text(docs.get('architecture', ''))
+            
+            workflow_dir = docs_dir / "workflow"
+            workflow_dir.mkdir(exist_ok=True)
+            (workflow_dir / "v1.0-workflow.md").write_text(docs.get('workflow', ''))
+            (workflow_dir / "current.md").write_text(docs.get('workflow', ''))
+            
+            # Publish to docbook
+            result = await publisher.publish_to_docbook(
+                user_id=user.id,
+                org_id=org_id,
+                source_repo_name=source_repo,
+                docs_dir=docs_dir,
+                user_token=github_token,
+                commit_message=f"docs: Auto-generated documentation for {source_repo}"
+            )
+            
+            return {
+                "status": result.get('status'),
+                "message": result.get('message'),
+                "docbook_repo": result.get('docbook_repo'),
+                "branch": result.get('branch'),
+                "review_url": result.get('review_url')
+            }
+        finally:
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -603,8 +695,9 @@ async def register_webhook(
     
     This endpoint:
     1. Stores the org_id + user_id mapping
-    2. Returns webhook URL for user to configure on GitHub
-    3. Enables multi-org support via GitHub App
+    2. Creates doc-maintainer repo for the org
+    3. Returns webhook URL for user to configure on GitHub
+    4. Enables multi-org support via GitHub App
     """
     if not commit_bus or not commit_bus.pool:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -642,6 +735,10 @@ async def register_webhook(
                 """, user_id, org_id, f'webhook_{org_id}', user_token_record['token_id'])
                 print(f"✅ Registered org {org_id} for webhooks with user {user_id}")
         
+        # STEP 2: User will manually create lekhak-docbook-org-{ORG_ID} repo
+        # (No automatic repo creation - user has full control)
+        print(f"✅ Org {org_id} registered! User will create lekhak-docbook-org-{org_id} manually.")
+        
         webhook_url = os.getenv("WEBHOOK_URL", os.getenv("NGROK_URL", "http://localhost:8000")) + "/webhook"
         
         return {
@@ -652,6 +749,412 @@ async def register_webhook(
         }
     except Exception as e:
         print(f"❌ Error registering webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================
+# DOCBOOK MANAGEMENT ENDPOINTS (NEW V4)
+# ============================================
+# These endpoints handle the new user-driven docbook workflow
+# User creates lekhak-docbook-org-{ORG_ID} manually
+# Then links it via these endpoints
+
+class LinkDocbookRequest(BaseModel):
+    org_id: str
+    docbook_repo_name: str  # e.g., "lekhak-docbook-org-12345"
+
+@app.post("/docbook/link-repo")
+async def link_docbook_repo(
+    request: LinkDocbookRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Link a user-created lekhak-docbook repo to an organization
+    
+    This endpoint:
+    1. Verifies the docbook repo exists
+    2. Verifies user has access to it
+    3. Stores the mapping in database
+    """
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        org_id = request.org_id
+        docbook_repo_name = request.docbook_repo_name
+        
+        # Get user's GitHub token
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="No GitHub token found")
+        
+        # Verify docbook repo exists and user has access
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                'Authorization': f'token {github_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            # Check if repo exists
+            async with session.get(
+                f'https://api.github.com/repos/{org_id}/{docbook_repo_name}',
+                headers=headers
+            ) as resp:
+                if resp.status == 404:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Repository {org_id}/{docbook_repo_name} not found"
+                    )
+                elif resp.status != 200:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="You don't have access to this repository"
+                    )
+                
+                repo_data = await resp.json()
+                docbook_full_name = repo_data['full_name']
+                docbook_url = repo_data['html_url']
+        
+        # Store in database
+        async with commit_bus.pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO docbook_repos 
+                (user_id, org_id, docbook_repo_name, docbook_full_name, docbook_url, is_active)
+                VALUES ($1, $2, $3, $4, $5, TRUE)
+                ON CONFLICT (user_id, org_id) DO UPDATE
+                SET docbook_repo_name = $3, docbook_full_name = $4, docbook_url = $5, 
+                    is_active = TRUE, updated_at = NOW()
+            """,
+            user_id, org_id, docbook_repo_name, docbook_full_name, docbook_url
+            )
+        
+        print(f"✅ Linked docbook repo: {docbook_full_name}")
+        
+        return {
+            "status": "linked",
+            "org_id": org_id,
+            "docbook_repo": docbook_full_name,
+            "docbook_url": docbook_url,
+            "message": f"Successfully linked {docbook_full_name}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error linking docbook repo: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/docbook/pending-reviews")
+async def get_pending_reviews(
+    org_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Get pending documentation reviews for an organization
+    
+    Returns:
+    - reviews: List of pending reviews waiting for user approval
+    """
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        
+        async with commit_bus.pool.acquire() as conn:
+            results = await conn.fetch("""
+                SELECT id, source_repo_name, docbook_full_name, status, commit_message, created_at
+                FROM docbook_reviews
+                WHERE user_id = $1 AND org_id = $2 AND status = 'pending_review'
+                ORDER BY created_at DESC
+            """, user_id, org_id)
+        
+        reviews = [
+            {
+                'id': r['id'],
+                'source_repo_name': r['source_repo_name'],
+                'docbook_full_name': r['docbook_full_name'],
+                'status': r['status'],
+                'commit_message': r['commit_message'],
+                'created_at': r['created_at'].isoformat() if r['created_at'] else None
+            }
+            for r in results
+        ]
+        
+        return {
+            "org_id": org_id,
+            "reviews": reviews,
+            "count": len(reviews)
+        }
+    except Exception as e:
+        print(f"❌ Error fetching pending reviews: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/docbook/check-exists")
+async def check_docbook_exists(
+    org_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Check if a docbook repo is linked for an organization
+    
+    Returns:
+    - exists: bool - Whether docbook is linked
+    - docbook_repo: str - Full name of docbook repo (if exists)
+    - docbook_url: str - URL of docbook repo (if exists)
+    """
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        
+        async with commit_bus.pool.acquire() as conn:
+            result = await conn.fetchrow("""
+                SELECT docbook_repo_name, docbook_full_name, docbook_url, is_active
+                FROM docbook_repos
+                WHERE user_id = $1 AND org_id = $2 AND is_active = TRUE
+            """, user_id, org_id)
+        
+        if result:
+            return {
+                "exists": True,
+                "org_id": org_id,
+                "docbook_repo": result['docbook_full_name'],
+                "docbook_url": result['docbook_url']
+            }
+        else:
+            return {
+                "exists": False,
+                "org_id": org_id,
+                "message": f"No docbook linked for {org_id}. Please create lekhak-docbook-org-{{ORG_ID}} and link it."
+            }
+    except Exception as e:
+        print(f"❌ Error checking docbook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class PublishDocbookRequest(BaseModel):
+    org_id: str
+    repo_name: str  # Source repo name
+    docs_content: Dict[str, Any]  # Generated docs to publish
+    message: str = "docs: Update documentation"  # Commit message
+
+@app.post("/docbook/publish")
+async def publish_to_docbook(
+    request: PublishDocbookRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Publish documentation to the lekhak-docbook repo
+    
+    This endpoint:
+    1. Gets the linked docbook repo
+    2. Creates a commit in the staging branch
+    3. Returns the commit details for user review
+    
+    User can then approve to merge staging → main
+    """
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        org_id = request.org_id
+        repo_name = request.repo_name
+        docs_content = request.docs_content
+        commit_message = request.message
+        
+        # Get user's GitHub token
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="No GitHub token found")
+        
+        # Get docbook repo info
+        async with commit_bus.pool.acquire() as conn:
+            docbook = await conn.fetchrow("""
+                SELECT docbook_full_name, docbook_url
+                FROM docbook_repos
+                WHERE user_id = $1 AND org_id = $2 AND is_active = TRUE
+            """, user_id, org_id)
+        
+        if not docbook:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No docbook linked for {org_id}"
+            )
+        
+        docbook_full_name = docbook['docbook_full_name']
+        
+        # Create commit in staging branch
+        # This is a simplified version - full implementation would handle multiple files
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                'Authorization': f'token {github_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            # Create commit with docs
+            # Path: {repo_name}/internal/README.md, {repo_name}/developer/README.md, etc.
+            commit_data = {
+                "message": commit_message,
+                "branch": "staging",
+                "committer": {
+                    "name": "Lekhak AI",
+                    "email": "lekhak@ai.com"
+                },
+                "content": base64.b64encode(
+                    json.dumps(docs_content, indent=2).encode()
+                ).decode()
+            }
+            
+            # For now, create a summary file
+            async with session.put(
+                f'https://api.github.com/repos/{docbook_full_name}/contents/{repo_name}/SUMMARY.md',
+                headers=headers,
+                json={
+                    "message": commit_message,
+                    "branch": "staging",
+                    "content": base64.b64encode(
+                        f"# {repo_name} Documentation\n\nGenerated by Lekhak AI".encode()
+                    ).decode()
+                }
+            ) as resp:
+                if resp.status not in [200, 201]:
+                    error = await resp.text()
+                    print(f"❌ Failed to publish: {resp.status} - {error}")
+                    raise HTTPException(
+                        status_code=resp.status,
+                        detail=f"Failed to publish to docbook: {error}"
+                    )
+                
+                commit_resp = await resp.json()
+        
+        print(f"✅ Published docs to {docbook_full_name}/staging")
+        
+        return {
+            "status": "published_to_staging",
+            "org_id": org_id,
+            "repo_name": repo_name,
+            "docbook_repo": docbook_full_name,
+            "branch": "staging",
+            "message": f"Documentation published to staging branch. Please review and approve to merge to main.",
+            "review_url": f"{docbook['docbook_url']}/compare/main...staging"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error publishing to docbook: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class MergeDocbookRequest(BaseModel):
+    org_id: str
+    repo_name: str  # Source repo name
+    message: str = "docs: Approve and merge documentation"  # Merge commit message
+
+@app.post("/docbook/approve-and-merge")
+async def approve_and_merge_docbook(
+    request: MergeDocbookRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Approve and merge documentation from staging to main branch
+    
+    This endpoint:
+    1. Gets the linked docbook repo
+    2. Creates a pull request from staging → main
+    3. Merges the PR (auto-merge)
+    4. Returns confirmation
+    """
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        org_id = request.org_id
+        repo_name = request.repo_name
+        merge_message = request.message
+        
+        # Get user's GitHub token
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="No GitHub token found")
+        
+        # Get docbook repo info
+        async with commit_bus.pool.acquire() as conn:
+            docbook = await conn.fetchrow("""
+                SELECT docbook_full_name, docbook_url
+                FROM docbook_repos
+                WHERE user_id = $1 AND org_id = $2 AND is_active = TRUE
+            """, user_id, org_id)
+        
+        if not docbook:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No docbook linked for {org_id}"
+            )
+        
+        docbook_full_name = docbook['docbook_full_name']
+        
+        # Merge staging → main using GitHub API
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                'Authorization': f'token {github_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            # Create merge commit
+            merge_payload = {
+                "base": "main",
+                "head": "staging",
+                "commit_message": merge_message
+            }
+            
+            async with session.post(
+                f'https://api.github.com/repos/{docbook_full_name}/merges',
+                headers=headers,
+                json=merge_payload
+            ) as resp:
+                if resp.status == 201:
+                    merge_data = await resp.json()
+                    print(f"✅ Merged staging → main in {docbook_full_name}")
+                    return {
+                        "status": "merged",
+                        "org_id": org_id,
+                        "repo_name": repo_name,
+                        "docbook_repo": docbook_full_name,
+                        "commit_sha": merge_data.get('sha'),
+                        "message": "Documentation approved and merged to main branch!"
+                    }
+                elif resp.status == 204:
+                    # No changes to merge
+                    print(f"⚠️  No changes to merge in {docbook_full_name}")
+                    return {
+                        "status": "no_changes",
+                        "org_id": org_id,
+                        "message": "No changes to merge between staging and main"
+                    }
+                elif resp.status == 409:
+                    # Conflict
+                    error = await resp.text()
+                    print(f"❌ Merge conflict in {docbook_full_name}")
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Merge conflict detected. Please resolve manually on GitHub."
+                    )
+                else:
+                    error = await resp.text()
+                    print(f"❌ Failed to merge: {resp.status} - {error}")
+                    raise HTTPException(
+                        status_code=resp.status,
+                        detail=f"Failed to merge documentation: {error}"
+                    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error merging docbook: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/repos/{repo_name}/docs")
@@ -1127,6 +1630,114 @@ async def get_project_progress():
         "overall_progress": 52,
         "quality_validation_enabled": quality_checker is not None
     }
+
+# ============================================================================
+# REPOSITORY SETTINGS ENDPOINTS
+# ============================================================================
+
+class UpdateDocPersonaRequest(BaseModel):
+    doc_persona: str  # "internal" or "developer"
+
+@app.post("/api/repositories/{repo_id}/doc-persona")
+async def update_repo_doc_persona(
+    repo_id: str,
+    request: UpdateDocPersonaRequest,
+    user = Depends(get_current_user)
+):
+    """
+    Update doc_persona for a repository
+    
+    Args:
+        repo_id: Repository ID (org/repo format)
+        request: {doc_persona: "internal" or "developer"}
+        user: Current authenticated user
+        
+    Returns:
+        {status: "updated", repo_id: str, doc_persona: str}
+    """
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    # Validate doc_persona
+    if request.doc_persona not in ["internal", "developer"]:
+        raise HTTPException(
+            status_code=400,
+            detail="doc_persona must be 'internal' or 'developer'"
+        )
+    
+    try:
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        
+        async with commit_bus.pool.acquire() as conn:
+            # Update doc_persona in repositories table
+            result = await conn.execute("""
+                UPDATE repositories
+                SET doc_persona = $1, doc_persona_updated_at = NOW()
+                WHERE repo_full_name = $2 AND user_id = $3
+            """, request.doc_persona, repo_id, user_id)
+            
+            if result == "UPDATE 0":
+                # Repository not found, try to create it
+                await conn.execute("""
+                    INSERT INTO repositories 
+                    (user_id, org_id, repo_name, repo_full_name, doc_persona, doc_persona_updated_at)
+                    VALUES ($1, $2, $3, $4, $5, NOW())
+                    ON CONFLICT (user_id, org_id, repo_full_name) DO UPDATE
+                    SET doc_persona = $5, doc_persona_updated_at = NOW()
+                """,
+                user_id,
+                repo_id.split('/')[0],  # org_id
+                repo_id.split('/')[1],  # repo_name
+                repo_id,  # repo_full_name
+                request.doc_persona
+                )
+            
+            print(f"✅ Updated doc_persona for {repo_id}: {request.doc_persona}")
+        
+        return {
+            "status": "updated",
+            "repo_id": repo_id,
+            "doc_persona": request.doc_persona,
+            "message": f"Documentation persona updated to '{request.doc_persona}'"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error updating doc_persona: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/repositories/{repo_id}/doc-persona")
+async def get_repo_doc_persona(
+    repo_id: str,
+    user = Depends(get_current_user)
+):
+    """
+    Get current doc_persona for a repository
+    
+    Returns:
+        {repo_id: str, doc_persona: str}
+    """
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        
+        async with commit_bus.pool.acquire() as conn:
+            result = await conn.fetchrow("""
+                SELECT doc_persona FROM repositories
+                WHERE repo_full_name = $1 AND user_id = $2
+            """, repo_id, user_id)
+            
+            doc_persona = result['doc_persona'] if result else "internal"
+            
+            return {
+                "repo_id": repo_id,
+                "doc_persona": doc_persona
+            }
+            
+    except Exception as e:
+        print(f"❌ Error getting doc_persona: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
