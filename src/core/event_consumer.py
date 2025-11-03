@@ -162,6 +162,38 @@ class EventConsumer:
             print(f"⚠️  Error getting GitHub token: {e}")
             return None
     
+    async def _get_repo_doc_persona(self, repo_full_name: str, user_id: Optional[str]) -> str:
+        """
+        Fetch doc_persona for a repository from database
+        
+        Args:
+            repo_full_name: Repository full name (e.g., "org/repo")
+            user_id: User UUID (optional, for multi-org lookup)
+            
+        Returns:
+            Doc persona: "internal" or "developer" (defaults to "internal")
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Try to find repo in repositories table
+                result = await conn.fetchval("""
+                    SELECT doc_persona FROM repositories
+                    WHERE full_name = $1
+                    LIMIT 1
+                """, repo_full_name)
+                
+                if result:
+                    print(f"✅ Found doc_persona in DB: {result}")
+                    return result
+                
+                # Default to internal if not found
+                print(f"⚠️  Doc persona not found for {repo_full_name}, using default: internal")
+                return "internal"
+                
+        except Exception as e:
+            print(f"⚠️  Error getting doc_persona: {e}")
+            return "internal"  # Safe default
+    
     async def process_event(self, event: dict) -> bool:
         """
         Process a single event
@@ -221,14 +253,28 @@ class EventConsumer:
             # Convert to webhook format
             payload = self.convert_to_webhook_payload(event)
             
-            # Process using existing smart_processor
-            # This is synchronous, so we run it in executor to avoid blocking
-            await asyncio.get_event_loop().run_in_executor(
-                None, 
-                handle_push_event, 
+            # ⭐ NEW: Add user_id and db_pool to payload for docbook publisher
+            payload['_user_id'] = user_id
+            payload['_org_id'] = org_id
+            payload['_db_pool'] = self.pool
+            
+            # ⭐ NEW: Fetch doc_persona for this repository
+            doc_persona = await self._get_repo_doc_persona(event["repo_id"], user_id)
+            print(f"📚 Doc Persona: {doc_persona}")
+            
+            # Process using existing smart_processor (NOW ASYNC!)
+            # V4: Call async handle_push_event directly
+            # This generates docs in a tmpdir
+            await handle_push_event(
                 payload,
-                github_token
+                github_token,
+                doc_persona  # ⭐ NEW: Pass doc_persona
             )
+            
+            # ⭐ NOTE: Docbook publishing now happens in smart_processor.push_to_docbook_v4()
+            # It publishes BEFORE tmpdir is deleted, so docs are available
+            print(f"✅ Documentation generated and auto-published to docbook/staging")
+            print(f"   User can review & approve in Pending Reviews tab")
             
             # Mark as processed
             await self.bus.mark_processed(event_id, success=True)

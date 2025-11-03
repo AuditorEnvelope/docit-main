@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import ConnectOrganizationModal from "@/components/ConnectOrganizationModal";
+import DocbookSetupModal from "@/components/DocbookSetupModal";
+import PendingReviewsTab from "@/components/PendingReviewsTab";
 import {
   Loader2,
   Github,
@@ -30,6 +32,13 @@ export default function DashboardPage() {
   const [showOrgModal, setShowOrgModal] = useState(false);
   const [connectedOrgs, setConnectedOrgs] = useState<string[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
+  const [showDocbookModal, setShowDocbookModal] = useState(false);
+  const [selectedOrgForDocbook, setSelectedOrgForDocbook] = useState<string>("");
+  const [linkedDocbooks, setLinkedDocbooks] = useState<Record<string, string>>({});
+  const [activeTab, setActiveTab] = useState<"getting-started" | "reviews">("getting-started");
+  const [selectedOrgForReviews, setSelectedOrgForReviews] = useState<string>("");
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -254,7 +263,74 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* Tabs */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-200 dark:border-gray-700 mb-8">
+            <div className="flex gap-4 mb-6 border-b border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setActiveTab("getting-started")}
+                className={`px-4 py-3 font-semibold border-b-2 transition-colors ${
+                  activeTab === "getting-started"
+                    ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                    : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300"
+                }`}
+              >
+                🚀 Getting Started
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab("reviews");
+                  if (connectedOrgs.length > 0 && !selectedOrgForReviews) {
+                    setSelectedOrgForReviews(connectedOrgs[0]);
+                  }
+                }}
+                className={`px-4 py-3 font-semibold border-b-2 transition-colors ${
+                  activeTab === "reviews"
+                    ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                    : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300"
+                }`}
+              >
+                📋 Pending Reviews
+              </button>
+            </div>
+
+            {activeTab === "reviews" && connectedOrgs.length > 0 && (
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
+                  Select Organization
+                </label>
+                <select
+                  value={selectedOrgForReviews}
+                  onChange={(e) => setSelectedOrgForReviews(e.target.value)}
+                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  {connectedOrgs.map((org) => (
+                    <option key={org} value={org}>
+                      {org}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {activeTab === "reviews" && selectedOrgForReviews && (
+              <PendingReviewsTab
+                orgId={selectedOrgForReviews}
+                token={token || ""}
+                backendUrl={BACKEND_URL}
+              />
+            )}
+
+            {activeTab === "reviews" && connectedOrgs.length === 0 && (
+              <div className="text-center py-8">
+                <p className="text-gray-600 dark:text-gray-400">
+                  Connect an organization first to see pending reviews
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Getting Started */}
+          {activeTab === "getting-started" && (
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-200 dark:border-gray-700">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
               🚀 Getting Started
@@ -378,7 +454,53 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Step 2: Select Repositories - Show as active if repositories exist */}
+              {/* Step 2: Setup Docbook Repository */}
+              <div className={`flex items-start gap-4 p-4 ${
+                connectedOrgs.length > 0
+                  ? "bg-orange-50 dark:bg-orange-900/20"
+                  : "bg-gray-50 dark:bg-gray-700/50"
+              } rounded-xl ${connectedOrgs.length === 0 ? "opacity-50" : ""}`}>
+                <div
+                  className={`w-8 h-8 ${
+                    connectedOrgs.length > 0 ? "bg-orange-500" : "bg-gray-400"
+                  } text-white rounded-full flex items-center justify-center font-bold flex-shrink-0`}
+                >
+                  2
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
+                    📚 Setup Docbook Repository
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                    Create a dedicated repository for AI-generated documentation
+                  </p>
+                  {connectedOrgs.length > 0 && (
+                    <div className="space-y-2">
+                      {connectedOrgs.map((org) => (
+                        <button
+                          key={org}
+                          onClick={() => {
+                            setSelectedOrgForDocbook(org);
+                            setShowDocbookModal(true);
+                          }}
+                          className="w-full text-left px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors flex items-center justify-between"
+                        >
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {org}
+                          </span>
+                          {linkedDocbooks[org] ? (
+                            <CheckCircle className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Setup</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Step 3: Select Repositories - Show as active if repositories exist */}
               <div
                 className={`flex items-start gap-4 p-4 ${
                   repositories.length > 0
@@ -391,7 +513,7 @@ export default function DashboardPage() {
                     repositories.length > 0 ? "bg-blue-500" : "bg-gray-400"
                   } text-white rounded-full flex items-center justify-center font-bold flex-shrink-0`}
                 >
-                  2
+                  3
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
@@ -431,8 +553,10 @@ export default function DashboardPage() {
                             const backendUrl =
                               process.env.NEXT_PUBLIC_BACKEND_URL ||
                               "http://localhost:8000";
+                            
+                            // Use V4 endpoint (publishes to docbook/staging)
                             const response = await fetch(
-                              `${backendUrl}/docs/generate?repo_name=${encodeURIComponent(
+                              `${backendUrl}/docs/generate-v4?repo_name=${encodeURIComponent(
                                 selectedRepo
                               )}`,
                               {
@@ -444,26 +568,37 @@ export default function DashboardPage() {
                             );
 
                             if (response.ok) {
+                              const data = await response.json();
                               console.log(
-                                "✅ Documentation generated successfully"
+                                "✅ Documentation generated and published to staging"
                               );
+                              
+                              // Show success modal
+                              setSuccessMessage(
+                                `✅ Documentation published to staging!\n\nYour docs are now in the staging branch. Check your Pustak dashboard to review and approve.`
+                              );
+                              setShowSuccessModal(true);
+                              
+                              // Refresh page after modal is closed
                               setTimeout(() => {
-                                router.push(`/repo/${selectedRepo}/summary`);
-                              }, 1000);
+                                window.location.reload();
+                              }, 2000);
                             } else {
                               const error = await response.json();
-                              alert(
-                                `Failed to generate documentation: ${error.detail}`
+                              setSuccessMessage(
+                                `❌ Failed to generate documentation: ${error.detail || 'Unknown error'}`
                               );
+                              setShowSuccessModal(true);
                             }
                           } catch (error) {
                             console.error(
                               "Error generating documentation:",
                               error
                             );
-                            alert(
-                              "Failed to generate documentation. Please try again."
+                            setSuccessMessage(
+                              "❌ Failed to generate documentation. Please try again."
                             );
+                            setShowSuccessModal(true);
                           } finally {
                             setGeneratingDocs(false);
                           }
@@ -475,7 +610,7 @@ export default function DashboardPage() {
                           <Loader2 className="w-4 h-4 animate-spin" />
                         )}
                         {generatingDocs
-                          ? "Generating..."
+                          ? "Generating & Publishing..."
                           : "Generate Documentation"}
                       </button>
                     </div>
@@ -483,10 +618,10 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Step 3: AI Generates Docs */}
+              {/* Step 4: AI Generates Docs */}
               <div className="flex items-start gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl opacity-50">
                 <div className="w-8 h-8 bg-gray-400 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                  3
+                  4
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
@@ -499,6 +634,7 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
+          )}
 
           {/* Upgrade CTA (if on free plan) */}
           {user.plan === "free" && (
@@ -535,6 +671,50 @@ export default function DashboardPage() {
             fetchRepositories();
           }}
         />
+
+        {/* Docbook Setup Modal */}
+        <DocbookSetupModal
+          isOpen={showDocbookModal}
+          onClose={() => setShowDocbookModal(false)}
+          orgId={selectedOrgForDocbook}
+          onSuccess={(docbookRepo) => {
+            setLinkedDocbooks({
+              ...linkedDocbooks,
+              [selectedOrgForDocbook]: docbookRepo
+            });
+          }}
+        />
+
+        {/* Success Modal */}
+        {showSuccessModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-8 border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in-95 duration-200">
+              <div className="text-center">
+                {successMessage.includes("❌") ? (
+                  <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-3xl">❌</span>
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-3xl">✅</span>
+                  </div>
+                )}
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
+                  {successMessage.includes("❌") ? "Error" : "Success!"}
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-6 whitespace-pre-line">
+                  {successMessage.replace(/✅|❌/g, "").trim()}
+                </p>
+                <button
+                  onClick={() => setShowSuccessModal(false)}
+                  className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                >
+                  Got it!
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );
