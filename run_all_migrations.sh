@@ -22,8 +22,12 @@ MIGRATIONS=(
     "migrations/001_auth_and_billing.sql"
     "migrations/002_multi_org_support.sql"
     "migrations/003_org_registrations.sql"
-    "migrations/004_repo_sync_state.sql"
-    "migrations/005_stripe_subscription_management.sql"
+    "migrations/004_create_docbook_repos.sql"
+    "migrations/005_doc_persona_and_maintainer.sql"
+    "migrations/006_create_docbook_reviews.sql"
+    "migrations/007_repo_sync_state.sql"
+    "migrations/008_stripe_subscription_management.sql"
+    "migrations/009_razorpay_integration.sql"
 )
 
 echo -e "${BLUE}🗄️  Lekhak AI Database Migration Script${NC}"

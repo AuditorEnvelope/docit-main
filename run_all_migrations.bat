@@ -46,10 +46,14 @@ REM Run each migration in order
 set MIGRATIONS[0]=migrations\001_auth_and_billing.sql
 set MIGRATIONS[1]=migrations\002_multi_org_support.sql
 set MIGRATIONS[2]=migrations\003_org_registrations.sql
-set MIGRATIONS[3]=migrations\004_repo_sync_state.sql
-set MIGRATIONS[4]=migrations\005_stripe_subscription_management.sql
+set MIGRATIONS[3]=migrations\004_create_docbook_repos.sql
+set MIGRATIONS[4]=migrations\005_doc_persona_and_maintainer.sql
+set MIGRATIONS[5]=migrations\006_create_docbook_reviews.sql
+set MIGRATIONS[6]=migrations\007_repo_sync_state.sql
+set MIGRATIONS[7]=migrations\008_stripe_subscription_management.sql
+set MIGRATIONS[8]=migrations\009_razorpay_integration.sql
 
-for /L %%i in (0,1,4) do (
+for /L %%i in (0,1,7) do (
     set "migration=!MIGRATIONS[%%i]!"
     if not exist "!migration!" (
         echo [ERROR] Migration file not found: !migration!

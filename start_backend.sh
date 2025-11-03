@@ -3,12 +3,12 @@
 
 echo "🚀 Starting DocAI Backend..."
 
-# Activate virtual environment
-if [ -d "docai-env" ]; then
-    source docai-env/bin/activate
-else
-    echo "❌ Virtual environment not found. Run: python -m venv docai-env"
+# Check if running inside Conda env
+if [ -z "$CONDA_DEFAULT_ENV" ]; then
+    echo "❌ Conda environment not active. Run: conda activate lekhak"
     exit 1
+else
+    echo "✅ Using Conda environment: $CONDA_DEFAULT_ENV"
 fi
 
 # Check if .env exists
