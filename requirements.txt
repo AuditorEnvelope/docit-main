@@ -23,3 +23,7 @@ sentence-transformers  # FREE local embeddings (no API key needed!)
 # Additional
 pydantic==2.5.0
 aiolimiter==1.1.0
+
+# Payment Gateway Integration
+# stripe>=5.0.0  # COMMENTED OUT - Using Razorpay instead
+razorpay>=1.4.0  # Razorpay for India

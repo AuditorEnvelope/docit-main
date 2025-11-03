@@ -5,41 +5,53 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:800
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { plan, userId, userEmail } = body;
+    const { plan, orgName } = body;
     
-    if (!plan || !userId || !userEmail) {
+    if (!plan || !orgName) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: 'Missing required fields: plan and orgName' },
         { status: 400 }
       );
     }
     
-    // Call backend to create Stripe checkout session
-    const response = await fetch(`${BACKEND_URL}/stripe/create-checkout`, {
+    // Get auth token from cookie or header
+    const token = request.cookies.get('auth_token')?.value || 
+                  request.headers.get('authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return NextResponse.json(
+        { error: 'Not authenticated' },
+        { status: 401 }
+      );
+    }
+    
+    // Call backend to create Razorpay order
+    const response = await fetch(`${BACKEND_URL}/api/checkout/create`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({
-        user_id: userId,
-        user_email: userEmail,
-        plan: plan,
-        success_url: `${request.nextUrl.origin}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${request.nextUrl.origin}/pricing`,
+        org_name: orgName,
+        plan_name: plan,
+        success_url: `${request.nextUrl.origin}/dashboard?checkout=success`,
+        cancel_url: `${request.nextUrl.origin}/pricing?checkout=cancelled`,
       }),
     });
     
     if (!response.ok) {
-      throw new Error('Failed to create checkout session');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Failed to create checkout session');
     }
     
     const data = await response.json();
     return NextResponse.json(data);
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('Checkout error:', error);
     return NextResponse.json(
-      { error: 'Failed to create checkout session' },
+      { error: error.message || 'Failed to create checkout session' },
       { status: 500 }
     );
   }

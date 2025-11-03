@@ -15,6 +15,7 @@ import base64
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 import uvicorn
 import aiohttp
 
@@ -26,6 +27,8 @@ from core.quality_checker import DocumentationQualityChecker, DocumentationQuali
 # Import business services
 from services.subscription_service import SubscriptionService
 from services.overlay_service import OverlayService
+# from services.stripe_service import StripeService  # COMMENTED OUT - Using Razorpay
+from services.razorpay_service import RazorpayService
 
 # Import processors
 from processors.smart_processor import handle_push_event as legacy_handle_push
@@ -71,11 +74,13 @@ subscription_service = None
 overlay_service = None
 quality_checker = None
 auth_service = None
+# stripe_service = None  # COMMENTED OUT - Using Razorpay
+razorpay_service = None
 
 @app.on_event("startup")
 async def startup():
     """Initialize all services on startup"""
-    global commit_bus, subscription_service, overlay_service, quality_checker, auth_service
+    global commit_bus, subscription_service, overlay_service, quality_checker, auth_service, razorpay_service
     
     print("🚀 Starting Lekhak AI...")
     
@@ -116,6 +121,24 @@ async def startup():
         except Exception as e:
             print(f"⚠️  Subscription Service failed: {e}")
             subscription_service = None
+    
+    # Initialize Razorpay Service (replaced Stripe)
+    if commit_bus and commit_bus.pool:
+        try:
+            razorpay_service = RazorpayService(commit_bus.pool)
+            print("✅ Razorpay Service initialized")
+        except Exception as e:
+            print(f"⚠️  Razorpay Service failed: {e}")
+            razorpay_service = None
+    
+    # Stripe Service - COMMENTED OUT (not supported in India)
+    # if commit_bus and commit_bus.pool:
+    #     try:
+    #         stripe_service = StripeService(commit_bus.pool)
+    #         print("✅ Stripe Service initialized")
+    #     except Exception as e:
+    #         print(f"⚠️  Stripe Service failed: {e}")
+    #         stripe_service = None
     
     # Initialize Overlay Service
     if HAS_OVERLAYS:
@@ -896,12 +919,227 @@ async def replay_events():
     return {"status": "replay_started"}
 
 # ============================================
-# SUBSCRIPTION ROUTES
+# RAZORPAY & SUBSCRIPTION ROUTES (Replaced Stripe)
 # ============================================
 
+@app.get("/api/plans")
+async def get_all_plans():
+    """Get all available subscription plans"""
+    if not razorpay_service:
+        raise HTTPException(status_code=503, detail="Razorpay service not available")
+    
+    plans = await razorpay_service.get_all_plans()
+    return {"plans": plans}
+
+@app.get("/api/organizations/{org_name}/subscription")
+async def get_org_subscription(org_name: str, user = Depends(get_current_user)):
+    """Get subscription for an organization"""
+    if not razorpay_service:
+        raise HTTPException(status_code=503, detail="Razorpay service not available")
+    
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    # Get org_id from org_name
+    async with commit_bus.pool.acquire() as conn:
+        org_row = await conn.fetchrow("""
+            SELECT org_id FROM organizations WHERE org_name = $1 OR org_slug = $1
+        """, org_name)
+        
+        if not org_row:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        
+        org_id = org_row['org_id']
+        
+        # Check if user has access to this org
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        owner_row = await conn.fetchrow("""
+            SELECT org_id FROM organizations 
+            WHERE org_id = $1 AND owner_user_id = $2
+        """, org_id, user_id)
+        
+        if not owner_row:
+            raise HTTPException(status_code=403, detail="Access denied to this organization")
+    
+    subscription = await razorpay_service.get_subscription_for_org(org_id)
+    return {"subscription": subscription}
+
+class CreateCheckoutRequest(BaseModel):
+    org_name: str
+    plan_name: str
+    success_url: Optional[str] = None
+    cancel_url: Optional[str] = None
+
+@app.post("/api/checkout/create")
+async def create_checkout_session(
+    request: CreateCheckoutRequest,
+    user = Depends(get_current_user)
+):
+    """Create Razorpay order for organization subscription"""
+    if not razorpay_service:
+        raise HTTPException(status_code=503, detail="Razorpay service not available")
+    
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    user_id = user.get('id') if isinstance(user, dict) else user.id
+    user_email = user.get('email') if isinstance(user, dict) else user.email
+    user_name = user.get('name') if isinstance(user, dict) else user.name if hasattr(user, 'name') else None
+    
+    # Get or create organization
+    async with commit_bus.pool.acquire() as conn:
+        # Try to find existing org
+        org_row = await conn.fetchrow("""
+            SELECT org_id, org_name, owner_user_id FROM organizations 
+            WHERE org_name = $1 OR org_slug = $1
+        """, request.org_name)
+        
+        if org_row:
+            org_id = org_row['org_id']
+            org_name = org_row['org_name']
+            
+            # Check if user is owner
+            if org_row['owner_user_id'] != user_id:
+                raise HTTPException(status_code=403, detail="You don't have permission to manage this organization")
+        else:
+            # Create new organization
+            org_slug = request.org_name.lower().replace(' ', '-').replace('_', '-')
+            org_id = await conn.fetchval("""
+                INSERT INTO organizations (org_name, org_slug, owner_user_id, created_at)
+                VALUES ($1, $2, $3, NOW())
+                RETURNING org_id
+            """, request.org_name, org_slug, user_id)
+            
+            org_name = request.org_name
+    
+    # Create Razorpay order
+    order = await razorpay_service.create_order(
+        org_id=org_id,
+        org_name=org_name,
+        plan_name=request.plan_name,
+        owner_email=user_email,
+        owner_name=user_name,
+        owner_user_id=user_id
+    )
+    
+    return order
+
+@app.post("/api/razorpay/webhook")
+async def razorpay_webhook(request: Request):
+    """Handle Razorpay webhooks"""
+    if not razorpay_service:
+        raise HTTPException(status_code=503, detail="Razorpay service not available")
+    
+    payload = await request.body()
+    signature = request.headers.get('X-Razorpay-Signature')
+    
+    if not signature:
+        raise HTTPException(status_code=400, detail="Missing X-Razorpay-Signature header")
+    
+    result = await razorpay_service.handle_webhook(payload, signature)
+    return result
+
+# Stripe webhook - COMMENTED OUT
+# @app.post("/api/stripe/webhook")
+# async def stripe_webhook(request: Request):
+#     """Handle Stripe webhooks"""
+#     if not stripe_service:
+#         raise HTTPException(status_code=503, detail="Stripe service not available")
+#     
+#     payload = await request.body()
+#     signature = request.headers.get('stripe-signature')
+#     
+#     if not signature:
+#         raise HTTPException(status_code=400, detail="Missing stripe-signature header")
+#     
+#     result = await stripe_service.handle_webhook(payload, signature)
+#     return result
+
+@app.post("/api/payment/verify")
+async def verify_payment(
+    order_id: str,
+    payment_id: str,
+    signature: str,
+    user = Depends(get_current_user)
+):
+    """Verify Razorpay payment after successful payment"""
+    if not razorpay_service:
+        raise HTTPException(status_code=503, detail="Razorpay service not available")
+    
+    # Verify payment signature
+    is_valid = await razorpay_service.verify_payment(order_id, payment_id, signature)
+    
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
+    
+    # Payment is verified, webhook will handle subscription creation
+    # But we can also process it here synchronously
+    return {
+        "status": "success",
+        "message": "Payment verified successfully",
+        "order_id": order_id,
+        "payment_id": payment_id
+    }
+
+@app.post("/api/organizations/{org_name}/subscription/cancel")
+async def cancel_org_subscription(org_name: str, user = Depends(get_current_user)):
+    """Cancel organization subscription"""
+    if not razorpay_service:
+        raise HTTPException(status_code=503, detail="Razorpay service not available")
+    
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    user_id = user.get('id') if isinstance(user, dict) else user.id
+    
+    # Get org_id
+    async with commit_bus.pool.acquire() as conn:
+        org_row = await conn.fetchrow("""
+            SELECT org_id FROM organizations 
+            WHERE (org_name = $1 OR org_slug = $1) AND owner_user_id = $2
+        """, org_name, user_id)
+        
+        if not org_row:
+            raise HTTPException(status_code=404, detail="Organization not found or access denied")
+        
+        org_id = org_row['org_id']
+    
+    result = await razorpay_service.cancel_subscription(org_id)
+    return result
+
+@app.get("/api/organizations/{org_name}/billing-portal")
+async def get_billing_portal_url(org_name: str, return_url: str, user = Depends(get_current_user)):
+    """Get billing management URL for organization (Razorpay doesn't have portal like Stripe)"""
+    # Razorpay doesn't have a billing portal like Stripe
+    # Return subscription management page URL instead
+    if not razorpay_service:
+        raise HTTPException(status_code=503, detail="Razorpay service not available")
+    
+    if not commit_bus or not commit_bus.pool:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    user_id = user.get('id') if isinstance(user, dict) else user.id
+    
+    # Get org_id
+    async with commit_bus.pool.acquire() as conn:
+        org_row = await conn.fetchrow("""
+            SELECT org_id FROM organizations 
+            WHERE (org_name = $1 OR org_slug = $1) AND owner_user_id = $2
+        """, org_name, user_id)
+        
+        if not org_row:
+            raise HTTPException(status_code=404, detail="Organization not found or access denied")
+        
+        org_id = org_row['org_id']
+    
+    # Razorpay doesn't have billing portal, return dashboard subscription management URL
+    dashboard_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/dashboard/subscription?org={org_name}"
+    return {"url": dashboard_url}
+
+# Legacy subscription routes (keep for backward compatibility)
 @app.get("/plans")
 async def get_plans():
-    """Get available subscription plans"""
+    """Get available subscription plans (legacy)"""
     if not subscription_service:
         raise HTTPException(status_code=503, detail="Subscriptions not available")
     
@@ -909,7 +1147,7 @@ async def get_plans():
 
 @app.get("/subscription/{user_id}")
 async def get_subscription(user_id: str):
-    """Get user subscription"""
+    """Get user subscription (legacy)"""
     if not subscription_service:
         raise HTTPException(status_code=503, detail="Subscriptions not available")
     
@@ -917,7 +1155,7 @@ async def get_subscription(user_id: str):
 
 @app.post("/subscription")
 async def create_subscription(user_id: str, plan: str):
-    """Create new subscription"""
+    """Create new subscription (legacy)"""
     if not subscription_service:
         raise HTTPException(status_code=503, detail="Subscriptions not available")
     

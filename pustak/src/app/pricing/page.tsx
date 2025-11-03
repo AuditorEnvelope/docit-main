@@ -29,8 +29,8 @@ export default function PricingPage() {
       popular: false,
     },
     {
-      name: "Pro",
-      price: "$29",
+      name: "Basic",
+      price: "₹2,900",
       period: "per month",
       description: "For professional developers and small teams",
       icon: Users,
@@ -45,12 +45,12 @@ export default function PricingPage() {
         "Version history",
       ],
       cta: "Start Free Trial",
-      href: "/checkout?plan=pro",
+      href: "/checkout?plan=basic&org=",
       popular: true,
     },
     {
-      name: "Team",
-      price: "$99",
+      name: "Premium",
+      price: "₹9,900",
       period: "per month",
       description: "For growing teams and organizations",
       icon: Building2,
@@ -67,12 +67,12 @@ export default function PricingPage() {
         "Advanced analytics",
       ],
       cta: "Start Free Trial",
-      href: "/checkout?plan=team",
+      href: "/checkout?plan=premium&org=",
       popular: false,
     },
     {
       name: "Enterprise",
-      price: "$499",
+      price: "₹49,900",
       period: "per month",
       description: "For large organizations with custom needs",
       icon: Building2,
@@ -231,7 +231,7 @@ export default function PricingPage() {
                 What payment methods do you accept?
               </h3>
               <p className="text-gray-600 dark:text-gray-400">
-                We accept all major credit cards (Visa, Mastercard, American Express) via Stripe. Enterprise plans can also pay via invoice.
+                We accept all major credit cards, debit cards, UPI, Netbanking, and wallets via Razorpay. Enterprise plans can also pay via invoice.
               </p>
             </div>
 
