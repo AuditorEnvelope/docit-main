@@ -337,71 +337,64 @@ export default function DashboardPage() {
             </h2>
 
             <div className="space-y-4">
-              {/* Step 1: Connect Repositories - Show as active only if no repositories */}
+              {/* Step 1: Install Reader App - Always show button until user has repos */}
               <div
                 className={`flex items-start gap-4 p-4 ${
                   repositories.length === 0
                     ? "bg-blue-50 dark:bg-blue-900/20"
-                    : "bg-gray-50 dark:bg-gray-700/20"
-                } rounded-xl ${repositories.length > 0 ? "opacity-70" : ""}`}
+                    : "bg-green-50 dark:bg-green-900/20"
+                } rounded-xl`}
               >
                 <div
                   className={`w-8 h-8 ${
-                    repositories.length === 0 ? "bg-blue-500" : "bg-gray-400"
+                    repositories.length === 0 ? "bg-blue-500" : "bg-green-500"
                   } text-white rounded-full flex items-center justify-center font-bold flex-shrink-0`}
                 >
-                  1
+                  {repositories.length === 0 ? "1" : "✓"}
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                    Connect Your Repositories
+                    📖 Install Reader App
                   </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                    Grant access to your GitHub repositories to start generating
-                    AI-powered documentation
+                    Install Pustak Analyser AI to grant read-only access to your source code repositories
                   </p>
-                  {repositories.length === 0 && (
+                  {repositories.length === 0 ? (
                     <button
                       onClick={async () => {
                         try {
-                          // Get OAuth URL from backend
                           const backendUrl =
                             process.env.NEXT_PUBLIC_BACKEND_URL ||
                             "http://localhost:8000";
-                          const redirectUri = `${window.location.origin}/auth/callback`;
 
+                          // Get GitHub App installation URL from backend
                           const response = await fetch(
-                            `${backendUrl}/auth/github?redirect_uri=${encodeURIComponent(
-                              redirectUri
-                            )}&scope=${encodeURIComponent(
-                              "user:email read:org repo"
-                            )}`
+                            `${backendUrl}/auth/install-reader-app`
                           );
 
                           if (!response.ok) {
-                            throw new Error("Failed to get OAuth URL");
+                            throw new Error("Failed to get app installation URL");
                           }
 
                           const data = await response.json();
 
-                          // Redirect to GitHub OAuth page
+                          // Redirect to GitHub App installation page
                           window.location.href = data.url;
                         } catch (error) {
                           console.error(
-                            "Failed to connect repositories:",
+                            "Failed to install Reader App:",
                             error
                           );
                           alert(
-                            "Failed to connect repositories. Please try again."
+                            "Failed to install Reader App. Please try again."
                           );
                         }
                       }}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
                     >
-                      Connect Repositories
+                      Install Reader App
                     </button>
-                  )}
-                  {repositories.length > 0 && (
+                  ) : (
                     <div className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
                       <CheckCircle className="w-4 h-4" />
                       Connected {repositories.length} repositories
@@ -410,122 +403,80 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Step 1.5: Connect Organization (Multi-Org Support) */}
-              <div className={`flex items-start gap-4 p-4 rounded-xl border-2 ${
-                connectedOrgs.length > 0
-                  ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700"
-                  : "bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700"
+              {/* Step 2: Create Docbook Repository */}
+              <div className={`flex items-start gap-4 p-4 rounded-xl ${
+                repositories.length > 0
+                  ? "bg-purple-50 dark:bg-purple-900/20"
+                  : "bg-gray-50 dark:bg-gray-700/50 opacity-50"
               }`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold flex-shrink-0 text-white ${
-                  connectedOrgs.length > 0 ? "bg-green-500" : "bg-purple-500"
-                }`}>
-                  {connectedOrgs.length > 0 ? "✓" : "⚡"}
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                    🔗 Connect Organization (Multi-Org Support)
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                    {connectedOrgs.length > 0
-                      ? `${connectedOrgs.length} organization${connectedOrgs.length !== 1 ? "s" : ""} connected`
-                      : "Register additional organizations to enable webhook-based automatic documentation generation"}
-                  </p>
-                  {connectedOrgs.length > 0 && (
-                    <div className="mb-3 text-sm">
-                      {connectedOrgs.map((org) => (
-                        <div key={org} className="text-green-600 dark:text-green-400 flex items-center gap-1">
-                          <CheckCircle className="w-4 h-4" />
-                          {org}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <button
-                    onClick={() => setShowOrgModal(true)}
-                    className={`px-4 py-2 rounded-lg font-semibold transition-colors text-sm flex items-center gap-2 ${
-                      connectedOrgs.length > 0
-                        ? "bg-green-600 text-white hover:bg-green-700"
-                        : "bg-purple-600 text-white hover:bg-purple-700"
-                    }`}
-                  >
-                    <Link2 className="w-4 h-4" />
-                    {connectedOrgs.length > 0 ? "Add More Organizations" : "Connect Organization"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Step 2: Setup Docbook Repository */}
-              <div className={`flex items-start gap-4 p-4 ${
-                connectedOrgs.length > 0
-                  ? "bg-orange-50 dark:bg-orange-900/20"
-                  : "bg-gray-50 dark:bg-gray-700/50"
-              } rounded-xl ${connectedOrgs.length === 0 ? "opacity-50" : ""}`}>
-                <div
-                  className={`w-8 h-8 ${
-                    connectedOrgs.length > 0 ? "bg-orange-500" : "bg-gray-400"
-                  } text-white rounded-full flex items-center justify-center font-bold flex-shrink-0`}
-                >
+                <div className={`w-8 h-8 ${
+                  repositories.length > 0 ? "bg-purple-500" : "bg-gray-400"
+                } text-white rounded-full flex items-center justify-center font-bold flex-shrink-0`}>
                   2
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                    📚 Setup Docbook Repository
+                    📑 Create Docbook Repository
                   </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                    Create a dedicated repository for AI-generated documentation
+                    Create a dedicated private repository on GitHub to store your AI-generated documentation
                   </p>
-                  {connectedOrgs.length > 0 && (
-                    <div className="space-y-2">
-                      {connectedOrgs.map((org) => (
-                        <button
-                          key={org}
-                          onClick={() => {
-                            setSelectedOrgForDocbook(org);
-                            setShowDocbookModal(true);
-                          }}
-                          className="w-full text-left px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors flex items-center justify-between"
-                        >
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">
-                            {org}
-                          </span>
-                          {linkedDocbooks[org] ? (
-                            <CheckCircle className="w-4 h-4 text-green-500" />
-                          ) : (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">Setup</span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
+                  {repositories.length > 0 && (
+                    <>
+                      <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg p-3 mb-3">
+                        <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
+                          <strong>Instructions:</strong>
+                        </p>
+                        <ol className="text-sm text-blue-700 dark:text-blue-300 list-decimal list-inside space-y-1">
+                          <li>Go to GitHub and create a new private repository</li>
+                          <li>Name it <code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">pustak-docbook</code></li>
+                          <li>Come back here after creating it</li>
+                        </ol>
+                      </div>
+                      <a
+                        href="https://github.com/new?name=pustak-docbook&private=true"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors text-sm"
+                      >
+                        <Github className="w-4 h-4" />
+                        Create Docbook on GitHub
+                      </a>
+                    </>
                   )}
                 </div>
               </div>
 
-              {/* Step 3: Select Repositories - Show as active if repositories exist */}
-              <div
-                className={`flex items-start gap-4 p-4 ${
-                  repositories.length > 0
-                    ? "bg-blue-50 dark:bg-blue-900/20"
-                    : "bg-gray-50 dark:bg-gray-700/50"
-                } rounded-xl ${repositories.length === 0 ? "opacity-50" : ""}`}
-              >
-                <div
-                  className={`w-8 h-8 ${
-                    repositories.length > 0 ? "bg-blue-500" : "bg-gray-400"
-                  } text-white rounded-full flex items-center justify-center font-bold flex-shrink-0`}
-                >
+              {/* Step 3: Select Repositories to Document */}
+              <div className={`flex items-start gap-4 p-4 rounded-xl ${
+                repositories.length > 0
+                  ? "bg-blue-50 dark:bg-blue-900/20"
+                  : "bg-gray-50 dark:bg-gray-700/50 opacity-50"
+              }`}>
+                <div className={`w-8 h-8 ${
+                  repositories.length > 0 ? "bg-blue-500" : "bg-gray-400"
+                } text-white rounded-full flex items-center justify-center font-bold flex-shrink-0`}>
                   3
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                    Select Repositories
+                    📚 Select Repositories to Document
                   </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                    Choose which repositories you want to document
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                    Choose which repositories you want to generate documentation for
                   </p>
                   {repositories.length > 0 && (
-                    <div className="mt-2">
+                    <>
+                      <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3 mb-3">
+                        <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                          <strong>🎯 Free Plan:</strong> You can document 1 repository. Upgrade to Pro to document unlimited repositories.
+                        </p>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                        Showing {repositories.length} repositories that Reader App can access:
+                      </p>
                       <select
-                        className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 mb-3"
                         value={selectedRepo}
                         onChange={(e) => setSelectedRepo(e.target.value)}
                       >
@@ -541,95 +492,167 @@ export default function DashboardPage() {
                           </option>
                         ))}
                       </select>
-                      <button
-                        onClick={async () => {
-                          if (!selectedRepo) {
-                            alert("Please select a repository first");
-                            return;
-                          }
-
-                          setGeneratingDocs(true);
-                          try {
-                            const backendUrl =
-                              process.env.NEXT_PUBLIC_BACKEND_URL ||
-                              "http://localhost:8000";
-                            
-                            // Use V4 endpoint (publishes to docbook/staging)
-                            const response = await fetch(
-                              `${backendUrl}/docs/generate-v4?repo_name=${encodeURIComponent(
-                                selectedRepo
-                              )}`,
-                              {
-                                method: "POST",
-                                headers: {
-                                  Authorization: `Bearer ${token}`,
-                                },
-                              }
-                            );
-
-                            if (response.ok) {
-                              const data = await response.json();
-                              console.log(
-                                "✅ Documentation generated and published to staging"
-                              );
-                              
-                              // Show success modal
-                              setSuccessMessage(
-                                `✅ Documentation published to staging!\n\nYour docs are now in the staging branch. Check your Pustak dashboard to review and approve.`
-                              );
-                              setShowSuccessModal(true);
-                              
-                              // Refresh page after modal is closed
-                              setTimeout(() => {
-                                window.location.reload();
-                              }, 2000);
-                            } else {
-                              const error = await response.json();
-                              setSuccessMessage(
-                                `❌ Failed to generate documentation: ${error.detail || 'Unknown error'}`
-                              );
-                              setShowSuccessModal(true);
-                            }
-                          } catch (error) {
-                            console.error(
-                              "Error generating documentation:",
-                              error
-                            );
-                            setSuccessMessage(
-                              "❌ Failed to generate documentation. Please try again."
-                            );
-                            setShowSuccessModal(true);
-                          } finally {
-                            setGeneratingDocs(false);
-                          }
-                        }}
-                        className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                        disabled={!selectedRepo || generatingDocs}
-                      >
-                        {generatingDocs && (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        )}
-                        {generatingDocs
-                          ? "Generating & Publishing..."
-                          : "Generate Documentation"}
-                      </button>
-                    </div>
+                    </>
                   )}
                 </div>
               </div>
 
-              {/* Step 4: AI Generates Docs */}
-              <div className="flex items-start gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl opacity-50">
-                <div className="w-8 h-8 bg-gray-400 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
+              {/* Step 4: Install Writer App */}
+              <div className={`flex items-start gap-4 p-4 rounded-xl ${
+                repositories.length > 0 && selectedRepo
+                  ? "bg-red-50 dark:bg-red-900/20"
+                  : "bg-gray-50 dark:bg-gray-700/50 opacity-50"
+              }`}>
+                <div className={`w-8 h-8 ${
+                  repositories.length > 0 && selectedRepo ? "bg-red-500" : "bg-gray-400"
+                } text-white rounded-full flex items-center justify-center font-bold flex-shrink-0`}>
                   4
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                    AI Generates Docs
+                    🚀 Grant Write Access (Install Writer App)
                   </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Sit back while AI creates comprehensive documentation
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                    Install Pustak Publisher AI to grant write-only access to your docbook repository
                   </p>
+                  {repositories.length > 0 && selectedRepo && (
+                    <>
+                      <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-3">
+                        <p className="text-sm text-red-800 dark:text-red-200 font-semibold mb-2">
+                          ⚠️ IMPORTANT: Only select your <code className="bg-red-100 dark:bg-red-800 px-1 rounded">pustak-docbook</code> repository!
+                        </p>
+                        <p className="text-sm text-red-700 dark:text-red-300">
+                          On the next screen, grant access ONLY to your docbook repository. Do NOT select your source code repositories.
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const backendUrl =
+                              process.env.NEXT_PUBLIC_BACKEND_URL ||
+                              "http://localhost:8000";
+
+                            const response = await fetch(
+                              `${backendUrl}/auth/install-writer-app`
+                            );
+
+                            if (!response.ok) {
+                              throw new Error("Failed to get Writer app URL");
+                            }
+
+                            const data = await response.json();
+                            window.location.href = data.url;
+                          } catch (error) {
+                            console.error(
+                              "Failed to install Writer App:",
+                              error
+                            );
+                            alert(
+                              "Failed to install Writer App. Please try again."
+                            );
+                          }
+                        }}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors text-sm"
+                      >
+                        Install Writer App
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Step 5: Generate Documentation */}
+              <div className={`flex items-start gap-4 p-4 rounded-xl ${
+                repositories.length > 0 && selectedRepo
+                  ? "bg-green-50 dark:bg-green-900/20"
+                  : "bg-gray-50 dark:bg-gray-700/50 opacity-50"
+              }`}>
+                <div className={`w-8 h-8 ${
+                  repositories.length > 0 && selectedRepo ? "bg-green-500" : "bg-gray-400"
+                } text-white rounded-full flex items-center justify-center font-bold flex-shrink-0`}>
+                  5
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
+                    ✨ Generate Documentation
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                    Ready to generate AI-powered documentation for your repository
+                  </p>
+                  {repositories.length > 0 && selectedRepo && (
+                    <button
+                      onClick={async () => {
+                        if (!selectedRepo) {
+                          alert("Please select a repository first");
+                          return;
+                        }
+
+                        setGeneratingDocs(true);
+                        try {
+                          const backendUrl =
+                            process.env.NEXT_PUBLIC_BACKEND_URL ||
+                            "http://localhost:8000";
+                          
+                          // Use V4 endpoint (publishes to docbook/staging)
+                          const response = await fetch(
+                            `${backendUrl}/docs/generate-v4?repo_name=${encodeURIComponent(
+                              selectedRepo
+                            )}`,
+                            {
+                              method: "POST",
+                              headers: {
+                                Authorization: `Bearer ${token}`,
+                              },
+                            }
+                          );
+
+                          if (response.ok) {
+                            const data = await response.json();
+                            console.log(
+                              "✅ Documentation generated and published to staging"
+                            );
+                            
+                            // Show success modal
+                            setSuccessMessage(
+                              `✅ Documentation published to staging!\n\nYour docs are now in the staging branch. Check your Pustak dashboard to review and approve.`
+                            );
+                            setShowSuccessModal(true);
+                            
+                            // Refresh page after modal is closed
+                            setTimeout(() => {
+                              window.location.reload();
+                            }, 2000);
+                          } else {
+                            const error = await response.json();
+                            setSuccessMessage(
+                              `❌ Failed to generate documentation: ${error.detail || 'Unknown error'}`
+                            );
+                            setShowSuccessModal(true);
+                          }
+                        } catch (error) {
+                          console.error(
+                            "Error generating documentation:",
+                            error
+                          );
+                          setSuccessMessage(
+                            "❌ Failed to generate documentation. Please try again."
+                          );
+                          setShowSuccessModal(true);
+                        } finally {
+                          setGeneratingDocs(false);
+                        }
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      disabled={!selectedRepo || generatingDocs}
+                    >
+                      {generatingDocs && (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      )}
+                      {generatingDocs
+                        ? "Generating & Publishing..."
+                        : "Generate Documentation"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

@@ -6,6 +6,7 @@ import re  # Added for regex pattern matching
 from aiolimiter import AsyncLimiter
 from webhooks.github_app import get_installation_token
 from utilities.llm_provider_v2 import get_rotator
+from utilities.github_dual_app_helper import get_github_dual_app_helper
 from pathlib import Path
 from processors.comprehensive_doc_generator import generate_comprehensive_documentation
 
@@ -58,9 +59,10 @@ async def handle_push_event(payload, github_token=None, doc_persona="internal"):
     # If no token provided but we have installation_id, try to get app token
     if not github_token and installation_id:
         try:
-            github_token = get_installation_token(installation_id)
+            dual_app = get_github_dual_app_helper()
+            github_token = await dual_app.get_reader_token(installation_id)
             if github_token:
-                print(f"✅ Using GitHub App installation token")
+                print(f"✅ Using GitHub App installation token (Reader)")
         except Exception as e:
             print(f"⚠️  Failed to get app token: {e}")
             github_token = os.getenv("GITHUB_TOKEN")
@@ -156,7 +158,20 @@ async def handle_push_event(payload, github_token=None, doc_persona="internal"):
         
         # ⭐ V4: Push to docbook repo instead of source repo
         print(f"📚 V4 Mode - Publishing to docbook repo (staging branch)")
-        await push_to_docbook_v4(tmpdir, repo, analysis, after_sha, token, payload)
+        
+        # Get Writer token for docbook publishing
+        writer_token = token  # Use same token for now (will be Writer token when dual-app enabled)
+        if installation_id:
+            try:
+                dual_app = get_github_dual_app_helper()
+                writer_token = await dual_app.get_writer_token(installation_id)
+                if writer_token:
+                    print(f"✅ Using Writer token for docbook publish")
+            except Exception as e:
+                print(f"⚠️  Could not get Writer token, using Reader token: {e}")
+                writer_token = token
+        
+        await push_to_docbook_v4(tmpdir, repo, analysis, after_sha, writer_token, payload)
     
     except Exception as e:
         print(f"❌ Error in handle_push_event: {e}")

@@ -31,6 +31,12 @@ from services.overlay_service import OverlayService
 # Import processors
 from processors.smart_processor import handle_push_event as legacy_handle_push
 
+# Import utilities
+from utilities.github_dual_app_helper import get_github_dual_app_helper
+
+# Import routes
+from routes.github_app_installation import router as app_installation_router
+
 # Import webhooks
 from webhooks.webhook_multi_org import webhook_multi_org
 
@@ -63,6 +69,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(app_installation_router)
 
 # Configuration
 WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
@@ -473,6 +482,15 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
             
             print(f"📚 V4 Mode - Publishing to docbook repo (staging branch)")
             
+            # Get Writer token for docbook publishing
+            writer_token = github_token  # Use user's token for now
+            dual_app = get_github_dual_app_helper()
+            if dual_app.dual_app_mode:
+                print(f"✅ Dual-app mode enabled, attempting to get Writer token")
+                # Note: In manual trigger mode, we don't have installation_id
+                # So we'll use the user's OAuth token instead
+                # In webhook mode, installation_id will be available
+            
             # Create synthetic payload for docbook publishing
             payload = {
                 "repository": {
@@ -486,13 +504,13 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
                     "author": {"name": user.email}
                 }],
                 # ⭐ NEW: Add required fields for docbook publishing
-                "_user_id": user.id,
+                "_user_id": str(user.id),
                 "_org_id": org_id,
                 "_db_pool": commit_bus.pool
             }
             
             # Push to docbook
-            await push_to_docbook_v4(tmpdir, {"full_name": repo_name, "name": source_repo}, analysis, "manual-trigger", github_token, payload)
+            await push_to_docbook_v4(tmpdir, {"full_name": repo_name, "name": source_repo}, analysis, "manual-trigger", writer_token, payload)
             
             print(f"✅ Documentation published to docbook/staging")
             
@@ -1729,6 +1747,158 @@ async def get_repo_doc_persona(
     except Exception as e:
         print(f"❌ Error getting doc_persona: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# PHASE 4: APP VERIFICATION & REPOSITORY LISTING ENDPOINTS
+# ============================================================================
+
+@app.get("/api/v1/org/{org_id}/verify-apps")
+async def verify_apps(org_id: str, user = Depends(get_current_user)):
+    """
+    Verify both Reader and Writer apps are installed
+    Returns installation status and access levels
+    """
+    try:
+        dual_app = get_github_dual_app_helper()
+        
+        # Get user's GitHub token for verification
+        github_token = await auth_service.get_github_token(user.id if hasattr(user, 'id') else user.get('id'))
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        # For now, return status based on environment configuration
+        reader_installed = dual_app.dual_app_mode and bool(dual_app.reader_app_id)
+        writer_installed = dual_app.dual_app_mode and bool(dual_app.writer_app_id)
+        
+        return {
+            "reader_app": {
+                "installed": reader_installed,
+                "app_name": "Pustak Analyser AI",
+                "app_id": dual_app.reader_app_id if reader_installed else None,
+                "permissions": ["contents:read", "metadata:read"],
+                "status": "ready" if reader_installed else "not_configured"
+            },
+            "writer_app": {
+                "installed": writer_installed,
+                "app_name": "Pustak Publisher AI",
+                "app_id": dual_app.writer_app_id if writer_installed else None,
+                "permissions": ["contents:read_write", "metadata:read"],
+                "status": "ready" if writer_installed else "not_configured"
+            },
+            "dual_app_mode": dual_app.dual_app_mode,
+            "fallback_mode": not dual_app.dual_app_mode
+        }
+    except Exception as e:
+        logger.error(f"❌ Error verifying apps: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/org/{org_id}/reader/repositories")
+async def get_reader_repositories(org_id: str, user = Depends(get_current_user)):
+    """
+    Get list of repositories that Reader App can access
+    Used to populate the "Select Repositories" dropdown in Step 4
+    """
+    try:
+        # Get user's GitHub token
+        user_id = user.id if hasattr(user, 'id') else user.get('id')
+        github_token = await auth_service.get_github_token(user_id)
+        
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        # Fetch repositories using user's token
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                'Authorization': f'token {github_token}',
+                'Accept': 'application/vnd.github+json',
+            }
+            
+            url = f'https://api.github.com/user/repos'
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    repos = await response.json()
+                    
+                    # Filter and format repositories
+                    formatted_repos = [
+                        {
+                            'id': repo['id'],
+                            'name': repo['name'],
+                            'full_name': repo['full_name'],
+                            'url': repo['html_url'],
+                            'private': repo['private'],
+                            'description': repo['description'],
+                            'language': repo['language']
+                        }
+                        for repo in repos
+                    ]
+                    
+                    return {
+                        "repositories": formatted_repos,
+                        "count": len(formatted_repos),
+                        "org_id": org_id
+                    }
+                else:
+                    error = await response.text()
+                    logger.error(f"❌ Failed to fetch repositories: {response.status} - {error}")
+                    raise HTTPException(status_code=response.status, detail="Failed to fetch repositories")
+    except Exception as e:
+        logger.error(f"❌ Error fetching reader repositories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/org/{org_id}/setup-docbook")
+async def setup_docbook(org_id: str, docbook_repo: str, user = Depends(get_current_user)):
+    """
+    User has created docbook repo, verify it exists and link it
+    """
+    try:
+        user_id = user.id if hasattr(user, 'id') else user.get('id')
+        
+        # Get user's GitHub token
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        # Verify docbook repo exists
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                'Authorization': f'token {github_token}',
+                'Accept': 'application/vnd.github+json',
+            }
+            
+            url = f'https://api.github.com/repos/{docbook_repo}'
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    repo_data = await response.json()
+                    
+                    # Store docbook repo in database
+                    if commit_bus and commit_bus.pool:
+                        async with commit_bus.pool.acquire() as conn:
+                            await conn.execute("""
+                                INSERT INTO docbook_repos (org_id, repo_name, repo_full_name, user_id, created_at)
+                                VALUES ($1, $2, $3, $4, NOW())
+                                ON CONFLICT (org_id) DO UPDATE SET repo_full_name = $3
+                            """, org_id, repo_data['name'], docbook_repo, user_id)
+                    
+                    return {
+                        "status": "success",
+                        "message": f"Docbook repository {docbook_repo} linked",
+                        "docbook_repo": docbook_repo,
+                        "repo_data": {
+                            "name": repo_data['name'],
+                            "full_name": repo_data['full_name'],
+                            "url": repo_data['html_url'],
+                            "private": repo_data['private']
+                        }
+                    }
+                else:
+                    raise HTTPException(status_code=404, detail=f"Repository {docbook_repo} not found")
+    except Exception as e:
+        logger.error(f"❌ Error setting up docbook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
