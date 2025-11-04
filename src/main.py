@@ -1459,7 +1459,6 @@ async def get_org_subscription(org_name: str, user = Depends(get_current_user)):
     return {"subscription": subscription}
 
 class CreateCheckoutRequest(BaseModel):
-    org_name: str
     plan_name: str
     success_url: Optional[str] = None
     cancel_url: Optional[str] = None
@@ -1469,7 +1468,7 @@ async def create_checkout_session(
     request: CreateCheckoutRequest,
     user = Depends(get_current_user)
 ):
-    """Create Razorpay order for organization subscription"""
+    """Create Razorpay order for user subscription (mapped to email)"""
     if not razorpay_service:
         raise HTTPException(status_code=503, detail="Razorpay service not available")
     
@@ -1480,40 +1479,12 @@ async def create_checkout_session(
     user_email = user.get('email') if isinstance(user, dict) else user.email
     user_name = user.get('name') if isinstance(user, dict) else user.name if hasattr(user, 'name') else None
     
-    # Get or create organization
-    async with commit_bus.pool.acquire() as conn:
-        # Try to find existing org
-        org_row = await conn.fetchrow("""
-            SELECT org_id, org_name, owner_user_id FROM organizations 
-            WHERE org_name = $1 OR org_slug = $1
-        """, request.org_name)
-        
-        if org_row:
-            org_id = org_row['org_id']
-            org_name = org_row['org_name']
-            
-            # Check if user is owner
-            if org_row['owner_user_id'] != user_id:
-                raise HTTPException(status_code=403, detail="You don't have permission to manage this organization")
-        else:
-            # Create new organization
-            org_slug = request.org_name.lower().replace(' ', '-').replace('_', '-')
-            org_id = await conn.fetchval("""
-                INSERT INTO organizations (org_name, org_slug, owner_user_id, created_at)
-                VALUES ($1, $2, $3, NOW())
-                RETURNING org_id
-            """, request.org_name, org_slug, user_id)
-            
-            org_name = request.org_name
-    
-    # Create Razorpay order
+    # Create Razorpay order directly for user (no organization needed)
     order = await razorpay_service.create_order(
-        org_id=org_id,
-        org_name=org_name,
-        plan_name=request.plan_name,
-        owner_email=user_email,
-        owner_name=user_name,
-        owner_user_id=user_id
+        user_id=user_id,
+        user_email=user_email,
+        user_name=user_name,
+        plan_name=request.plan_name
     )
     
     return order
@@ -1549,11 +1520,14 @@ async def razorpay_webhook(request: Request):
 #     result = await stripe_service.handle_webhook(payload, signature)
 #     return result
 
+class VerifyPaymentRequest(BaseModel):
+    order_id: str
+    payment_id: str
+    signature: str
+
 @app.post("/api/payment/verify")
 async def verify_payment(
-    order_id: str,
-    payment_id: str,
-    signature: str,
+    request: VerifyPaymentRequest,
     user = Depends(get_current_user)
 ):
     """Verify Razorpay payment after successful payment"""
@@ -1561,18 +1535,28 @@ async def verify_payment(
         raise HTTPException(status_code=503, detail="Razorpay service not available")
     
     # Verify payment signature
-    is_valid = await razorpay_service.verify_payment(order_id, payment_id, signature)
+    print(f"🔍 Verifying payment: order_id={request.order_id}, payment_id={request.payment_id}")
+    is_valid = await razorpay_service.verify_payment(request.order_id, request.payment_id, request.signature)
     
     if not is_valid:
+        print(f"❌ Payment verification failed for order {request.order_id}")
         raise HTTPException(status_code=400, detail="Invalid payment signature")
     
-    # Payment is verified, webhook will handle subscription creation
-    # But we can also process it here synchronously
+    # Payment is verified - now create subscription synchronously
+    # This ensures immediate subscription creation even if webhook is delayed
+    try:
+        await razorpay_service.handle_payment_captured_sync(request.order_id, request.payment_id)
+    except Exception as e:
+        print(f"⚠️  Error creating subscription synchronously: {e}")
+        # Don't fail verification - webhook will handle it
+        import traceback
+        traceback.print_exc()
+    
     return {
         "status": "success",
         "message": "Payment verified successfully",
-        "order_id": order_id,
-        "payment_id": payment_id
+        "order_id": request.order_id,
+        "payment_id": request.payment_id
     }
 
 @app.post("/api/organizations/{org_name}/subscription/cancel")

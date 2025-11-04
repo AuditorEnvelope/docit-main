@@ -26,14 +26,14 @@ else:
 
 class RazorpayService:
     """
-    Comprehensive Razorpay Service for Organization Subscriptions
+    Comprehensive Razorpay Service for User Subscriptions (mapped to email)
     
     Features:
-    - Create orders and payment links for organizations
+    - Create orders and payment links for users
     - Handle Razorpay webhooks
     - Manage subscriptions (create, update, cancel)
     - Automatic downgrade to free on expiry
-    - Organization-level billing
+    - User-level billing (no organizations needed)
     """
     
     def __init__(self, db_pool: asyncpg.Pool):
@@ -43,99 +43,154 @@ class RazorpayService:
     async def get_plan_by_name(self, plan_name: str) -> Optional[Dict]:
         """Get plan details from database by name"""
         async with self.pool.acquire() as conn:
+            # Try case-insensitive match first
             row = await conn.fetchrow("""
                 SELECT plan_id, name, price_cents, interval, 
                        razorpay_plan_id, razorpay_price_id,
                        llm_priority_tier, features, description
                 FROM plans
-                WHERE name = $1 AND is_active = true
+                WHERE LOWER(name) = LOWER($1) AND is_active = true
             """, plan_name)
+            
+            if not row:
+                # Check if plans table exists and has any data
+                plan_count = await conn.fetchval("SELECT COUNT(*) FROM plans")
+                if plan_count == 0:
+                    print(f"⚠️  Plans table is empty! Inserting default plans...")
+                    await self._ensure_default_plans(conn)
+                    # Retry after inserting
+                    row = await conn.fetchrow("""
+                        SELECT plan_id, name, price_cents, interval, 
+                               razorpay_plan_id, razorpay_price_id,
+                               llm_priority_tier, features, description
+                        FROM plans
+                        WHERE LOWER(name) = LOWER($1) AND is_active = true
+                    """, plan_name)
+                else:
+                    # List available plans for debugging
+                    available_plans = await conn.fetch("SELECT name FROM plans WHERE is_active = true")
+                    plan_names = [p['name'] for p in available_plans]
+                    print(f"⚠️  Plan '{plan_name}' not found. Available plans: {plan_names}")
             
             if not row:
                 return None
             
             return dict(row)
     
-    async def get_or_create_razorpay_customer_for_org(
+    async def _ensure_default_plans(self, conn):
+        """Ensure default plans exist in database"""
+        try:
+            await conn.execute("""
+                INSERT INTO plans (name, price_cents, interval, razorpay_plan_id, llm_priority_tier, features, description, is_active)
+                VALUES
+                    ('free', 0, 'month', NULL, 0, 
+                     '{"repos": 1, "queries_per_day": 100, "storage_gb": 1, "support": "community"}'::JSONB,
+                     'Free plan for individuals and open source projects', true),
+                    ('basic', 290000, 'month', NULL, 1,
+                     '{"repos": 5, "queries_per_day": 1000, "storage_gb": 10, "support": "email", "api_access": true}'::JSONB,
+                     'Basic plan for professional developers', true),
+                    ('premium', 990000, 'month', NULL, 2,
+                     '{"repos": 20, "queries_per_day": 10000, "storage_gb": 50, "support": "priority", "api_access": true, "custom_branding": true}'::JSONB,
+                     'Premium plan for growing teams', true),
+                    ('enterprise', 4990000, 'month', NULL, 3,
+                     '{"repos": -1, "queries_per_day": -1, "storage_gb": -1, "support": "dedicated", "api_access": true, "custom_branding": true, "sso": true, "on_premise": true}'::JSONB,
+                     'Enterprise plan with unlimited everything', true)
+                ON CONFLICT (name) DO UPDATE SET
+                    price_cents = EXCLUDED.price_cents,
+                    interval = EXCLUDED.interval,
+                    features = EXCLUDED.features,
+                    description = EXCLUDED.description,
+                    is_active = EXCLUDED.is_active
+            """)
+            print("✅ Default plans inserted/updated")
+        except Exception as e:
+            print(f"❌ Error inserting default plans: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    async def get_or_create_razorpay_customer(
         self, 
-        org_id: int, 
-        org_name: str, 
-        owner_email: str,
-        owner_name: Optional[str] = None,
-        owner_phone: Optional[str] = None,
-        owner_user_id: Optional[str] = None
-    ) -> str:
+        user_id: str,
+        user_email: str,
+        user_name: Optional[str] = None,
+        user_phone: Optional[str] = None
+    ) -> Optional[str]:
         """
-        Get or create Razorpay customer for an organization
+        Get or create Razorpay customer for a user (mapped to email)
         
         Returns:
-            Razorpay customer ID
+            Razorpay customer ID (or None if customer creation fails)
         """
         if not self.client:
             raise HTTPException(status_code=500, detail="Razorpay client not initialized")
         
         async with self.pool.acquire() as conn:
-            # Check if org already has a customer (via owner's razorpay_customer_id)
-            owner_customer_id = None
-            if owner_user_id:
-                owner_row = await conn.fetchrow("""
-                    SELECT razorpay_customer_id FROM users WHERE id = $1
-                """, owner_user_id)
-                
-                if owner_row and owner_row['razorpay_customer_id']:
-                    owner_customer_id = owner_row['razorpay_customer_id']
+            # Check if user already has a customer in our database
+            user_row = await conn.fetchrow("""
+                SELECT razorpay_customer_id FROM users WHERE id = $1
+            """, user_id)
             
-            # Reuse owner's customer if exists
-            if owner_customer_id:
-                return owner_customer_id
+            if user_row and user_row['razorpay_customer_id']:
+                return user_row['razorpay_customer_id']
             
-            # Create new Razorpay customer
-            customer_data = {
-                "name": org_name,
-                "email": owner_email,
-                "contact": owner_phone or "9999999999",  # Default contact
-                "notes": {
-                    "org_id": str(org_id),
-                    "org_name": org_name,
-                    "owner_user_id": str(owner_user_id) if owner_user_id else None
+            # Try to create Razorpay customer (optional - not required for orders)
+            # If it fails, we'll just skip customer creation
+            try:
+                # Razorpay customer creation format per docs:
+                # - name: required
+                # - email: required, must be unique
+                # - contact: required, must be valid 10-digit phone number
+                # - notes: optional dict
+                customer_data = {
+                    "name": user_name or user_email.split('@')[0],
+                    "email": user_email,
+                    "contact": user_phone or "9999999999",  # Valid 10-digit format
+                    "notes": {
+                        "user_id": str(user_id),
+                        "user_email": user_email
+                    }
                 }
-            }
-            
-            if owner_name:
-                customer_data["name"] = owner_name
-            
-            razorpay_customer = self.client.customer.create(customer_data)
-            customer_id = razorpay_customer['id']
-            
-            # Store customer ID in owner's user record
-            if owner_user_id:
+                
+                razorpay_customer = self.client.customer.create(customer_data)
+                customer_id = razorpay_customer['id']
+                
+                # Store customer ID in user record
                 await conn.execute("""
                     UPDATE users
                     SET razorpay_customer_id = $1
                     WHERE id = $2
-                """, customer_id, owner_user_id)
-            
-            return customer_id
+                """, customer_id, user_id)
+                
+                return customer_id
+                
+            except razorpay.errors.BadRequestError as e:
+                error_msg = str(e)
+                # If customer already exists or any other error, skip customer creation
+                # Orders work fine without customer field
+                if "already exists" in error_msg.lower() or "exists" in error_msg.lower():
+                    print(f"ℹ️  Customer with email {user_email} already exists in Razorpay. Continuing without customer.")
+                else:
+                    print(f"⚠️  Razorpay customer creation failed: {error_msg}. Continuing without customer.")
+                return None
+            except Exception as e:
+                print(f"⚠️  Error creating Razorpay customer: {e}. Continuing without customer.")
+                return None
     
     async def create_order(
         self,
-        org_id: int,
-        org_name: str,
+        user_id: str,
+        user_email: str,
         plan_name: str,
-        owner_email: str,
-        owner_name: Optional[str] = None,
-        owner_user_id: Optional[str] = None
+        user_name: Optional[str] = None
     ) -> Dict:
         """
-        Create Razorpay order for organization subscription
+        Create Razorpay order for user subscription (mapped to email)
         
         Args:
-            org_id: Organization ID
-            org_name: Organization name
+            user_id: User ID
+            user_email: User's email
             plan_name: Plan name (free, basic, premium, enterprise)
-            owner_email: Owner's email
-            owner_name: Owner's name (optional)
-            owner_user_id: Owner's user ID (optional)
+            user_name: User's name (optional)
         
         Returns:
             Dict with order_id, amount, currency, and payment options
@@ -147,48 +202,44 @@ class RazorpayService:
             # Get plan from database
             plan = await self.get_plan_by_name(plan_name)
             if not plan:
-                raise HTTPException(status_code=404, detail=f"Plan '{plan_name}' not found")
+                # Provide helpful error message
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Plan '{plan_name}' not found. Available plans: free, basic, premium, enterprise. Please ensure plans table is populated."
+                )
             
             if plan['name'] == 'free':
                 raise HTTPException(status_code=400, detail="Free plan doesn't require payment")
             
-            # Convert price from cents (USD) to paise (INR)
-            # price_cents is in USD cents, but we need INR paise
-            # For simplicity, assuming price_cents is already in INR (not USD)
-            # ₹1 = 100 paise, so if price_cents = 2900 (₹29), then paise = 2900 * 100 = 290000
-            # But if price_cents represents ₹29, then we need to convert: ₹29 * 100 = 2900 paise
-            # Actually, let's assume price_cents stores amount in smallest currency unit already
-            # If price_cents = 2900 means ₹29.00, then paise = price_cents * 100
-            # But wait, if price_cents already stores paise, then we use it directly
-            # Let's check: plan stores price in cents. For INR, we'll store in paise.
-            # So if plan.price_cents = 290000 (₹2900), we need to convert to paise correctly
-            # For now, assuming price_cents is stored as: ₹29 = 2900 paise (store as 2900)
-            # So amount_paise = price_cents (already in paise)
-            
-            # Get or create Razorpay customer
-            customer_id = await self.get_or_create_razorpay_customer_for_org(
-                org_id, org_name, owner_email, owner_name, None, owner_user_id
+            # Get or create Razorpay customer for user (optional - not required for orders)
+            customer_id = await self.get_or_create_razorpay_customer(
+                user_id, user_email, user_name
             )
             
             # Create Razorpay order
             # price_cents stores amount in paise (e.g., ₹2,900 = 290000 paise)
-            # Razorpay expects amount in paise
             amount_paise = int(plan['price_cents'])  # Already in paise
+            
+            # Receipt must be max 40 characters (Razorpay requirement)
+            # Use short hash of user_id + timestamp for uniqueness
+            receipt_hash = hashlib.md5(f"{user_id}{int(time.time())}".encode()).hexdigest()[:16]
+            receipt = f"{plan_name[:4]}_{receipt_hash}"  # e.g., "basi_a1b2c3d4e5f6g7h8" (max 21 chars, well under 40 limit)
+            
             order_data = {
                 "amount": amount_paise,  # Amount in paise (₹1 = 100 paise)
                 "currency": "INR",
-                "receipt": f"org_{org_id}_plan_{plan_name}_{int(time.time())}",
+                "receipt": receipt,  # Max 40 chars - using short hash
                 "notes": {
-                    "org_id": str(org_id),
-                    "org_name": org_name,
+                    "user_id": str(user_id),
+                    "user_email": user_email,
                     "plan_name": plan_name,
                     "plan_id": str(plan['plan_id']),
-                    "owner_user_id": str(owner_user_id) if owner_user_id else None,
-                },
-                "customer": {
-                    "id": customer_id
                 }
             }
+            
+            # Customer field is optional in Razorpay orders
+            # If provided, it should be passed as "customer_id" (string), not nested object
+            # We'll skip it entirely since it's optional and causing issues
             
             razorpay_order = self.client.order.create(order_data)
             
@@ -197,15 +248,13 @@ class RazorpayService:
                 "amount": razorpay_order['amount'],
                 "currency": razorpay_order['currency'],
                 "key_id": RAZORPAY_KEY_ID,  # For frontend integration
-                "customer_id": customer_id,
+                "customer_id": customer_id if customer_id else None,  # Optional
                 "metadata": {
-                    "org_id": str(org_id),
-                    "org_name": org_name,
+                    "user_id": str(user_id),
+                    "user_email": user_email,
+                    "user_name": user_name,
                     "plan_name": plan_name,
                     "plan_id": str(plan['plan_id']),
-                    "owner_email": owner_email,
-                    "owner_name": owner_name,
-                    "owner_user_id": str(owner_user_id) if owner_user_id else None,
                 }
             }
             
@@ -291,7 +340,7 @@ class RazorpayService:
             raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {str(e)}")
     
     async def handle_payment_captured(self, payment: Dict):
-        """Handle successful payment capture"""
+        """Handle successful payment capture - create subscription for user"""
         order_id = payment.get('order_id')
         
         if not order_id:
@@ -304,37 +353,43 @@ class RazorpayService:
                 razorpay_order = self.client.order.fetch(order_id)
                 notes = razorpay_order.get('notes', {})
                 
-                org_id = int(notes.get('org_id'))
+                # Get user_id from order notes (new approach - no org_id)
+                user_id = notes.get('user_id')
+                user_email = notes.get('user_email')
                 plan_name = notes.get('plan_name')
-                plan_id = int(notes.get('plan_id'))
+                plan_id_str = notes.get('plan_id')
                 
-                # Get plan details
+                if not user_id:
+                    print(f"⚠️  No user_id in order notes for order {order_id}")
+                    return
+                
+                if not plan_name:
+                    print(f"⚠️  No plan_name in order notes for order {order_id}")
+                    return
+                
+                # Get plan details - if plan_id not available, fetch by name
                 plan = await self.get_plan_by_name(plan_name)
                 if not plan:
-                    print(f"⚠️  Plan '{plan_name}' not found")
+                    print(f"⚠️  Plan '{plan_name}' not found in database")
                     return
+                
+                plan_id = plan['plan_id']  # Use plan_id from database lookup
                 
                 # Create or update subscription record
                 # subscriptions table uses: id (UUID PK), stripe_subscription_id (UNIQUE), user_id (FK)
                 # For Razorpay, we'll use razorpay_payment_id as unique identifier
                 razorpay_payment_id = payment.get('id')
                 
+                if not razorpay_payment_id:
+                    print(f"⚠️  No payment ID in payment object")
+                    return
+                
                 # Calculate period end (1 month from now)
                 period_start = datetime.now()
                 period_end = period_start + timedelta(days=30)  # Monthly subscription
                 
-                # Get owner user_id for subscription (required by schema)
-                owner_user_id_result = await conn.fetchrow("""
-                    SELECT owner_user_id FROM organizations WHERE org_id = $1
-                """, org_id)
-                owner_user_id = owner_user_id_result['owner_user_id'] if owner_user_id_result else None
-                
-                if not owner_user_id:
-                    print(f"⚠️  No owner_user_id found for org {org_id}")
-                    return
-                
-                # Create subscription record
-                # subscriptions table: id (UUID PK), user_id (FK), org_id (FK), plan_id (FK), plan (VARCHAR), stripe_subscription_id (UNIQUE)
+                # Create subscription record mapped to user_id (org_id = NULL)
+                # subscriptions table: id (UUID PK), user_id (FK), org_id (FK, nullable), plan_id (FK), plan (VARCHAR), stripe_subscription_id (UNIQUE)
                 # Store Razorpay payment ID in stripe_subscription_id for uniqueness (reusing existing column)
                 subscription_uuid = await conn.fetchval("""
                     INSERT INTO subscriptions (
@@ -346,7 +401,7 @@ class RazorpayService:
                     )
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                     ON CONFLICT (stripe_subscription_id) DO UPDATE SET
-                        org_id = EXCLUDED.org_id,
+                        user_id = EXCLUDED.user_id,
                         plan_id = EXCLUDED.plan_id,
                         plan = EXCLUDED.plan,
                         status = EXCLUDED.status,
@@ -359,8 +414,8 @@ class RazorpayService:
                         updated_at = NOW()
                     RETURNING id
                 """,
-                    owner_user_id,
-                    org_id,  # org_id (FK)
+                    user_id,  # user_id (FK) - mapped to email
+                    None,  # org_id = NULL (no organization needed)
                     plan_id,  # plan_id (FK)
                     plan_name,  # plan (VARCHAR) - for backward compatibility
                     'active',  # status
@@ -375,14 +430,7 @@ class RazorpayService:
                     'month',
                 )
                 
-                # Update organization's subscription_id (store the UUID as string)
-                await conn.execute("""
-                    UPDATE organizations
-                    SET subscription_id = $1
-                    WHERE org_id = $2
-                """, str(subscription_uuid), org_id)
-                
-                print(f"✅ Payment captured for org {org_id}: {plan_name} (Order: {order_id})")
+                print(f"✅ Payment captured for user {user_id} ({user_email}): {plan_name} (Order: {order_id}, Payment: {razorpay_payment_id})")
                 
             except Exception as e:
                 print(f"❌ Error processing payment capture: {e}")
@@ -411,10 +459,9 @@ class RazorpayService:
         subscription_id = subscription.get('id')
         
         async with self.pool.acquire() as conn:
-            # Get subscription record
-            # Razorpay subscription ID might be in razorpay_subscription_id or stripe_subscription_id (repurposed)
+            # Get subscription record by Razorpay subscription ID
             sub_row = await conn.fetchrow("""
-                SELECT org_id, plan_id, id FROM subscriptions
+                SELECT user_id, plan_id, id FROM subscriptions
                 WHERE razorpay_subscription_id = $1 
                    OR stripe_subscription_id = $1
             """, subscription_id)
@@ -441,15 +488,7 @@ class RazorpayService:
                 WHERE id = $2
             """, free_plan['plan_id'], sub_row['id'])
             
-            # Update organization
-            if sub_row['org_id']:
-                await conn.execute("""
-                    UPDATE organizations
-                    SET subscription_id = NULL
-                    WHERE org_id = $1
-                """, sub_row['org_id'])
-            
-            print(f"❌ Subscription cancelled: {subscription_id}")
+            print(f"❌ Subscription cancelled for user {sub_row['user_id']}: {subscription_id}")
     
     async def get_subscription_for_org(self, org_id: int) -> Optional[Dict]:
         """Get subscription details for an organization"""
@@ -613,8 +652,7 @@ class RazorpayService:
             return False
         
         try:
-            # Verify using Razorpay client
-            # Razorpay expects: order_id + "|" + payment_id
+            # Razorpay signature verification format: order_id + "|" + payment_id
             message = f"{order_id}|{payment_id}"
             secret = RAZORPAY_KEY_SECRET.encode('utf-8')
             expected_signature = hmac.new(
@@ -623,15 +661,49 @@ class RazorpayService:
                 hashlib.sha256
             ).hexdigest()
             
+            print(f"🔍 Signature verification:")
+            print(f"   Order ID: {order_id}")
+            print(f"   Payment ID: {payment_id}")
+            print(f"   Message: {message}")
+            print(f"   Expected signature: {expected_signature[:20]}...")
+            print(f"   Received signature: {signature[:20] if signature else 'None'}...")
+            
             is_valid = hmac.compare_digest(expected_signature, signature)
             
             if is_valid:
-                print(f"✅ Payment signature verified: {payment_id}")
+                print(f"✅ Payment signature verified successfully")
             else:
-                print(f"❌ Invalid payment signature")
+                print(f"❌ Invalid payment signature - signatures don't match")
             
             return is_valid
         except Exception as e:
             print(f"❌ Error verifying payment signature: {e}")
+            import traceback
+            traceback.print_exc()
             return False
+    
+    async def handle_payment_captured_sync(self, order_id: str, payment_id: str):
+        """
+        Handle payment captured synchronously (after verification)
+        Fetches payment details from Razorpay and creates subscription
+        """
+        if not self.client:
+            raise HTTPException(status_code=500, detail="Razorpay client not initialized")
+        
+        try:
+            # Fetch payment details from Razorpay
+            payment = self.client.payment.fetch(payment_id)
+            
+            if payment.get('status') != 'captured':
+                print(f"⚠️  Payment {payment_id} is not captured yet (status: {payment.get('status')})")
+                return
+            
+            # Call the existing handler
+            await self.handle_payment_captured(payment)
+            
+        except Exception as e:
+            print(f"❌ Error handling payment capture synchronously: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
