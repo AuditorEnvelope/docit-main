@@ -65,6 +65,13 @@ class GitHubDualAppHelper:
         if not app_id or not private_key:
             raise ValueError("Missing app credentials")
         
+        print(f"\n🔐 === JWT GENERATION DEBUG ===")
+        print(f"App ID: {app_id}")
+        print(f"Private Key starts with: {private_key[:50] if private_key else 'NONE'}...")
+        print(f"Private Key length: {len(private_key) if private_key else 0}")
+        print(f"Private Key has BEGIN: {'-----BEGIN' in private_key}")
+        print(f"Private Key has END: {'-----END' in private_key}")
+        
         now = datetime.utcnow()
         payload = {
             'iat': int(now.timestamp()),
@@ -74,8 +81,13 @@ class GitHubDualAppHelper:
         
         try:
             token = jwt.encode(payload, private_key, algorithm='RS256')
-            return token if isinstance(token, str) else token.decode('utf-8')
+            result = token if isinstance(token, str) else token.decode('utf-8')
+            print(f"✅ JWT generated successfully (length: {len(result)})")
+            return result
         except Exception as e:
+            print(f"❌ JWT generation failed: {e}")
+            import traceback
+            traceback.print_exc()
             logger.error(f"❌ JWT generation failed: {e}")
             raise
     

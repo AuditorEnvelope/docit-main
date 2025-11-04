@@ -47,37 +47,24 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, loading, router]);
 
-  // Fetch repositories
+  // Fetch Reader App repositories (ONLY after Reader App is installed)
   useEffect(() => {
-    const fetchRepositories = async () => {
-      if (!token) return;
-
-      setLoadingRepos(true);
-      try {
-        const response = await fetch(`${BACKEND_URL}/auth/repositories`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setRepositories(data.repositories || []);
-          console.log(
-            `✅ Loaded ${data.repositories?.length || 0} repositories`
-          );
-        } else {
-          console.error("Failed to fetch repositories");
-        }
-      } catch (error) {
-        console.error("Error fetching repositories:", error);
-      } finally {
-        setLoadingRepos(false);
+    const fetchReaderAppRepositories = async () => {
+      // Only fetch if Reader App is installed AND we have org
+      if (!token || !repositories.length || repositories.length === 0) {
+        console.log(
+          `⏭️  Skipping Reader App repository fetch - Reader App not yet installed`
+        );
+        return;
       }
+
+      console.log(
+        `📚 Reader App is installed, repositories already loaded from Step 1`
+      );
     };
 
-    fetchRepositories();
-  }, [token, user?.id]);
+    fetchReaderAppRepositories();
+  }, [token, repositories.length]);
 
   // Fetch connected organizations
   useEffect(() => {
@@ -759,9 +746,11 @@ export default function DashboardPage() {
         console.log(`✅ Loaded ${data.repositories?.length || 0} repositories`);
       } else {
         console.error("Failed to fetch repositories");
+        setRepositories([]);
       }
     } catch (error) {
       console.error("Error fetching repositories:", error);
+      setRepositories([]);
     } finally {
       setLoadingRepos(false);
     }
