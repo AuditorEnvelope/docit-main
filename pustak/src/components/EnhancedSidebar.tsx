@@ -34,7 +34,9 @@ interface RepoData {
 export function EnhancedSidebar({ onClose }: SidebarProps) {
   const [repos, setRepos] = useState<RepoData[]>([]);
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
+    new Set()
+  );
   const [loading, setLoading] = useState(true);
   const pathname = usePathname();
 
@@ -42,24 +44,24 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
     const loadRepos = async () => {
       try {
         // Get user's GitHub token from localStorage
-        const userToken = localStorage.getItem('pustak_access_token');
-        
+        const userToken = localStorage.getItem("pustak_access_token");
+
         if (!userToken) {
-          console.log('No user token available - using default repos');
+          console.log("No user token available - using default repos");
           setLoading(false);
           return;
         }
 
         // Pass user token to backend
-        const response = await fetch('/api/repositories', {
+        const response = await fetch("/api/repositories", {
           headers: {
-            'Authorization': `Bearer ${userToken}`,
+            Authorization: `Bearer ${userToken}`,
           },
         });
         if (!response.ok) {
-          throw new Error('Failed to fetch repositories');
+          throw new Error("Failed to fetch repositories");
         }
-        
+
         const reposData = await response.json();
 
         // Map repos directly - versions come from backend
@@ -67,8 +69,8 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
           name: repo.name,
           fullName: repo.full_name || repo.fullName,
           lastUpdated: repo.updated_at || repo.lastUpdated,
-          description: repo.description || 'No description available',
-          hasDocs: repo.hasDocsFolder || false,  // Use hasDocsFolder from backend
+          description: repo.description || "No description available",
+          hasDocs: repo.hasDocsFolder || false, // Use hasDocsFolder from backend
           hasDocsFolder: repo.hasDocsFolder || false,
           architectureVersions: repo.architectureVersions || [],
           workflowVersions: repo.workflowVersions || [],
@@ -250,7 +252,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                         {/* Architecture with versions */}
                         <div>
                           <button
-                            onClick={() => toggleSection(`${repo.fullName}-architecture`)}
+                            onClick={() =>
+                              toggleSection(`${repo.fullName}-architecture`)
+                            }
                             className={`flex items-center justify-between w-full p-2 text-sm rounded-md transition-colors ${
                               isActive(`/repo/${repo.fullName}/architecture`)
                                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
@@ -261,38 +265,46 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                               {getDocIcon("architecture")}
                               <span>Architecture</span>
                             </div>
-                            {repo.architectureVersions.length > 0 && (
-                              expandedSections.has(`${repo.fullName}-architecture`) ? (
+                            {repo.architectureVersions.length > 0 &&
+                              (expandedSections.has(
+                                `${repo.fullName}-architecture`
+                              ) ? (
                                 <ChevronDown className="w-3 h-3" />
                               ) : (
                                 <ChevronRight className="w-3 h-3" />
-                              )
-                            )}
-                          </button>
-                          
-                          {expandedSections.has(`${repo.fullName}-architecture`) && repo.architectureVersions.length > 0 && (
-                            <div className="ml-6 mt-1 space-y-1">
-                              {repo.architectureVersions.map((v) => (
-                                <a
-                                  key={v.version}
-                                  href={`/repo/${repo.fullName}/architecture/${v.version}`}
-                                  className={`block p-1.5 text-xs rounded transition-colors ${
-                                    isActive(`/repo/${repo.fullName}/architecture/${v.version}`)
-                                      ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
-                                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                  }`}
-                                >
-                                  {v.version.toUpperCase()}
-                                </a>
                               ))}
-                            </div>
-                          )}
+                          </button>
+
+                          {expandedSections.has(
+                            `${repo.fullName}-architecture`
+                          ) &&
+                            repo.architectureVersions.length > 0 && (
+                              <div className="ml-6 mt-1 space-y-1">
+                                {repo.architectureVersions.map((v) => (
+                                  <a
+                                    key={v.version}
+                                    href={`/repo/${repo.fullName}/architecture/${v.version}`}
+                                    className={`block p-1.5 text-xs rounded transition-colors ${
+                                      isActive(
+                                        `/repo/${repo.fullName}/architecture/${v.version}`
+                                      )
+                                        ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
+                                        : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    }`}
+                                  >
+                                    {v.version.toUpperCase()}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
                         </div>
 
                         {/* Workflow with versions */}
                         <div>
                           <button
-                            onClick={() => toggleSection(`${repo.fullName}-workflow`)}
+                            onClick={() =>
+                              toggleSection(`${repo.fullName}-workflow`)
+                            }
                             className={`flex items-center justify-between w-full p-2 text-sm rounded-md transition-colors ${
                               isActive(`/repo/${repo.fullName}/workflow`)
                                 ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
@@ -303,32 +315,36 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                               {getDocIcon("workflow")}
                               <span>Workflow</span>
                             </div>
-                            {repo.workflowVersions.length > 0 && (
-                              expandedSections.has(`${repo.fullName}-workflow`) ? (
+                            {repo.workflowVersions.length > 0 &&
+                              (expandedSections.has(
+                                `${repo.fullName}-workflow`
+                              ) ? (
                                 <ChevronDown className="w-3 h-3" />
                               ) : (
                                 <ChevronRight className="w-3 h-3" />
-                              )
-                            )}
-                          </button>
-                          
-                          {expandedSections.has(`${repo.fullName}-workflow`) && repo.workflowVersions.length > 0 && (
-                            <div className="ml-6 mt-1 space-y-1">
-                              {repo.workflowVersions.map((v) => (
-                                <a
-                                  key={v.version}
-                                  href={`/repo/${repo.fullName}/workflow/${v.version}`}
-                                  className={`block p-1.5 text-xs rounded transition-colors ${
-                                    isActive(`/repo/${repo.fullName}/workflow/${v.version}`)
-                                      ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
-                                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                  }`}
-                                >
-                                  {v.version.toUpperCase()}
-                                </a>
                               ))}
-                            </div>
-                          )}
+                          </button>
+
+                          {expandedSections.has(`${repo.fullName}-workflow`) &&
+                            repo.workflowVersions.length > 0 && (
+                              <div className="ml-6 mt-1 space-y-1">
+                                {repo.workflowVersions.map((v) => (
+                                  <a
+                                    key={v.version}
+                                    href={`/repo/${repo.fullName}/workflow/${v.version}`}
+                                    className={`block p-1.5 text-xs rounded transition-colors ${
+                                      isActive(
+                                        `/repo/${repo.fullName}/workflow/${v.version}`
+                                      )
+                                        ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
+                                        : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    }`}
+                                  >
+                                    {v.version.toUpperCase()}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
                         </div>
 
                         {/* API */}

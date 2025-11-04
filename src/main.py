@@ -1903,6 +1903,86 @@ async def verify_apps(org_id: str, user = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/v1/org/{org_id}/verify-writer-app-access")
+async def verify_writer_app_access(org_id: str, repo: str, user = Depends(get_current_user)):
+    """
+    Verify if Writer App is installed and has access to a specific docbook repository
+    """
+    try:
+        user_id = user.id if hasattr(user, 'id') else user.get('id')
+        
+        print(f"\n📋 === VERIFYING WRITER APP ACCESS ===")
+        print(f"📍 Organization: {org_id}")
+        print(f"📦 Repository: {repo}")
+        
+        dual_app = get_github_dual_app_helper()
+        
+        # Get user's GitHub token
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        # Check if Writer App is installed in the organization
+        writer_installed = False
+        installation_id = None
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = {
+                    'Authorization': f'token {github_token}',
+                    'Accept': 'application/vnd.github+json',
+                }
+                
+                url = f'https://api.github.com/orgs/{org_id}/installations'
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        installations = await response.json()
+                        writer_app_id = int(dual_app.writer_app_id) if dual_app.writer_app_id else None
+                        
+                        for inst in installations.get('installations', []):
+                            if inst.get('app_id') == writer_app_id:
+                                writer_installed = True
+                                installation_id = inst.get('id')
+                                print(f"✅ Writer App installed: {installation_id}")
+                                break
+        except Exception as e:
+            print(f"⚠️  Error checking Writer App installation: {e}")
+        
+        if not writer_installed:
+            print(f"❌ Writer App not installed")
+            return {"has_access": False, "installed": False}
+        
+        # Check if Writer App has access to the specific repo
+        try:
+            from core.app_installation_service import AppInstallationService
+            
+            if auth_service and auth_service.db_pool:
+                app_install_service = AppInstallationService(auth_service.db_pool)
+                writer_app_id = int(dual_app.writer_app_id) if dual_app.writer_app_id else None
+                
+                accessible_repos = await app_install_service.get_app_accessible_repos(org_id, writer_app_id)
+                
+                # Check if the requested repo is in the accessible repos
+                # Convert short repo name to full name if needed
+                repo_full_name = repo if '/' in repo else f"{org_id}/{repo}"
+                has_access = repo_full_name in accessible_repos
+                
+                print(f"📊 Writer App accessible repos: {accessible_repos}")
+                print(f"📦 Checking for repo: {repo_full_name}")
+                print(f"✅ Has access: {has_access}")
+                
+                return {"has_access": has_access, "installed": True, "accessible_repos": list(accessible_repos)}
+        except Exception as e:
+            print(f"⚠️  Error checking Writer App access: {e}")
+            return {"has_access": False, "installed": True}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error verifying Writer App access: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/v1/org/{org_id}/reader/repositories")
 async def get_reader_repositories(org_id: str, user = Depends(get_current_user)):
     """
@@ -1942,12 +2022,19 @@ async def get_reader_repositories(org_id: str, user = Depends(get_current_user))
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Failed to generate Reader App JWT: {str(e)}")
         
-        # Get the installation ID for this org using the JWT
+        # Get the installation ID for this org using the USER's token (not JWT)
+        # The JWT doesn't have permission to list installations, but user token does
         installation_id = None
         try:
+            # Get user's GitHub token from database
+            user_github_token = await auth_service.get_github_token(user_id)
+            if not user_github_token:
+                print(f"❌ No GitHub token found for user")
+                raise HTTPException(status_code=500, detail="User GitHub token not found")
+            
             async with aiohttp.ClientSession() as session:
                 headers = {
-                    'Authorization': f'Bearer {reader_jwt}',
+                    'Authorization': f'token {user_github_token}',
                     'Accept': 'application/vnd.github+json',
                 }
                 url = f'https://api.github.com/orgs/{org_id}/installations'
@@ -1957,14 +2044,6 @@ async def get_reader_repositories(org_id: str, user = Depends(get_current_user))
                     if response.status != 200:
                         error_text = await response.text()
                         print(f"❌ Failed to get installations ({response.status}): {error_text}")
-                        
-                        if response.status == 401:
-                            print(f"\n⚠️  401 UNAUTHORIZED - This means:")
-                            print(f"   1. The private key in .env doesn't match GitHub")
-                            print(f"   2. Go to GitHub App settings and check the private key SHA256")
-                            print(f"   3. Replace the READER_PRIVATE_KEY in .env with the current one from GitHub")
-                            raise HTTPException(status_code=500, detail="Reader App private key mismatch - check GitHub App settings")
-                        
                         raise HTTPException(status_code=500, detail="Failed to get Reader App installation")
                     
                     data = await response.json()
@@ -1981,39 +2060,70 @@ async def get_reader_repositories(org_id: str, user = Depends(get_current_user))
                     
                     if not installation_id:
                         print(f"❌ Reader App installation not found in org {org_id}")
+                        print(f"   Reader App ID we're looking for: {reader_app_id_int}")
                         raise HTTPException(status_code=500, detail="Reader App not installed in organization")
         except HTTPException:
             raise
         except Exception as e:
             print(f"❌ Error getting installation ID: {e}")
+            import traceback
+            traceback.print_exc()
             raise HTTPException(status_code=500, detail="Failed to get Reader App installation")
         
-        # Get installation token for Reader App
-        print(f"🔑 Getting installation token for installation {installation_id}...")
-        reader_app_token = await dual_app.get_reader_token(installation_id)
-        if not reader_app_token:
-            print(f"❌ Failed to get Reader App installation token")
-            raise HTTPException(status_code=500, detail="Failed to get Reader App token")
+        # Get Reader App's accessible repositories from database
+        # (GitHub API requires App JWT which keeps failing)
+        print(f"📡 Getting Reader App's accessible repositories from database...")
+        app_accessible_repos = set()
         
-        print(f"✅ Reader App installation token obtained")
-        print(f"📡 Using Reader App token to fetch repos the app can access")
+        try:
+            from core.app_installation_service import AppInstallationService
+            
+            # Use auth_service's db_pool
+            if auth_service and auth_service.db_pool:
+                app_install_service = AppInstallationService(auth_service.db_pool)
+                
+                reader_app_id = int(os.getenv('READER_APP_ID', '2072879'))
+                app_accessible_repos = await app_install_service.get_app_accessible_repos(org_id, reader_app_id)
+                
+                if app_accessible_repos:
+                    print(f"✅ Found {len(app_accessible_repos)} repos in database: {app_accessible_repos}")
+                else:
+                    print(f"⚠️  No repos found in database for app {reader_app_id}")
+                    print(f"   (App may not have been installed yet, or webhook not received)")
+            else:
+                print(f"⚠️  Database pool not available")
+                app_accessible_repos = set()
+            
+        except Exception as e:
+            print(f"⚠️  Could not get app's accessible repos from DB: {e}")
+            import traceback
+            traceback.print_exc()
+            app_accessible_repos = set()
         
-        # Fetch repositories using Reader App's token
-        # This will only return repos that the Reader App has been granted access to
+        # Now fetch all org repos
+        print(f"📡 Fetching organization repositories...")
+        
         async with aiohttp.ClientSession() as session:
             headers = {
-                'Authorization': f'token {reader_app_token}',
+                'Authorization': f'token {user_github_token}',
                 'Accept': 'application/vnd.github+json',
             }
             
-            # Fetch repos for the organization
             url = f'https://api.github.com/orgs/{org_id}/repos'
             print(f"📡 Calling: {url}")
             
             async with session.get(url, headers=headers) as response:
-                if response.status == 200:
+                if response.ok:
                     repos = await response.json()
-                    print(f"✅ Found {len(repos)} repositories that Reader App can access")
+                    print(f"✅ Got {len(repos)} repositories in org")
+                    
+                    # Filter to only repos the Reader App has access to
+                    if app_accessible_repos:
+                        filtered_repos = [r for r in repos if r['full_name'] in app_accessible_repos]
+                        print(f"📊 Filtered to {len(filtered_repos)} repos the Reader App can access")
+                    else:
+                        filtered_repos = repos
+                        print(f"⚠️  No app filter, showing all {len(filtered_repos)} org repos")
                     
                     # Filter and format repositories
                     formatted_repos = [
@@ -2026,7 +2136,7 @@ async def get_reader_repositories(org_id: str, user = Depends(get_current_user))
                             'description': repo['description'],
                             'language': repo['language']
                         }
-                        for repo in repos
+                        for repo in filtered_repos
                     ]
                     
                     print(f"📦 Formatted repos: {[r['full_name'] for r in formatted_repos]}")
