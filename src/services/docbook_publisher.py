@@ -14,11 +14,35 @@ from datetime import datetime
 import asyncpg
 from typing import Optional, Dict, Any
 
+from core.app_installation_service import AppInstallationService
+
 class DocbookPublisher:
     """Publishes documentation to docbook repo using user's OAuth token"""
     
     def __init__(self, db_pool: asyncpg.Pool):
         self.db_pool = db_pool
+        self._app_install_service: Optional[AppInstallationService] = None
+
+    @property
+    def app_install_service(self) -> AppInstallationService:
+        if not self._app_install_service:
+            self._app_install_service = AppInstallationService(self.db_pool)
+        return self._app_install_service
+
+    async def get_docbook_installation_id(self, org_id: str) -> Optional[int]:
+        """Get installation ID for writer app in the organization."""
+        try:
+            from utilities.github_dual_app_helper import get_github_dual_app_helper
+
+            dual_app = get_github_dual_app_helper()
+            if not dual_app.writer_app_id:
+                return None
+
+            writer_app_id = int(dual_app.writer_app_id)
+            return await self.app_install_service.get_app_installation_id(org_id, writer_app_id)
+        except Exception as e:
+            print(f"⚠️  Failed to get writer installation ID for {org_id}: {e}")
+            return None
     
     async def get_docbook_repo(self, user_id: str, org_id: str) -> Optional[Dict[str, str]]:
         """Get linked docbook repo for organization"""

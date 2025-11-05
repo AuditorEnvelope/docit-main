@@ -8,6 +8,7 @@ import os
 import jwt
 import codecs
 import aiohttp
+import textwrap
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
@@ -47,18 +48,52 @@ class GitHubDualAppHelper:
         """Decode private key from environment"""
         if not key_raw:
             return None
-        
-        # Remove quotes if present
-        if key_raw.startswith('"') and key_raw.endswith('"'):
-            key_raw = key_raw[1:-1]
-        
-        try:
-            # Use codecs to properly decode escape sequences
-            decoded = codecs.decode(key_raw, 'unicode_escape')
-            return decoded
-        except Exception as e:
-            logger.error(f"❌ Failed to decode key: {e}")
+
+        cleaned = key_raw.strip()
+
+        # Remove wrapping quotes if present
+        if (cleaned.startswith('"') and cleaned.endswith('"')) or (
+            cleaned.startswith("'") and cleaned.endswith("'")
+        ):
+            cleaned = cleaned[1:-1]
+
+        # First, replace common escaped sequences
+        cleaned = (
+            cleaned
+            .replace("\\r", "\r")
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+        )
+
+        decoded = cleaned
+
+        decoded = decoded.strip()
+
+        if "PRIVATE KEY" not in decoded:
+            logger.error("❌ Provided key does not appear to be a PEM formatted private key")
             return None
+
+        # Normalize PEM formatting (strip blanks, wrap to 64 chars, ensure trailing newline)
+        lines = [line.strip() for line in decoded.replace('\r', '').split('\n') if line.strip()]
+        if len(lines) < 3 or not lines[0].startswith("-----BEGIN") or not lines[-1].startswith("-----END"):
+            logger.error("❌ Private key missing PEM boundaries")
+            return None
+
+        header = lines[0]
+        footer = lines[-1]
+        body = ''.join(lines[1:-1])
+        wrapped_body = '\n'.join(textwrap.wrap(body, 64)) if body else ''
+        normalized = f"{header}\n{wrapped_body}\n{footer}\n"
+
+        logger.info(
+            "✅ Decoded private key",
+            extra={
+                "key_preview": normalized[:40],
+                "key_length": len(normalized),
+            },
+        )
+
+        return normalized
     
     def _generate_jwt(self, app_id: str, private_key: str) -> str:
         """Generate JWT for GitHub App"""
@@ -112,6 +147,7 @@ class GitHubDualAppHelper:
                 headers = {
                     'Authorization': f'Bearer {jwt_token}',
                     'Accept': 'application/vnd.github+json',
+                    'User-Agent': 'pustak-docai-app'
                 }
                 
                 url = f'https://api.github.com/app/installations/{installation_id}/access_tokens'
@@ -150,6 +186,7 @@ class GitHubDualAppHelper:
                 headers = {
                     'Authorization': f'Bearer {jwt_token}',
                     'Accept': 'application/vnd.github+json',
+                    'User-Agent': 'pustak-docai-app'
                 }
                 
                 url = f'https://api.github.com/app/installations/{installation_id}/access_tokens'

@@ -372,46 +372,102 @@ async def get_user_organizations(user = Depends(get_auth_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/docs/fetch-file")
-async def fetch_file_from_github(repo: str, filePath: str, user = Depends(get_auth_user)):
-    """Fetch a file from GitHub using user's token"""
+@app.get("/api/v1/user/organizations")
+async def get_user_organizations_v1(user = Depends(get_current_user)):
+    """Get user's GitHub organizations (v1 API)"""
     if not auth_service:
         raise HTTPException(status_code=503, detail="Auth service not available")
     
     try:
-        # Get user's GitHub token from database
-        github_token = await auth_service.get_github_token(user.id)
+        user_id = user.id if hasattr(user, 'id') else user.get('id')
+        github_token = await auth_service.get_github_token(user_id)
         if not github_token:
             raise HTTPException(status_code=401, detail="GitHub token not found")
         
-        # Fetch file from GitHub
-        import aiohttp
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"https://api.github.com/repos/{repo}/contents/{filePath}",
+                "https://api.github.com/user/orgs",
                 headers={
                     "Authorization": f"Bearer {github_token}",
                     "Accept": "application/vnd.github.v3+json",
                     "User-Agent": "Pustak-AI"
                 }
             ) as response:
+                if response.status == 200:
+                    orgs = await response.json()
+                    return {"organizations": orgs}
+                else:
+                    raise HTTPException(status_code=response.status, detail="Failed to fetch organizations")
+    except Exception as e:
+        print(f"❌ Error fetching organizations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/docs/fetch-file")
+async def fetch_file_from_github(
+    repo: str,
+    filePath: str,
+    branch: str = "staging",
+    user = Depends(get_auth_user)
+):
+    """Fetch a file from GitHub using user's token"""
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+
+    try:
+        github_token = await auth_service.get_github_token(user.id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+
+        from urllib.parse import unquote
+
+        normalized_path = unquote(filePath or "").strip("/")
+        if not normalized_path:
+            raise HTTPException(status_code=400, detail="Invalid file path")
+
+        # Legacy aliases (pre-docbook folder structure)
+        legacy_map = {
+            "summary": "docs/summary.md",
+            "api": "docs/api.md",
+            "architecture": "docs/architecture/current.md",
+            "workflow": "docs/workflow/current.md",
+            "changelog": "CHANGELOG.md",
+            "readme": "README.md",
+            "quality_report": "docs/QUALITY_REPORT.md",
+        }
+
+        legacy_key = normalized_path.lower()
+        if legacy_key in legacy_map:
+            normalized_path = legacy_map[legacy_key]
+
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            request_url = f"https://api.github.com/repos/{repo}/contents/{normalized_path}"
+            async with session.get(
+                request_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                params={"ref": branch}
+            ) as response:
                 if response.status == 404:
                     raise HTTPException(status_code=404, detail="File not found")
-                if response.status == 401 or response.status == 403:
+                if response.status in (401, 403):
                     raise HTTPException(status_code=403, detail="Access denied")
                 if not response.ok:
                     raise HTTPException(status_code=response.status, detail="Failed to fetch file")
-                
+
                 data = await response.json()
-                
-                # Decode base64 content
+
                 if data.get("encoding") == "base64" and data.get("content"):
                     import base64
                     content = base64.b64decode(data["content"].replace("\n", "")).decode("utf-8")
-                    return {"content": content, "fileName": filePath}
-                
-                return {"content": data.get("content", ""), "fileName": filePath}
-    
+                    return {"content": content, "fileName": normalized_path}
+
+                return {"content": data.get("content", ""), "fileName": normalized_path}
+
     except HTTPException:
         raise
     except Exception as e:
@@ -439,15 +495,15 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
         from processors.comprehensive_doc_generator import generate_comprehensive_documentation
         from processors.smart_processor import clone_repo_via_token
         
-        # Get user's GitHub token
+        # Get user's GitHub token (Reader token for cloning)
         github_token = await auth_service.get_github_token(user.id)
         if not github_token:
             raise HTTPException(status_code=401, detail="GitHub token not found")
-        
+
         # Parse org and repo from full name
         if '/' not in repo_name:
             raise HTTPException(status_code=400, detail="Invalid repo name format. Use org/repo")
-        
+
         org_id, source_repo = repo_name.split('/', 1)
         
         print(f"🚀 Generating docs for {repo_name} (V4)...")
@@ -477,19 +533,30 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
             print(f"✅ Documentation generated for {repo_name}")
             
             # ⭐ NEW: Push to docbook repo (V4 mode)
-            from services.docbook_publisher import DocbookPublisher
             from processors.smart_processor import push_to_docbook_v4
             
             print(f"📚 V4 Mode - Publishing to docbook repo (staging branch)")
             
-            # Get Writer token for docbook publishing
-            writer_token = github_token  # Use user's token for now
+            # Get Writer token for docbook publishing (requires org installation)
             dual_app = get_github_dual_app_helper()
-            if dual_app.dual_app_mode:
-                print(f"✅ Dual-app mode enabled, attempting to get Writer token")
-                # Note: In manual trigger mode, we don't have installation_id
-                # So we'll use the user's OAuth token instead
-                # In webhook mode, installation_id will be available
+            writer_token = None
+
+            # Try to find the writer app installation for this org
+            installation_id = None
+            if docbook_service := docbook_publisher:
+                installation_id = await docbook_service.get_docbook_installation_id(org_id)
+
+            if not installation_id:
+                raise HTTPException(status_code=412, detail="Writer app is not installed for this organization. Please install pustak-publisher-ai.")
+
+            try:
+                writer_token = await dual_app.get_writer_token(installation_id)
+            except Exception as e:
+                print(f"❌ Unable to obtain writer token: {e}")
+                raise HTTPException(status_code=500, detail="Failed to obtain writer credentials")
+
+            if not writer_token:
+                raise HTTPException(status_code=500, detail="Writer token not available")
             
             # Create synthetic payload for docbook publishing
             payload = {
@@ -510,7 +577,15 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
             }
             
             # Push to docbook
-            await push_to_docbook_v4(tmpdir, {"full_name": repo_name, "name": source_repo}, analysis, "manual-trigger", writer_token, payload)
+            await push_to_docbook_v4(
+                tmpdir,
+                {"full_name": repo_name, "name": source_repo},
+                analysis,
+                "manual-trigger",
+                writer_token,
+                payload,
+                installation_id=installation_id,
+            )
             
             print(f"✅ Documentation published to docbook/staging")
             
@@ -1002,6 +1077,90 @@ async def check_docbook_exists(
     except Exception as e:
         print(f"❌ Error checking docbook: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/docbook/{org_id}/structure")
+async def get_docbook_structure(
+    org_id: str,
+    branch: str = "staging",
+    user = Depends(get_current_user)
+):
+    """
+    Get the folder structure of a docbook repo on a specific branch
+    
+    Returns:
+    - folders: List of folders with their files (recursively)
+    - branch: The branch that was queried
+    """
+    async def get_folder_contents(session, repo_full_name, path, branch, github_token):
+        """Recursively get folder contents"""
+        url = f"https://api.github.com/repos/{repo_full_name}/contents/{path}?ref={branch}"
+        async with session.get(
+            url,
+            headers={
+                "Authorization": f"Bearer {github_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "Pustak-AI"
+            }
+        ) as response:
+            if response.status != 200:
+                return []
+                
+            contents = await response.json()
+            result = []
+            
+            for item in contents:
+                if item['type'] == 'dir':
+                    # Recursively get subfolder contents
+                    children = await get_folder_contents(
+                        session, repo_full_name, 
+                        f"{path}/{item['name']}" if path else item['name'],
+                        branch, github_token
+                    )
+                    result.append({
+                        "name": item['name'],
+                        "type": "folder",
+                        "files": children
+                    })
+                else:
+                    result.append({
+                        "name": item['name'],
+                        "type": "file"
+                    })
+            return result
+    
+    try:
+        user_id = user.id if hasattr(user, 'id') else user.get('id')
+        
+        # Get user's GitHub token
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="No GitHub token found")
+        
+        # Get docbook repo name
+        docbook_repo = f"pustak-docbook-{org_id}"
+        docbook_full_name = f"{org_id}/{docbook_repo}"
+        
+        print(f"📁 Getting structure for {docbook_full_name} on branch {branch}")
+        
+        # Get folder structure from GitHub
+        async with aiohttp.ClientSession() as session:
+            # Get root contents
+            contents = await get_folder_contents(session, docbook_full_name, "", branch, github_token)
+            
+            print(f"✅ Found {len(contents)} items in {docbook_full_name}")
+            return {
+                "org_id": org_id,
+                "repo": docbook_full_name,
+                "branch": branch,
+                "folders": contents
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error getting docbook structure: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 class PublishDocbookRequest(BaseModel):
     org_id: str

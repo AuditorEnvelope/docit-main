@@ -7,6 +7,7 @@ from aiolimiter import AsyncLimiter
 from webhooks.github_app import get_installation_token
 from utilities.llm_provider_v2 import get_rotator
 from utilities.github_dual_app_helper import get_github_dual_app_helper
+from core.app_installation_service import AppInstallationService
 from pathlib import Path
 from processors.comprehensive_doc_generator import generate_comprehensive_documentation
 
@@ -158,20 +159,54 @@ async def handle_push_event(payload, github_token=None, doc_persona="internal"):
         
         # ⭐ V4: Push to docbook repo instead of source repo
         print(f"📚 V4 Mode - Publishing to docbook repo (staging branch)")
-        
-        # Get Writer token for docbook publishing
-        writer_token = token  # Use same token for now (will be Writer token when dual-app enabled)
-        if installation_id:
-            try:
-                dual_app = get_github_dual_app_helper()
-                writer_token = await dual_app.get_writer_token(installation_id)
-                if writer_token:
-                    print(f"✅ Using Writer token for docbook publish")
-            except Exception as e:
-                print(f"⚠️  Could not get Writer token, using Reader token: {e}")
-                writer_token = token
-        
-        await push_to_docbook_v4(tmpdir, repo, analysis, after_sha, writer_token, payload)
+
+        dual_app = get_github_dual_app_helper()
+
+        writer_installation_id = installation_id
+
+        if dual_app.dual_app_mode and dual_app.writer_app_id:
+            writer_installation_id = None
+            org_id = payload.get("_org_id")
+            if not org_id and repo_full and "/" in repo_full:
+                org_id = repo_full.split("/", 1)[0]
+
+            db_pool = payload.get("_db_pool")
+
+            if org_id and db_pool:
+                try:
+                    service = AppInstallationService(db_pool)
+                    writer_installation_id = await service.get_app_installation_id(
+                        org_id,
+                        int(dual_app.writer_app_id),
+                    )
+                    if writer_installation_id:
+                        print(
+                            f"✅ Resolved writer installation ID {writer_installation_id} for org {org_id}"
+                        )
+                except Exception as lookup_error:
+                    print(f"⚠️  Could not resolve writer installation ID from DB: {lookup_error}")
+
+            if not writer_installation_id:
+                writer_installation_id = installation_id
+
+        if not writer_installation_id:
+            raise RuntimeError("Writer app installation ID missing for docbook publish")
+
+        writer_token = await dual_app.get_writer_token(writer_installation_id)
+        if not writer_token:
+            raise RuntimeError("Writer token unavailable for docbook publish")
+
+        print(f"✅ Using Writer token for docbook publish")
+
+        await push_to_docbook_v4(
+            tmpdir,
+            repo,
+            analysis,
+            after_sha,
+            writer_token,
+            payload,
+            installation_id=installation_id,
+        )
     
     except Exception as e:
         print(f"❌ Error in handle_push_event: {e}")
