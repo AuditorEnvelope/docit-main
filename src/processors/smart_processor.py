@@ -6,7 +6,7 @@ import re  # Added for regex pattern matching
 from aiolimiter import AsyncLimiter
 from webhooks.github_app import get_installation_token
 from utilities.llm_provider_v2 import get_rotator
-from utilities.github_dual_app_helper import get_github_dual_app_helper, GitHubDualAppHelper
+from utilities.github_dual_app_helper import get_github_dual_app_helper
 from core.app_installation_service import AppInstallationService
 from pathlib import Path
 from processors.comprehensive_doc_generator import generate_comprehensive_documentation
@@ -898,13 +898,12 @@ async def push_to_docbook_v4(tmpdir, repo, analysis, commit_sha, token, payload)
                 writer_token = await dual_app.get_writer_token(installation_id)
                 if not writer_token:
                     print("❌ Failed to get writer token: No token returned from dual app helper")
-                    return
+                    return False
                     
                 print("✅ Successfully obtained writer token")
                 
-                        # Publish to docbook with the obtained token
+                # Publish to docbook with the obtained token
                 print(f"📚 AUTO-PUBLISHING to docbook/staging...")
-                publisher = DocbookPublisher(db_pool)
                 result = await publisher.publish_to_docbook(
                     repo_full,
                     str(docs_dir),
