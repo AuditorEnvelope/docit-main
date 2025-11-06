@@ -4,9 +4,11 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:800
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { orgId: string } }
+  context: { params: { orgId: string } | Promise<{ orgId: string }> }
 ) {
   try {
+    // Handle both direct params and Promise<params>
+    const params = await (context.params instanceof Promise ? context.params : Promise.resolve(context.params));
     const { orgId } = params;
     const branch = request.nextUrl.searchParams.get("branch") || "staging";
     const authHeader = request.headers.get("authorization");

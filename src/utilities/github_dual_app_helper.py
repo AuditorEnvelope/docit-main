@@ -1,16 +1,18 @@
 """
-GitHub Dual App Helper - Manage Reader and Writer apps
-Handles separate token generation for read and write operations
-Backward compatible with single app (lekhak-ai)
+GitHub Dual App Helper - FIXED VERSION
+Key fixes:
+1. JWT iat timing (subtract 60 seconds for clock skew)
+2. Simplified private key loading (matching test_push_env.py)
+3. Correct API headers (matching test_push_env.py)
 """
 
 import os
 import jwt
-import codecs
 import aiohttp
-import textwrap
+import time
 from datetime import datetime, timedelta
 from typing import Optional
+from pathlib import Path
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,15 +24,27 @@ class GitHubDualAppHelper:
     def __init__(self):
         # Reader App Config
         self.reader_app_id = os.getenv("READER_APP_ID")
-        self.reader_private_key = self._decode_key(os.getenv("READER_PRIVATE_KEY"))
+        self.reader_private_key = self._load_private_key_simple(
+            env_key_var="READER_PRIVATE_KEY",
+            path_env_var="READER_PRIVATE_KEY_PATH",
+            default_filename="pustak-reader.private-key.pem",
+        )
         
         # Writer App Config
         self.writer_app_id = os.getenv("WRITER_APP_ID")
-        self.writer_private_key = self._decode_key(os.getenv("WRITER_PRIVATE_KEY"))
+        self.writer_private_key = self._load_private_key_simple(
+            env_key_var="WRITER_PRIVATE_KEY",
+            path_env_var="WRITER_PRIVATE_KEY_PATH",
+            default_filename="pustak-publisher-ai.private-key.pem",
+        )
         
         # Fallback to old single app (for backward compatibility)
         self.github_app_id = os.getenv("GITHUB_APP_ID")
-        self.github_private_key = self._decode_key(os.getenv("GITHUB_PRIVATE_KEY"))
+        self.github_private_key = self._load_private_key_simple(
+            env_key_var="GITHUB_PRIVATE_KEY",
+            path_env_var="GITHUB_PRIVATE_KEY_PATH",
+            default_filename="pustak-github-app.private-key.pem",
+        )
         
         # Determine which mode we're in
         self.dual_app_mode = bool(self.reader_app_id and self.reader_private_key and 
@@ -44,59 +58,62 @@ class GitHubDualAppHelper:
             logger.info(f"⚠️  Dual-app mode disabled, using fallback single app")
             logger.info(f"   GitHub App ID: {self.github_app_id}")
     
-    def _decode_key(self, key_raw: str) -> Optional[str]:
-        """Decode private key from environment"""
-        if not key_raw:
-            return None
-
-        cleaned = key_raw.strip()
-
-        # Remove wrapping quotes if present
-        if (cleaned.startswith('"') and cleaned.endswith('"')) or (
-            cleaned.startswith("'") and cleaned.endswith("'")
-        ):
-            cleaned = cleaned[1:-1]
-
-        # First, replace common escaped sequences
-        cleaned = (
-            cleaned
-            .replace("\\r", "\r")
-            .replace("\\n", "\n")
-            .replace("\\t", "\t")
+    def _load_private_key_simple(
+        self,
+        env_key_var: str,
+        path_env_var: str,
+        default_filename: str,
+    ) -> Optional[str]:
+        """
+        SIMPLIFIED private key loading (matching test_push_env.py)
+        This is the key fix - keep it simple and don't corrupt the key!
+        """
+        # 1. Try environment variable first
+        private_key = os.getenv(env_key_var)
+        if private_key:
+            # Simple handling - just replace escaped newlines
+            private_key = private_key.replace('\\n', '\n')
+            logger.info(f"✅ Loaded {env_key_var} from environment")
+            return private_key
+        
+        # 2. Try explicit path via env
+        explicit_path = os.getenv(path_env_var)
+        if explicit_path and os.path.exists(explicit_path):
+            try:
+                with open(explicit_path, 'r') as f:
+                    private_key = f.read()
+                logger.info(f"✅ Loaded private key from {explicit_path}")
+                return private_key
+            except Exception as e:
+                logger.error(f"❌ Failed to load from {explicit_path}: {e}")
+        
+        # 3. Try common fallback locations
+        candidate_paths = [
+            Path.cwd() / default_filename,
+            Path.cwd() / "keys" / default_filename,
+            Path.home() / default_filename,
+            Path.home() / ".ssh" / default_filename,
+        ]
+        
+        for candidate in candidate_paths:
+            if candidate.exists():
+                try:
+                    private_key = candidate.read_text()
+                    logger.info(f"✅ Loaded private key from {candidate}")
+                    return private_key
+                except Exception as e:
+                    logger.error(f"❌ Failed to load from {candidate}: {e}")
+        
+        logger.warning(
+            f"⚠️  Private key for {env_key_var} not found. Configure {env_key_var} or {path_env_var}."
         )
-
-        decoded = cleaned
-
-        decoded = decoded.strip()
-
-        if "PRIVATE KEY" not in decoded:
-            logger.error("❌ Provided key does not appear to be a PEM formatted private key")
-            return None
-
-        # Normalize PEM formatting (strip blanks, wrap to 64 chars, ensure trailing newline)
-        lines = [line.strip() for line in decoded.replace('\r', '').split('\n') if line.strip()]
-        if len(lines) < 3 or not lines[0].startswith("-----BEGIN") or not lines[-1].startswith("-----END"):
-            logger.error("❌ Private key missing PEM boundaries")
-            return None
-
-        header = lines[0]
-        footer = lines[-1]
-        body = ''.join(lines[1:-1])
-        wrapped_body = '\n'.join(textwrap.wrap(body, 64)) if body else ''
-        normalized = f"{header}\n{wrapped_body}\n{footer}\n"
-
-        logger.info(
-            "✅ Decoded private key",
-            extra={
-                "key_preview": normalized[:40],
-                "key_length": len(normalized),
-            },
-        )
-
-        return normalized
+        return None
     
     def _generate_jwt(self, app_id: str, private_key: str) -> str:
-        """Generate JWT for GitHub App"""
+        """
+        Generate JWT for GitHub App - FIXED VERSION
+        Key fix: Use time.time() - 60 for iat (clock skew handling)
+        """
         if not app_id or not private_key:
             raise ValueError("Missing app credentials")
         
@@ -107,10 +124,10 @@ class GitHubDualAppHelper:
         print(f"Private Key has BEGIN: {'-----BEGIN' in private_key}")
         print(f"Private Key has END: {'-----END' in private_key}")
         
-        now = datetime.utcnow()
+        # FIX: Match test_push_env.py exactly
         payload = {
-            'iat': int(now.timestamp()),
-            'exp': int((now + timedelta(minutes=10)).timestamp()),
+            'iat': int(time.time()) - 60,  # 60 seconds in the past (clock skew)
+            'exp': int(time.time()) + 600,  # 10 minutes in the future
             'iss': app_id
         }
         
@@ -118,6 +135,8 @@ class GitHubDualAppHelper:
             token = jwt.encode(payload, private_key, algorithm='RS256')
             result = token if isinstance(token, str) else token.decode('utf-8')
             print(f"✅ JWT generated successfully (length: {len(result)})")
+            print(f"   iat: {payload['iat']} (60s ago)")
+            print(f"   exp: {payload['exp']} (10m from now)")
             return result
         except Exception as e:
             print(f"❌ JWT generation failed: {e}")
@@ -144,25 +163,35 @@ class GitHubDualAppHelper:
             jwt_token = self._generate_jwt(app_id, private_key)
             
             async with aiohttp.ClientSession() as session:
+                # FIX: Match test_push_env.py headers exactly
                 headers = {
                     'Authorization': f'Bearer {jwt_token}',
                     'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28',  # Added!
                     'User-Agent': 'pustak-docai-app'
                 }
                 
                 url = f'https://api.github.com/app/installations/{installation_id}/access_tokens'
                 
+                print(f"🔧 POST {url}")
+                print(f"🔧 Headers: {headers}")
+                
                 async with session.post(url, headers=headers) as response:
+                    response_text = await response.text()
+                    print(f"🔧 Response status: {response.status}")
+                    print(f"🔧 Response: {response_text[:200]}...")
+                    
                     if response.status == 201:
                         data = await response.json()
                         logger.info(f"✅ Got {app_name} token for installation {installation_id}")
                         return data['token']
                     else:
-                        error = await response.text()
-                        logger.error(f"❌ Failed to get {app_name} token: {response.status} - {error}")
+                        logger.error(f"❌ Failed to get {app_name} token: {response.status} - {response_text}")
                         return None
         except Exception as e:
             logger.error(f"❌ Error getting reader token: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     async def get_writer_token(self, installation_id: int) -> Optional[str]:
@@ -183,25 +212,35 @@ class GitHubDualAppHelper:
             jwt_token = self._generate_jwt(app_id, private_key)
             
             async with aiohttp.ClientSession() as session:
+                # FIX: Match test_push_env.py headers exactly
                 headers = {
                     'Authorization': f'Bearer {jwt_token}',
                     'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28',  # Added!
                     'User-Agent': 'pustak-docai-app'
                 }
                 
                 url = f'https://api.github.com/app/installations/{installation_id}/access_tokens'
                 
+                print(f"🔧 POST {url}")
+                print(f"🔧 Headers: {headers}")
+                
                 async with session.post(url, headers=headers) as response:
+                    response_text = await response.text()
+                    print(f"🔧 Response status: {response.status}")
+                    print(f"🔧 Response: {response_text[:200]}...")
+                    
                     if response.status == 201:
                         data = await response.json()
                         logger.info(f"✅ Got {app_name} token for installation {installation_id}")
                         return data['token']
                     else:
-                        error = await response.text()
-                        logger.error(f"❌ Failed to get {app_name} token: {response.status} - {error}")
+                        logger.error(f"❌ Failed to get {app_name} token: {response.status} - {response_text}")
                         return None
         except Exception as e:
             logger.error(f"❌ Error getting writer token: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     async def verify_repo_access(self, repo_full_name: str, token: str, access_type: str = "read") -> bool:

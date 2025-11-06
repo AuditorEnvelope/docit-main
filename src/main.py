@@ -12,6 +12,9 @@ import hmac
 import hashlib
 import json
 import base64
+import tempfile
+import shutil
+from pathlib import Path
 from typing import Dict, Any
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +30,7 @@ from core.quality_checker import DocumentationQualityChecker, DocumentationQuali
 # Import business services
 from services.subscription_service import SubscriptionService
 from services.overlay_service import OverlayService
+from services.docbook_publisher import DocbookPublisher
 
 # Import processors
 from processors.smart_processor import handle_push_event as legacy_handle_push
@@ -485,7 +489,16 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
     Publishes to docbook repo staging branch instead of source repo
     Uses user's OAuth token for transparent commits
     """
-    if not auth_service or not commit_bus or not commit_bus.pool:
+    # Initialize services
+    from core.commit_bus import CommitBusService
+    import os
+    
+    # Initialize CommitBusService
+    db_url = os.getenv("DATABASE_URL")
+    commit_bus = CommitBusService(db_url)
+    await commit_bus.init_pool()
+    
+    if not auth_service or not commit_bus.pool:
         raise HTTPException(status_code=503, detail="Services not available")
     
     try:
@@ -534,17 +547,19 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
             
             # ⭐ NEW: Push to docbook repo (V4 mode)
             from processors.smart_processor import push_to_docbook_v4
+            from services.docbook_publisher import DocbookPublisher
             
             print(f"📚 V4 Mode - Publishing to docbook repo (staging branch)")
+            
+            # Initialize DocbookPublisher with the database pool
+            docbook_service = DocbookPublisher(commit_bus.pool)
             
             # Get Writer token for docbook publishing (requires org installation)
             dual_app = get_github_dual_app_helper()
             writer_token = None
 
             # Try to find the writer app installation for this org
-            installation_id = None
-            if docbook_service := docbook_publisher:
-                installation_id = await docbook_service.get_docbook_installation_id(org_id)
+            installation_id = await docbook_service.get_docbook_installation_id(org_id)
 
             if not installation_id:
                 raise HTTPException(status_code=412, detail="Writer app is not installed for this organization. Please install pustak-publisher-ai.")
@@ -584,7 +599,6 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
                 "manual-trigger",
                 writer_token,
                 payload,
-                installation_id=installation_id,
             )
             
             print(f"✅ Documentation published to docbook/staging")
@@ -1186,88 +1200,51 @@ async def publish_to_docbook(
     if not commit_bus or not commit_bus.pool:
         raise HTTPException(status_code=503, detail="Database not available")
     
+    tmp_docs_dir = Path(tempfile.mkdtemp(prefix="docai_manual_docs_"))
     try:
         user_id = user.get('id') if isinstance(user, dict) else user.id
         org_id = request.org_id
         repo_name = request.repo_name
         docs_content = request.docs_content
         commit_message = request.message
-        
-        # Get user's GitHub token
-        github_token = await auth_service.get_github_token(user_id)
-        if not github_token:
-            raise HTTPException(status_code=401, detail="No GitHub token found")
-        
-        # Get docbook repo info
-        async with commit_bus.pool.acquire() as conn:
-            docbook = await conn.fetchrow("""
-                SELECT docbook_full_name, docbook_url
-                FROM docbook_repos
-                WHERE user_id = $1 AND org_id = $2 AND is_active = TRUE
-            """, user_id, org_id)
-        
-        if not docbook:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No docbook linked for {org_id}"
-            )
-        
-        docbook_full_name = docbook['docbook_full_name']
-        
-        # Create commit in staging branch
-        # This is a simplified version - full implementation would handle multiple files
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                'Authorization': f'token {github_token}',
-                'Accept': 'application/vnd.github.v3+json'
-            }
-            
-            # Create commit with docs
-            # Path: {repo_name}/internal/README.md, {repo_name}/developer/README.md, etc.
-            commit_data = {
-                "message": commit_message,
-                "branch": "staging",
-                "committer": {
-                    "name": "Lekhak AI",
-                    "email": "lekhak@ai.com"
-                },
-                "content": base64.b64encode(
-                    json.dumps(docs_content, indent=2).encode()
-                ).decode()
-            }
-            
-            # For now, create a summary file
-            async with session.put(
-                f'https://api.github.com/repos/{docbook_full_name}/contents/{repo_name}/SUMMARY.md',
-                headers=headers,
-                json={
-                    "message": commit_message,
-                    "branch": "staging",
-                    "content": base64.b64encode(
-                        f"# {repo_name} Documentation\n\nGenerated by Lekhak AI".encode()
-                    ).decode()
-                }
-            ) as resp:
-                if resp.status not in [200, 201]:
-                    error = await resp.text()
-                    print(f"❌ Failed to publish: {resp.status} - {error}")
-                    raise HTTPException(
-                        status_code=resp.status,
-                        detail=f"Failed to publish to docbook: {error}"
-                    )
-                
-                commit_resp = await resp.json()
-        
-        print(f"✅ Published docs to {docbook_full_name}/staging")
-        
+
+        docs_dir = tmp_docs_dir / "docs"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+
+        summary_path = docs_dir / "SUMMARY.md"
+        if isinstance(docs_content, dict):
+            summary_body = docs_content.get("summary") or json.dumps(docs_content, indent=2)
+        else:
+            summary_body = str(docs_content)
+
+        summary_content = (
+            f"# {repo_name} Documentation\n\n"
+            f"Generated by DocAI manual publish endpoint.\n\n"
+            f"````\n{summary_body}\n````\n"
+        )
+        summary_path.write_text(summary_content, encoding="utf-8")
+
+        publisher = DocbookPublisher(commit_bus.pool)
+        result = await publisher.publish_to_docbook(
+            user_id=str(user_id),
+            org_id=org_id,
+            source_repo_name=repo_name,
+            docs_dir=docs_dir,
+            commit_message=commit_message,
+        )
+
+        if result.get("status") != "published_to_staging":
+            raise HTTPException(status_code=500, detail=result.get("message", "Publish failed"))
+
         return {
-            "status": "published_to_staging",
+            "status": result.get("status"),
             "org_id": org_id,
             "repo_name": repo_name,
-            "docbook_repo": docbook_full_name,
-            "branch": "staging",
-            "message": f"Documentation published to staging branch. Please review and approve to merge to main.",
-            "review_url": f"{docbook['docbook_url']}/compare/main...staging"
+            "docbook_repo": result.get("docbook_repo"),
+            "branch": result.get("branch", "staging"),
+            "message": result.get("message"),
+            "review_url": result.get("review_url"),
+            "commit_message": result.get("commit_message"),
         }
     except HTTPException:
         raise
@@ -1276,6 +1253,8 @@ async def publish_to_docbook(
         import traceback
         print(f"📋 Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        shutil.rmtree(tmp_docs_dir, ignore_errors=True)
 
 class MergeDocbookRequest(BaseModel):
     org_id: str

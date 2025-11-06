@@ -205,7 +205,6 @@ async def handle_push_event(payload, github_token=None, doc_persona="internal"):
             after_sha,
             writer_token,
             payload,
-            installation_id=installation_id,
         )
     
     except Exception as e:
@@ -878,6 +877,31 @@ async def push_to_docbook_v4(tmpdir, repo, analysis, commit_sha, token, payload)
             print(f"⚠️  No database pool in payload, skipping docbook publish")
             print(f"   (This is normal for webhook mode - use event_consumer for auto-publish)")
             return
+
+        # Get writer token using dual app helper
+        try:
+            print("🔑 Getting writer token using dual app helper...")
+            dual_app = get_github_dual_app_helper()
+            
+            # Get installation ID for writer app
+            publisher = DocbookPublisher(db_pool)
+            installation_id = await publisher.get_docbook_installation_id(org_id)
+            if not installation_id:
+                print("❌ Failed to get installation ID for writer app")
+                return
+                
+            # Get writer token with installation ID
+            writer_token = await dual_app.get_writer_token(installation_id)
+            if not writer_token:
+                print("❌ Failed to get writer token: No token returned from dual app helper")
+                return
+                
+            print("✅ Successfully obtained writer token")
+        except Exception as e:
+            print(f"❌ Failed to get writer token: {e}")
+            import traceback
+            traceback.print_exc()
+            return
         
         # Publish to docbook
         print(f"📚 AUTO-PUBLISHING to docbook/staging...")
@@ -887,7 +911,8 @@ async def push_to_docbook_v4(tmpdir, repo, analysis, commit_sha, token, payload)
             org_id=org_id,
             source_repo_name=source_repo,
             docs_dir=docs_dir,
-            user_token=token,
+            writer_token=writer_token,
+            installation_id=installation_id,
             commit_message=f"docs: {analysis.get('type', 'update')} - {analysis.get('title', 'Auto-generated')}"
         )
         
@@ -901,4 +926,5 @@ async def push_to_docbook_v4(tmpdir, repo, analysis, commit_sha, token, payload)
     except Exception as e:
         print(f"⚠️  Auto-publish error: {e}")
         import traceback
+        traceback.print_exc()
         traceback.print_exc()
