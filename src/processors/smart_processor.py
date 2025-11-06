@@ -884,57 +884,56 @@ async def push_to_docbook_v4(tmpdir, repo, analysis, commit_sha, token, payload)
             dual_app = get_github_dual_app_helper()
             if not dual_app:
                 print("❌ Failed to initialize GitHubDualAppHelper")
-                return None
+                return
             
             # Get installation ID for writer app
             publisher = DocbookPublisher(db_pool)
             installation_id = await publisher.get_docbook_installation_id(org_id)
             if not installation_id:
                 print("❌ Failed to get installation ID for writer app")
-                return None
+                return
                 
             # Get writer token with installation ID
             try:
                 writer_token = await dual_app.get_writer_token(installation_id)
                 if not writer_token:
                     print("❌ Failed to get writer token: No token returned from dual app helper")
-                    return None
+                    return
                     
                 print("✅ Successfully obtained writer token")
-                return writer_token
+                
+                        # Publish to docbook with the obtained token
+                print(f"📚 AUTO-PUBLISHING to docbook/staging...")
+                publisher = DocbookPublisher(db_pool)
+                result = await publisher.publish_to_docbook(
+                    repo_full,
+                    str(docs_dir),
+                    commit_sha,
+                    writer_token,
+                    branch="staging"
+                )
+                
+                if result:
+                    print("✅ Successfully published to docbook")
+                    return True
+                else:
+                    print("❌ Failed to publish to docbook")
+                    return False
+                
             except Exception as e:
-                print(f"❌ Error getting writer token: {str(e)}")
+                print(f"❌ Error in docbook publishing: {str(e)}")
                 import traceback
                 traceback.print_exc()
-                return None
+                return False
+                
         except Exception as e:
             print(f"❌ Failed to get writer token: {e}")
             import traceback
             traceback.print_exc()
-            return
-        
-        # Publish to docbook
-        print(f"📚 AUTO-PUBLISHING to docbook/staging...")
-        publisher = DocbookPublisher(db_pool)
-        result = await publisher.publish_to_docbook(
-            user_id=user_id,
-            org_id=org_id,
-            source_repo_name=source_repo,
-            docs_dir=docs_dir,
-            writer_token=writer_token,
-            installation_id=installation_id,
-            commit_message=f"docs: {analysis.get('type', 'update')} - {analysis.get('title', 'Auto-generated')}"
-        )
-        
-        if result.get('status') == 'published_to_staging':
-            print(f"✅ AUTO-PUBLISHED to docbook/staging!")
-            print(f"   Repo: {result.get('docbook_repo')}")
-            print(f"   User can review & approve in Pending Reviews tab")
-        else:
-            print(f"⚠️  Auto-publish result: {result.get('status')}")
-    
+            return False
+            
     except Exception as e:
         print(f"⚠️  Auto-publish error: {e}")
         import traceback
         traceback.print_exc()
-        traceback.print_exc()
+        return False
