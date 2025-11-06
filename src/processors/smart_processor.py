@@ -6,7 +6,7 @@ import re  # Added for regex pattern matching
 from aiolimiter import AsyncLimiter
 from webhooks.github_app import get_installation_token
 from utilities.llm_provider_v2 import get_rotator
-from utilities.github_dual_app_helper import get_github_dual_app_helper
+from utilities.github_dual_app_helper import get_github_dual_app_helper, GitHubDualAppHelper
 from core.app_installation_service import AppInstallationService
 from pathlib import Path
 from processors.comprehensive_doc_generator import generate_comprehensive_documentation
