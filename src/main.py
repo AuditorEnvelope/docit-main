@@ -12,6 +12,9 @@ import hmac
 import hashlib
 import json
 import base64
+import tempfile
+import shutil
+from pathlib import Path
 from typing import Dict, Any
 from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,9 +30,16 @@ from core.quality_checker import DocumentationQualityChecker, DocumentationQuali
 # Import business services
 from services.subscription_service import SubscriptionService
 from services.overlay_service import OverlayService
+from services.docbook_publisher import DocbookPublisher
 
 # Import processors
 from processors.smart_processor import handle_push_event as legacy_handle_push
+
+# Import utilities
+from utilities.github_dual_app_helper import get_github_dual_app_helper
+
+# Import routes
+from routes.github_app_installation import router as app_installation_router
 
 # Import webhooks
 from webhooks.webhook_multi_org import webhook_multi_org
@@ -63,6 +73,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(app_installation_router)
 
 # Configuration
 WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
@@ -363,46 +376,102 @@ async def get_user_organizations(user = Depends(get_auth_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/docs/fetch-file")
-async def fetch_file_from_github(repo: str, filePath: str, user = Depends(get_auth_user)):
-    """Fetch a file from GitHub using user's token"""
+@app.get("/api/v1/user/organizations")
+async def get_user_organizations_v1(user = Depends(get_current_user)):
+    """Get user's GitHub organizations (v1 API)"""
     if not auth_service:
         raise HTTPException(status_code=503, detail="Auth service not available")
     
     try:
-        # Get user's GitHub token from database
-        github_token = await auth_service.get_github_token(user.id)
+        user_id = user.id if hasattr(user, 'id') else user.get('id')
+        github_token = await auth_service.get_github_token(user_id)
         if not github_token:
             raise HTTPException(status_code=401, detail="GitHub token not found")
         
-        # Fetch file from GitHub
-        import aiohttp
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"https://api.github.com/repos/{repo}/contents/{filePath}",
+                "https://api.github.com/user/orgs",
                 headers={
                     "Authorization": f"Bearer {github_token}",
                     "Accept": "application/vnd.github.v3+json",
                     "User-Agent": "Pustak-AI"
                 }
             ) as response:
+                if response.status == 200:
+                    orgs = await response.json()
+                    return {"organizations": orgs}
+                else:
+                    raise HTTPException(status_code=response.status, detail="Failed to fetch organizations")
+    except Exception as e:
+        print(f"❌ Error fetching organizations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/docs/fetch-file")
+async def fetch_file_from_github(
+    repo: str,
+    filePath: str,
+    branch: str = "staging",
+    user = Depends(get_auth_user)
+):
+    """Fetch a file from GitHub using user's token"""
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+
+    try:
+        github_token = await auth_service.get_github_token(user.id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+
+        from urllib.parse import unquote
+
+        normalized_path = unquote(filePath or "").strip("/")
+        if not normalized_path:
+            raise HTTPException(status_code=400, detail="Invalid file path")
+
+        # Legacy aliases (pre-docbook folder structure)
+        legacy_map = {
+            "summary": "docs/summary.md",
+            "api": "docs/api.md",
+            "architecture": "docs/architecture/current.md",
+            "workflow": "docs/workflow/current.md",
+            "changelog": "CHANGELOG.md",
+            "readme": "README.md",
+            "quality_report": "docs/QUALITY_REPORT.md",
+        }
+
+        legacy_key = normalized_path.lower()
+        if legacy_key in legacy_map:
+            normalized_path = legacy_map[legacy_key]
+
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            request_url = f"https://api.github.com/repos/{repo}/contents/{normalized_path}"
+            async with session.get(
+                request_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                params={"ref": branch}
+            ) as response:
                 if response.status == 404:
                     raise HTTPException(status_code=404, detail="File not found")
-                if response.status == 401 or response.status == 403:
+                if response.status in (401, 403):
                     raise HTTPException(status_code=403, detail="Access denied")
                 if not response.ok:
                     raise HTTPException(status_code=response.status, detail="Failed to fetch file")
-                
+
                 data = await response.json()
-                
-                # Decode base64 content
+
                 if data.get("encoding") == "base64" and data.get("content"):
                     import base64
                     content = base64.b64decode(data["content"].replace("\n", "")).decode("utf-8")
-                    return {"content": content, "fileName": filePath}
-                
-                return {"content": data.get("content", ""), "fileName": filePath}
-    
+                    return {"content": content, "fileName": normalized_path}
+
+                return {"content": data.get("content", ""), "fileName": normalized_path}
+
     except HTTPException:
         raise
     except Exception as e:
@@ -420,7 +489,16 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
     Publishes to docbook repo staging branch instead of source repo
     Uses user's OAuth token for transparent commits
     """
-    if not auth_service or not commit_bus or not commit_bus.pool:
+    # Initialize services
+    from core.commit_bus import CommitBusService
+    import os
+    
+    # Initialize CommitBusService
+    db_url = os.getenv("DATABASE_URL")
+    commit_bus = CommitBusService(db_url)
+    await commit_bus.init_pool()
+    
+    if not auth_service or not commit_bus.pool:
         raise HTTPException(status_code=503, detail="Services not available")
     
     try:
@@ -430,15 +508,15 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
         from processors.comprehensive_doc_generator import generate_comprehensive_documentation
         from processors.smart_processor import clone_repo_via_token
         
-        # Get user's GitHub token
+        # Get user's GitHub token (Reader token for cloning)
         github_token = await auth_service.get_github_token(user.id)
         if not github_token:
             raise HTTPException(status_code=401, detail="GitHub token not found")
-        
+
         # Parse org and repo from full name
         if '/' not in repo_name:
             raise HTTPException(status_code=400, detail="Invalid repo name format. Use org/repo")
-        
+
         org_id, source_repo = repo_name.split('/', 1)
         
         print(f"🚀 Generating docs for {repo_name} (V4)...")
@@ -468,10 +546,32 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
             print(f"✅ Documentation generated for {repo_name}")
             
             # ⭐ NEW: Push to docbook repo (V4 mode)
-            from services.docbook_publisher import DocbookPublisher
             from processors.smart_processor import push_to_docbook_v4
+            from services.docbook_publisher import DocbookPublisher
             
             print(f"📚 V4 Mode - Publishing to docbook repo (staging branch)")
+            
+            # Initialize DocbookPublisher with the database pool
+            docbook_service = DocbookPublisher(commit_bus.pool)
+            
+            # Get Writer token for docbook publishing (requires org installation)
+            dual_app = get_github_dual_app_helper()
+            writer_token = None
+
+            # Try to find the writer app installation for this org
+            installation_id = await docbook_service.get_docbook_installation_id(org_id)
+
+            if not installation_id:
+                raise HTTPException(status_code=412, detail="Writer app is not installed for this organization. Please install pustak-publisher-ai.")
+
+            try:
+                writer_token = await dual_app.get_writer_token(installation_id)
+            except Exception as e:
+                print(f"❌ Unable to obtain writer token: {e}")
+                raise HTTPException(status_code=500, detail="Failed to obtain writer credentials")
+
+            if not writer_token:
+                raise HTTPException(status_code=500, detail="Writer token not available")
             
             # Create synthetic payload for docbook publishing
             payload = {
@@ -486,13 +586,20 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
                     "author": {"name": user.email}
                 }],
                 # ⭐ NEW: Add required fields for docbook publishing
-                "_user_id": user.id,
+                "_user_id": str(user.id),
                 "_org_id": org_id,
                 "_db_pool": commit_bus.pool
             }
             
             # Push to docbook
-            await push_to_docbook_v4(tmpdir, {"full_name": repo_name, "name": source_repo}, analysis, "manual-trigger", github_token, payload)
+            await push_to_docbook_v4(
+                tmpdir,
+                {"full_name": repo_name, "name": source_repo},
+                analysis,
+                "manual-trigger",
+                writer_token,
+                payload,
+            )
             
             print(f"✅ Documentation published to docbook/staging")
             
@@ -880,16 +987,78 @@ async def get_pending_reviews(
         print(f"❌ Error fetching pending reviews: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/docbook/check-github-repo")
+async def check_docbook_repo_on_github(
+    org_id: str,
+    repo_name: str,
+    user = Depends(get_current_user)
+):
+    """
+    Check if a docbook repo exists on GitHub using Reader App token
+    
+    Returns:
+    - exists: bool - Whether repo exists on GitHub
+    - status: str - "exists" | "not_found" | "error"
+    """
+    try:
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        
+        # Get user's GitHub token
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        # Check if repo exists on GitHub using user's token
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                'Authorization': f'token {github_token}',
+                'Accept': 'application/vnd.github+json',
+            }
+            
+            url = f'https://api.github.com/repos/{org_id}/{repo_name}'
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    repo_data = await response.json()
+                    return {
+                        "exists": True,
+                        "status": "exists",
+                        "org_id": org_id,
+                        "repo_name": repo_name,
+                        "full_name": repo_data.get('full_name'),
+                        "url": repo_data.get('html_url')
+                    }
+                elif response.status == 404:
+                    return {
+                        "exists": False,
+                        "status": "not_found",
+                        "org_id": org_id,
+                        "repo_name": repo_name,
+                        "message": f"Repository {org_id}/{repo_name} not found on GitHub"
+                    }
+                else:
+                    error_text = await response.text()
+                    print(f"❌ GitHub API error ({response.status}): {error_text}")
+                    return {
+                        "exists": False,
+                        "status": "error",
+                        "org_id": org_id,
+                        "repo_name": repo_name,
+                        "error": f"GitHub API error: {response.status}"
+                    }
+    except Exception as e:
+        print(f"❌ Error checking GitHub repo: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/docbook/check-exists")
 async def check_docbook_exists(
     org_id: str,
     user = Depends(get_current_user)
 ):
     """
-    Check if a docbook repo is linked for an organization
+    Check if a docbook repo is linked for an organization (in database)
     
     Returns:
-    - exists: bool - Whether docbook is linked
+    - exists: bool - Whether docbook is linked in database
     - docbook_repo: str - Full name of docbook repo (if exists)
     - docbook_url: str - URL of docbook repo (if exists)
     """
@@ -923,6 +1092,90 @@ async def check_docbook_exists(
         print(f"❌ Error checking docbook: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/v1/docbook/{org_id}/structure")
+async def get_docbook_structure(
+    org_id: str,
+    branch: str = "staging",
+    user = Depends(get_current_user)
+):
+    """
+    Get the folder structure of a docbook repo on a specific branch
+    
+    Returns:
+    - folders: List of folders with their files (recursively)
+    - branch: The branch that was queried
+    """
+    async def get_folder_contents(session, repo_full_name, path, branch, github_token):
+        """Recursively get folder contents"""
+        url = f"https://api.github.com/repos/{repo_full_name}/contents/{path}?ref={branch}"
+        async with session.get(
+            url,
+            headers={
+                "Authorization": f"Bearer {github_token}",
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "Pustak-AI"
+            }
+        ) as response:
+            if response.status != 200:
+                return []
+                
+            contents = await response.json()
+            result = []
+            
+            for item in contents:
+                if item['type'] == 'dir':
+                    # Recursively get subfolder contents
+                    children = await get_folder_contents(
+                        session, repo_full_name, 
+                        f"{path}/{item['name']}" if path else item['name'],
+                        branch, github_token
+                    )
+                    result.append({
+                        "name": item['name'],
+                        "type": "folder",
+                        "files": children
+                    })
+                else:
+                    result.append({
+                        "name": item['name'],
+                        "type": "file"
+                    })
+            return result
+    
+    try:
+        user_id = user.id if hasattr(user, 'id') else user.get('id')
+        
+        # Get user's GitHub token
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="No GitHub token found")
+        
+        # Get docbook repo name
+        docbook_repo = f"pustak-docbook-{org_id}"
+        docbook_full_name = f"{org_id}/{docbook_repo}"
+        
+        print(f"📁 Getting structure for {docbook_full_name} on branch {branch}")
+        
+        # Get folder structure from GitHub
+        async with aiohttp.ClientSession() as session:
+            # Get root contents
+            contents = await get_folder_contents(session, docbook_full_name, "", branch, github_token)
+            
+            print(f"✅ Found {len(contents)} items in {docbook_full_name}")
+            return {
+                "org_id": org_id,
+                "repo": docbook_full_name,
+                "branch": branch,
+                "folders": contents
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error getting docbook structure: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class PublishDocbookRequest(BaseModel):
     org_id: str
     repo_name: str  # Source repo name
@@ -947,88 +1200,51 @@ async def publish_to_docbook(
     if not commit_bus or not commit_bus.pool:
         raise HTTPException(status_code=503, detail="Database not available")
     
+    tmp_docs_dir = Path(tempfile.mkdtemp(prefix="docai_manual_docs_"))
     try:
         user_id = user.get('id') if isinstance(user, dict) else user.id
         org_id = request.org_id
         repo_name = request.repo_name
         docs_content = request.docs_content
         commit_message = request.message
-        
-        # Get user's GitHub token
-        github_token = await auth_service.get_github_token(user_id)
-        if not github_token:
-            raise HTTPException(status_code=401, detail="No GitHub token found")
-        
-        # Get docbook repo info
-        async with commit_bus.pool.acquire() as conn:
-            docbook = await conn.fetchrow("""
-                SELECT docbook_full_name, docbook_url
-                FROM docbook_repos
-                WHERE user_id = $1 AND org_id = $2 AND is_active = TRUE
-            """, user_id, org_id)
-        
-        if not docbook:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No docbook linked for {org_id}"
-            )
-        
-        docbook_full_name = docbook['docbook_full_name']
-        
-        # Create commit in staging branch
-        # This is a simplified version - full implementation would handle multiple files
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                'Authorization': f'token {github_token}',
-                'Accept': 'application/vnd.github.v3+json'
-            }
-            
-            # Create commit with docs
-            # Path: {repo_name}/internal/README.md, {repo_name}/developer/README.md, etc.
-            commit_data = {
-                "message": commit_message,
-                "branch": "staging",
-                "committer": {
-                    "name": "Lekhak AI",
-                    "email": "lekhak@ai.com"
-                },
-                "content": base64.b64encode(
-                    json.dumps(docs_content, indent=2).encode()
-                ).decode()
-            }
-            
-            # For now, create a summary file
-            async with session.put(
-                f'https://api.github.com/repos/{docbook_full_name}/contents/{repo_name}/SUMMARY.md',
-                headers=headers,
-                json={
-                    "message": commit_message,
-                    "branch": "staging",
-                    "content": base64.b64encode(
-                        f"# {repo_name} Documentation\n\nGenerated by Lekhak AI".encode()
-                    ).decode()
-                }
-            ) as resp:
-                if resp.status not in [200, 201]:
-                    error = await resp.text()
-                    print(f"❌ Failed to publish: {resp.status} - {error}")
-                    raise HTTPException(
-                        status_code=resp.status,
-                        detail=f"Failed to publish to docbook: {error}"
-                    )
-                
-                commit_resp = await resp.json()
-        
-        print(f"✅ Published docs to {docbook_full_name}/staging")
-        
+
+        docs_dir = tmp_docs_dir / "docs"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+
+        summary_path = docs_dir / "SUMMARY.md"
+        if isinstance(docs_content, dict):
+            summary_body = docs_content.get("summary") or json.dumps(docs_content, indent=2)
+        else:
+            summary_body = str(docs_content)
+
+        summary_content = (
+            f"# {repo_name} Documentation\n\n"
+            f"Generated by DocAI manual publish endpoint.\n\n"
+            f"````\n{summary_body}\n````\n"
+        )
+        summary_path.write_text(summary_content, encoding="utf-8")
+
+        publisher = DocbookPublisher(commit_bus.pool)
+        result = await publisher.publish_to_docbook(
+            user_id=str(user_id),
+            org_id=org_id,
+            source_repo_name=repo_name,
+            docs_dir=docs_dir,
+            commit_message=commit_message,
+        )
+
+        if result.get("status") != "published_to_staging":
+            raise HTTPException(status_code=500, detail=result.get("message", "Publish failed"))
+
         return {
-            "status": "published_to_staging",
+            "status": result.get("status"),
             "org_id": org_id,
             "repo_name": repo_name,
-            "docbook_repo": docbook_full_name,
-            "branch": "staging",
-            "message": f"Documentation published to staging branch. Please review and approve to merge to main.",
-            "review_url": f"{docbook['docbook_url']}/compare/main...staging"
+            "docbook_repo": result.get("docbook_repo"),
+            "branch": result.get("branch", "staging"),
+            "message": result.get("message"),
+            "review_url": result.get("review_url"),
+            "commit_message": result.get("commit_message"),
         }
     except HTTPException:
         raise
@@ -1037,6 +1253,8 @@ async def publish_to_docbook(
         import traceback
         print(f"📋 Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        shutil.rmtree(tmp_docs_dir, ignore_errors=True)
 
 class MergeDocbookRequest(BaseModel):
     org_id: str
@@ -1729,6 +1947,409 @@ async def get_repo_doc_persona(
     except Exception as e:
         print(f"❌ Error getting doc_persona: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# PHASE 4: APP VERIFICATION & REPOSITORY LISTING ENDPOINTS
+# ============================================================================
+
+@app.get("/api/v1/org/{org_id}/verify-apps")
+async def verify_apps(org_id: str, user = Depends(get_current_user)):
+    """
+    Verify both Reader and Writer apps are actually installed in the organization
+    Checks GitHub API for real installation status (not just config)
+    """
+    try:
+        dual_app = get_github_dual_app_helper()
+        
+        # Get user's GitHub token for verification
+        user_id = user.id if hasattr(user, 'id') else user.get('id')
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        print(f"📡 Checking apps for org: {org_id}")
+        
+        # Check if apps are configured
+        apps_configured = dual_app.dual_app_mode and bool(dual_app.reader_app_id) and bool(dual_app.writer_app_id)
+        print(f"✅ Apps configured: {apps_configured} (dual_mode={dual_app.dual_app_mode}, reader={dual_app.reader_app_id}, writer={dual_app.writer_app_id})")
+        
+        reader_installed = False
+        writer_installed = False
+        
+        # If apps are configured, check actual GitHub installation
+        if apps_configured:
+            async with aiohttp.ClientSession() as session:
+                headers = {
+                    'Authorization': f'token {github_token}',
+                    'Accept': 'application/vnd.github+json',
+                }
+                
+                # Check installed apps in the organization
+                url = f'https://api.github.com/orgs/{org_id}/installations'
+                print(f"📡 Calling GitHub API: {url}")
+                try:
+                    async with session.get(url, headers=headers) as response:
+                        print(f"📊 GitHub API response status: {response.status}")
+                        if response.status == 200:
+                            installations = await response.json()
+                            print(f"📊 Found {len(installations.get('installations', []))} installations")
+                            
+                            # Check if Reader App (2072879) is installed
+                            reader_app_id = int(dual_app.reader_app_id) if dual_app.reader_app_id else None
+                            writer_app_id = int(dual_app.writer_app_id) if dual_app.writer_app_id else None
+                            
+                            print(f"🔍 Looking for Reader App ID: {reader_app_id}, Writer App ID: {writer_app_id}")
+                            
+                            for inst in installations.get('installations', []):
+                                app_id = inst.get('app_id')
+                                app_name = inst.get('app_slug', 'unknown')
+                                print(f"  - Found app: {app_name} (ID: {app_id})")
+                                if app_id == reader_app_id:
+                                    reader_installed = True
+                                    print(f"  ✅ Reader App FOUND!")
+                                if app_id == writer_app_id:
+                                    writer_installed = True
+                                    print(f"  ✅ Writer App FOUND!")
+                        else:
+                            error_text = await response.text()
+                            print(f"❌ GitHub API error: {error_text}")
+                except Exception as e:
+                    print(f"❌ Exception checking GitHub installations: {e}")
+                    logger.warning(f"⚠️ Could not check GitHub installations: {e}")
+        
+        return {
+            "reader_app": {
+                "installed": reader_installed,
+                "app_name": "Pustak Analyser AI",
+                "app_id": dual_app.reader_app_id if apps_configured else None,
+                "permissions": ["contents:read", "metadata:read"],
+                "status": "installed" if reader_installed else ("configured" if apps_configured else "not_configured")
+            },
+            "writer_app": {
+                "installed": writer_installed,
+                "app_name": "Pustak Publisher AI",
+                "app_id": dual_app.writer_app_id if apps_configured else None,
+                "permissions": ["contents:read_write", "metadata:read"],
+                "status": "installed" if writer_installed else ("configured" if apps_configured else "not_configured")
+            },
+            "dual_app_mode": dual_app.dual_app_mode,
+            "fallback_mode": not dual_app.dual_app_mode
+        }
+    except Exception as e:
+        logger.error(f"❌ Error verifying apps: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/org/{org_id}/verify-writer-app-access")
+async def verify_writer_app_access(org_id: str, repo: str, user = Depends(get_current_user)):
+    """
+    Verify if Writer App is installed and has access to a specific docbook repository
+    """
+    try:
+        user_id = user.id if hasattr(user, 'id') else user.get('id')
+        
+        print(f"\n📋 === VERIFYING WRITER APP ACCESS ===")
+        print(f"📍 Organization: {org_id}")
+        print(f"📦 Repository: {repo}")
+        
+        dual_app = get_github_dual_app_helper()
+        
+        # Get user's GitHub token
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        # Check if Writer App is installed in the organization
+        writer_installed = False
+        installation_id = None
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = {
+                    'Authorization': f'token {github_token}',
+                    'Accept': 'application/vnd.github+json',
+                }
+                
+                url = f'https://api.github.com/orgs/{org_id}/installations'
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        installations = await response.json()
+                        writer_app_id = int(dual_app.writer_app_id) if dual_app.writer_app_id else None
+                        
+                        for inst in installations.get('installations', []):
+                            if inst.get('app_id') == writer_app_id:
+                                writer_installed = True
+                                installation_id = inst.get('id')
+                                print(f"✅ Writer App installed: {installation_id}")
+                                break
+        except Exception as e:
+            print(f"⚠️  Error checking Writer App installation: {e}")
+        
+        if not writer_installed:
+            print(f"❌ Writer App not installed")
+            return {"has_access": False, "installed": False}
+        
+        # Check if Writer App has access to the specific repo
+        try:
+            from core.app_installation_service import AppInstallationService
+            
+            if auth_service and auth_service.db_pool:
+                app_install_service = AppInstallationService(auth_service.db_pool)
+                writer_app_id = int(dual_app.writer_app_id) if dual_app.writer_app_id else None
+                
+                accessible_repos = await app_install_service.get_app_accessible_repos(org_id, writer_app_id)
+                
+                # Check if the requested repo is in the accessible repos
+                # Convert short repo name to full name if needed
+                repo_full_name = repo if '/' in repo else f"{org_id}/{repo}"
+                has_access = repo_full_name in accessible_repos
+                
+                print(f"📊 Writer App accessible repos: {accessible_repos}")
+                print(f"📦 Checking for repo: {repo_full_name}")
+                print(f"✅ Has access: {has_access}")
+                
+                return {"has_access": has_access, "installed": True, "accessible_repos": list(accessible_repos)}
+        except Exception as e:
+            print(f"⚠️  Error checking Writer App access: {e}")
+            return {"has_access": False, "installed": True}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error verifying Writer App access: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/org/{org_id}/reader/repositories")
+async def get_reader_repositories(org_id: str, user = Depends(get_current_user)):
+    """
+    Get list of repositories that Reader App can access in the organization
+    Uses Reader App token (not user token) to fetch only repos with Reader App access
+    """
+    try:
+        user_id = user.id if hasattr(user, 'id') else user.get('id')
+        
+        print(f"\n📋 === FETCHING READER APP REPOSITORIES ===")
+        print(f"📍 Organization: {org_id}")
+        print(f"👤 User ID: {user_id}")
+        
+        # Get Reader App installation for the organization
+        print(f"🔑 Getting Reader App installation token...")
+        
+        dual_app = get_github_dual_app_helper()
+        
+        # Generate JWT token for Reader App
+        try:
+            reader_app_id = os.getenv('READER_APP_ID', '2072879')
+            reader_private_key_raw = os.getenv('READER_PRIVATE_KEY')
+            
+            if not reader_app_id or not reader_private_key_raw:
+                print(f"❌ Reader App credentials not configured")
+                raise HTTPException(status_code=500, detail="Reader App not configured")
+            
+            print(f"🔐 Reader App ID: {reader_app_id}")
+            print(f"🔐 Reader Private Key configured: {bool(dual_app.reader_private_key)}")
+            
+            # Use the dual app helper's internal method to generate JWT
+            reader_jwt = dual_app._generate_jwt(reader_app_id, dual_app.reader_private_key)
+            print(f"✅ Reader App JWT generated successfully")
+        except Exception as e:
+            print(f"❌ Failed to generate Reader App JWT: {e}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to generate Reader App JWT: {str(e)}")
+        
+        # Get the installation ID for this org using the USER's token (not JWT)
+        # The JWT doesn't have permission to list installations, but user token does
+        installation_id = None
+        try:
+            # Get user's GitHub token from database
+            user_github_token = await auth_service.get_github_token(user_id)
+            if not user_github_token:
+                print(f"❌ No GitHub token found for user")
+                raise HTTPException(status_code=500, detail="User GitHub token not found")
+            
+            async with aiohttp.ClientSession() as session:
+                headers = {
+                    'Authorization': f'token {user_github_token}',
+                    'Accept': 'application/vnd.github+json',
+                }
+                url = f'https://api.github.com/orgs/{org_id}/installations'
+                print(f"📡 Fetching installations from: {url}")
+                
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        print(f"❌ Failed to get installations ({response.status}): {error_text}")
+                        raise HTTPException(status_code=500, detail="Failed to get Reader App installation")
+                    
+                    data = await response.json()
+                    installations = data.get('installations', [])
+                    print(f"📊 Found {len(installations)} installations")
+                    
+                    reader_app_id_int = int(reader_app_id)
+                    for inst in installations:
+                        print(f"   - App ID: {inst['app_id']}, Installation ID: {inst['id']}")
+                        if inst['app_id'] == reader_app_id_int:
+                            installation_id = inst['id']
+                            print(f"✅ Found Reader App installation: {installation_id}")
+                            break
+                    
+                    if not installation_id:
+                        print(f"❌ Reader App installation not found in org {org_id}")
+                        print(f"   Reader App ID we're looking for: {reader_app_id_int}")
+                        raise HTTPException(status_code=500, detail="Reader App not installed in organization")
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"❌ Error getting installation ID: {e}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail="Failed to get Reader App installation")
+        
+        # Get Reader App's accessible repositories from database
+        # (GitHub API requires App JWT which keeps failing)
+        print(f"📡 Getting Reader App's accessible repositories from database...")
+        app_accessible_repos = set()
+        
+        try:
+            from core.app_installation_service import AppInstallationService
+            
+            # Use auth_service's db_pool
+            if auth_service and auth_service.db_pool:
+                app_install_service = AppInstallationService(auth_service.db_pool)
+                
+                reader_app_id = int(os.getenv('READER_APP_ID', '2072879'))
+                app_accessible_repos = await app_install_service.get_app_accessible_repos(org_id, reader_app_id)
+                
+                if app_accessible_repos:
+                    print(f"✅ Found {len(app_accessible_repos)} repos in database: {app_accessible_repos}")
+                else:
+                    print(f"⚠️  No repos found in database for app {reader_app_id}")
+                    print(f"   (App may not have been installed yet, or webhook not received)")
+            else:
+                print(f"⚠️  Database pool not available")
+                app_accessible_repos = set()
+            
+        except Exception as e:
+            print(f"⚠️  Could not get app's accessible repos from DB: {e}")
+            import traceback
+            traceback.print_exc()
+            app_accessible_repos = set()
+        
+        # Now fetch all org repos
+        print(f"📡 Fetching organization repositories...")
+        
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                'Authorization': f'token {user_github_token}',
+                'Accept': 'application/vnd.github+json',
+            }
+            
+            url = f'https://api.github.com/orgs/{org_id}/repos'
+            print(f"📡 Calling: {url}")
+            
+            async with session.get(url, headers=headers) as response:
+                if response.ok:
+                    repos = await response.json()
+                    print(f"✅ Got {len(repos)} repositories in org")
+                    
+                    # Filter to only repos the Reader App has access to
+                    if app_accessible_repos:
+                        filtered_repos = [r for r in repos if r['full_name'] in app_accessible_repos]
+                        print(f"📊 Filtered to {len(filtered_repos)} repos the Reader App can access")
+                    else:
+                        filtered_repos = repos
+                        print(f"⚠️  No app filter, showing all {len(filtered_repos)} org repos")
+                    
+                    # Filter and format repositories
+                    formatted_repos = [
+                        {
+                            'id': repo['id'],
+                            'name': repo['name'],
+                            'full_name': repo['full_name'],
+                            'url': repo['html_url'],
+                            'private': repo['private'],
+                            'description': repo['description'],
+                            'language': repo['language']
+                        }
+                        for repo in filtered_repos
+                    ]
+                    
+                    print(f"📦 Formatted repos: {[r['full_name'] for r in formatted_repos]}")
+                    
+                    return {
+                        "repositories": formatted_repos,
+                        "count": len(formatted_repos),
+                        "org_id": org_id,
+                        "message": f"Showing {len(formatted_repos)} repositories that Reader App can access"
+                    }
+                elif response.status == 404:
+                    print(f"❌ Organization not found: {org_id}")
+                    raise HTTPException(status_code=404, detail=f"Organization '{org_id}' not found")
+                else:
+                    error = await response.text()
+                    print(f"❌ GitHub API error ({response.status}): {error}")
+                    raise HTTPException(status_code=response.status, detail="Failed to fetch repositories from GitHub")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching reader repositories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/org/{org_id}/setup-docbook")
+async def setup_docbook(org_id: str, docbook_repo: str, user = Depends(get_current_user)):
+    """
+    User has created docbook repo, verify it exists and link it
+    """
+    try:
+        user_id = user.id if hasattr(user, 'id') else user.get('id')
+        
+        # Get user's GitHub token
+        github_token = await auth_service.get_github_token(user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token not found")
+        
+        # Verify docbook repo exists
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                'Authorization': f'token {github_token}',
+                'Accept': 'application/vnd.github+json',
+            }
+            
+            url = f'https://api.github.com/repos/{docbook_repo}'
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    repo_data = await response.json()
+                    
+                    # Store docbook repo in database
+                    if commit_bus and commit_bus.pool:
+                        async with commit_bus.pool.acquire() as conn:
+                            await conn.execute("""
+                                INSERT INTO docbook_repos (org_id, repo_name, repo_full_name, user_id, created_at)
+                                VALUES ($1, $2, $3, $4, NOW())
+                                ON CONFLICT (org_id) DO UPDATE SET repo_full_name = $3
+                            """, org_id, repo_data['name'], docbook_repo, user_id)
+                    
+                    return {
+                        "status": "success",
+                        "message": f"Docbook repository {docbook_repo} linked",
+                        "docbook_repo": docbook_repo,
+                        "repo_data": {
+                            "name": repo_data['name'],
+                            "full_name": repo_data['full_name'],
+                            "url": repo_data['html_url'],
+                            "private": repo_data['private']
+                        }
+                    }
+                else:
+                    raise HTTPException(status_code=404, detail=f"Repository {docbook_repo} not found")
+    except Exception as e:
+        logger.error(f"❌ Error setting up docbook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

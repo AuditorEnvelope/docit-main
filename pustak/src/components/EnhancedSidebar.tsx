@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, JSX } from "react";
 import {
   BookOpen,
   ChevronRight,
@@ -13,129 +13,223 @@ import {
   Clock,
   Home,
   X,
+  Folder,
+  Plus,
+  AlertCircle,
+  Zap,
 } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 interface SidebarProps {
   onClose: () => void;
 }
 
-interface RepoData {
+interface DocbookFile {
   name: string;
+  type: "file" | "folder";
+  files?: DocbookFile[]; // For nested folders
+}
+
+interface DocbookFolder extends DocbookFile {
+  type: "folder"; // Folders always have type "folder"
+}
+
+interface DocbookRepo {
+  orgId: string;
   fullName: string;
-  lastUpdated: string;
-  description: string;
-  hasDocs: boolean;
-  hasDocsFolder: boolean;
-  architectureVersions: Array<{ version: string; fileName: string }>;
-  workflowVersions: Array<{ version: string; fileName: string }>;
+  hasDocbook: boolean;
+  folders: DocbookFile[]; // Top-level items (files and folders)
+  hasGeneratedDocs: boolean;
 }
 
 export function EnhancedSidebar({ onClose }: SidebarProps) {
-  const [repos, setRepos] = useState<RepoData[]>([]);
-  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [docbooks, setDocbooks] = useState<DocbookRepo[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const pathname = usePathname();
+  const router = useRouter();
 
   useEffect(() => {
-    const loadRepos = async () => {
+    const loadDocbooks = async () => {
       try {
-        // Get user's GitHub token from localStorage
-        const userToken = localStorage.getItem('pustak_access_token');
-        
+        const userToken = localStorage.getItem("pustak_access_token");
+
         if (!userToken) {
-          console.log('No user token available - using default repos');
+          console.log("No user token available");
           setLoading(false);
           return;
         }
 
-        // Pass user token to backend
-        const response = await fetch('/api/repositories', {
+        // Get user's organizations
+        const response = await fetch("/api/user/organizations", {
           headers: {
-            'Authorization': `Bearer ${userToken}`,
+            Authorization: `Bearer ${userToken}`,
           },
         });
+
         if (!response.ok) {
-          throw new Error('Failed to fetch repositories');
+          throw new Error("Failed to fetch organizations");
         }
-        
-        const reposData = await response.json();
 
-        // Map repos directly - versions come from backend
-        const mappedRepos = reposData.map((repo: any) => ({
-          name: repo.name,
-          fullName: repo.full_name || repo.fullName,
-          lastUpdated: repo.updated_at || repo.lastUpdated,
-          description: repo.description || 'No description available',
-          hasDocs: repo.hasDocsFolder || false,  // Use hasDocsFolder from backend
-          hasDocsFolder: repo.hasDocsFolder || false,
-          architectureVersions: repo.architectureVersions || [],
-          workflowVersions: repo.workflowVersions || [],
-        }));
+        const orgsData = await response.json();
+        const docbookRepos: DocbookRepo[] = [];
 
-        setRepos(mappedRepos);
+        // For each org, check if docbook repo exists and load its structure
+        for (const org of orgsData.organizations || []) {
+          const orgLogin = org.login;
+          const docbookName = `pustak-docbook-${orgLogin}`;
+          
+          try {
+            // Check if docbook repo exists and get staging branch structure
+            const structureResponse = await fetch(
+              `/api/docbook/${orgLogin}/structure?branch=staging`,
+              {
+                headers: {
+                  Authorization: `Bearer ${userToken}`,
+                },
+              }
+            );
+
+            if (structureResponse.ok) {
+              const structure = await structureResponse.json();
+              docbookRepos.push({
+                orgId: orgLogin,
+                fullName: `${orgLogin}/${docbookName}`,
+                hasDocbook: true,
+                folders: structure.folders || [],
+                hasGeneratedDocs: (structure.folders || []).length > 0,
+              });
+            } else {
+              // Docbook repo doesn't exist
+              docbookRepos.push({
+                orgId: orgLogin,
+                fullName: `${orgLogin}/${docbookName}`,
+                hasDocbook: false,
+                folders: [],
+                hasGeneratedDocs: false,
+              });
+            }
+          } catch (error) {
+            console.error(`Error loading docbook for ${orgLogin}:`, error);
+            docbookRepos.push({
+              orgId: orgLogin,
+              fullName: `${orgLogin}/${docbookName}`,
+              hasDocbook: false,
+              folders: [],
+              hasGeneratedDocs: false,
+            });
+          }
+        }
+
+        setDocbooks(docbookRepos);
         setLoading(false);
       } catch (error) {
-        console.error("Failed to load repositories:", error);
+        console.error("Failed to load docbooks:", error);
         setLoading(false);
       }
     };
 
-    loadRepos();
+    loadDocbooks();
   }, []);
 
-  const toggleRepo = (repoName: string) => {
-    const newExpanded = new Set(expandedRepos);
-    if (newExpanded.has(repoName)) {
-      newExpanded.delete(repoName);
+  const toggleFolder = (folderKey: string, href?: string) => {
+    const newExpanded = new Set(expandedFolders);
+    if (newExpanded.has(folderKey)) {
+      newExpanded.delete(folderKey);
     } else {
-      newExpanded.add(repoName);
+      newExpanded.add(folderKey);
     }
-    setExpandedRepos(newExpanded);
-  };
+    setExpandedFolders(newExpanded);
 
-  const toggleSection = (sectionKey: string) => {
-    const newExpanded = new Set(expandedSections);
-    if (newExpanded.has(sectionKey)) {
-      newExpanded.delete(sectionKey);
-    } else {
-      newExpanded.add(sectionKey);
-    }
-    setExpandedSections(newExpanded);
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const getDocIcon = (docType: string) => {
-    switch (docType) {
-      case "summary":
-        return <Home className="w-4 h-4" />;
-      case "architecture":
-        return <Building2 className="w-4 h-4" />;
-      case "workflow":
-        return <GitBranch className="w-4 h-4" />;
-      case "api":
-        return <Code className="w-4 h-4" />;
-      case "changes":
-        return <History className="w-4 h-4" />;
-      case "changelog":
-        return <Clock className="w-4 h-4" />;
-      default:
-        return <FileText className="w-4 h-4" />;
+    if (href) {
+      router.push(href);
     }
   };
 
   const isActive = (path: string) => {
     return pathname === path;
+  };
+
+  // Recursive component to render nested files/folders
+  const renderFileTree = (
+    items: DocbookFile[],
+    basePath: string[] = [],
+    docbookFullName: string
+  ): JSX.Element => {
+    const repoHrefBase = `/repo/${docbookFullName
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/")}`;
+
+    const toEncodedPath = (segments: string[]) =>
+      segments.map((segment) => encodeURIComponent(segment)).join('/');
+
+    return (
+      <div className="space-y-1">
+        {items.map((item) => {
+          if (basePath.length === 0 && item.type === "file") {
+            // Skip top-level files like README.md; only show folders at root
+            return null;
+          }
+
+          const itemPath = [...basePath, item.name];
+          const itemKey = itemPath.join('/');
+          const isExpanded = expandedFolders.has(itemKey);
+
+          if (item.type === "file") {
+            // Clickable file link using actual file path
+            const encodedFilePath = toEncodedPath(itemPath);
+            const href = `${repoHrefBase}/${encodedFilePath}`;
+
+            return (
+              <a
+                key={itemKey}
+                href={href}
+                className={`flex items-center space-x-2 p-1.5 text-xs rounded transition-colors cursor-pointer ${
+                  isActive(href)
+                    ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-200"
+                }`}
+              >
+                <FileText className="w-3 h-3 text-gray-400" />
+                <span>{item.name}</span>
+              </a>
+            );
+          } else {
+            // Expandable folder
+            const lowerName = item.name.toLowerCase();
+            const defaultHref =
+              lowerName === "architecture" || lowerName === "workflow"
+                ? `${repoHrefBase}/${toEncodedPath([...itemPath, "current.md"])}`
+                : undefined;
+
+            return (
+              <div key={itemKey} className="space-y-1">
+                <button
+                  onClick={() => toggleFolder(itemKey, defaultHref)}
+                  className="flex items-center justify-between w-full p-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                >
+                  <div className="flex items-center space-x-2">
+                    <Folder className="w-3 h-3 text-blue-500" />
+                    <span>{item.name}</span>
+                  </div>
+                  {isExpanded ? (
+                    <ChevronDown className="w-3 h-3" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3" />
+                  )}
+                </button>
+                {isExpanded && item.files && (
+                  <div className="ml-4 mt-1">
+                    {renderFileTree(item.files, itemPath, docbookFullName)}
+                  </div>
+                )}
+              </div>
+            );
+          }
+        })}
+      </div>
+    );
   };
 
   if (loading) {
@@ -176,6 +270,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
   return (
     <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
+      {/* Header */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -198,189 +293,81 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
         </div>
       </div>
 
+      {/* Content */}
       <nav className="flex-1 p-4 overflow-y-auto">
         <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
-          Repositories ({repos.length})
+          Documentation ({docbooks.length})
         </h3>
 
-        <div className="space-y-2">
-          {repos.map((repo) => (
-            <div
-              key={repo.name}
-              className="border border-gray-200 dark:border-gray-700 rounded-lg"
-            >
-              <button
-                onClick={() => toggleRepo(repo.name)}
-                className="flex items-center justify-between w-full p-3 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors rounded-lg"
-              >
-                <div className="flex items-center space-x-2">
-                  <GitBranch className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                  <span className="font-medium">{repo.name}</span>
+        <div className="space-y-3">
+          {docbooks.map((docbook) => (
+            <div key={docbook.orgId} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+              {/* Docbook Header */}
+              <div className="p-3 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                <div className="flex items-center space-x-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                  <GitBranch className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span>{docbook.orgId}</span>
                 </div>
-                {expandedRepos.has(repo.name) ? (
-                  <ChevronDown className="w-4 h-4" />
-                ) : (
-                  <ChevronRight className="w-4 h-4" />
-                )}
-              </button>
+              </div>
 
-              {expandedRepos.has(repo.name) && (
-                <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-                  <div className="p-3 text-xs text-gray-500 dark:text-gray-400">
-                    <p className="mb-2">{repo.description}</p>
-                    <p className="mb-3">
-                      Updated {formatDate(repo.lastUpdated)}
-                    </p>
-
-                    {repo.hasDocs ? (
-                      <div className="space-y-1">
-                        {/* Summary */}
-                        <a
-                          href={`/repo/${repo.fullName}/summary`}
-                          className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.fullName}/summary`)
-                              ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
-                              : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          }`}
-                        >
-                          {getDocIcon("summary")}
-                          <span>Summary</span>
-                        </a>
-
-                        {/* Architecture with versions */}
-                        <div>
-                          <button
-                            onClick={() => toggleSection(`${repo.fullName}-architecture`)}
-                            className={`flex items-center justify-between w-full p-2 text-sm rounded-md transition-colors ${
-                              isActive(`/repo/${repo.fullName}/architecture`)
-                                ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
-                                : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                            }`}
-                          >
-                            <div className="flex items-center space-x-2">
-                              {getDocIcon("architecture")}
-                              <span>Architecture</span>
-                            </div>
-                            {repo.architectureVersions.length > 0 && (
-                              expandedSections.has(`${repo.fullName}-architecture`) ? (
-                                <ChevronDown className="w-3 h-3" />
-                              ) : (
-                                <ChevronRight className="w-3 h-3" />
-                              )
-                            )}
-                          </button>
-                          
-                          {expandedSections.has(`${repo.fullName}-architecture`) && repo.architectureVersions.length > 0 && (
-                            <div className="ml-6 mt-1 space-y-1">
-                              {repo.architectureVersions.map((v) => (
-                                <a
-                                  key={v.version}
-                                  href={`/repo/${repo.fullName}/architecture/${v.version}`}
-                                  className={`block p-1.5 text-xs rounded transition-colors ${
-                                    isActive(`/repo/${repo.fullName}/architecture/${v.version}`)
-                                      ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
-                                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                  }`}
-                                >
-                                  {v.version.toUpperCase()}
-                                </a>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Workflow with versions */}
-                        <div>
-                          <button
-                            onClick={() => toggleSection(`${repo.fullName}-workflow`)}
-                            className={`flex items-center justify-between w-full p-2 text-sm rounded-md transition-colors ${
-                              isActive(`/repo/${repo.fullName}/workflow`)
-                                ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
-                                : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                            }`}
-                          >
-                            <div className="flex items-center space-x-2">
-                              {getDocIcon("workflow")}
-                              <span>Workflow</span>
-                            </div>
-                            {repo.workflowVersions.length > 0 && (
-                              expandedSections.has(`${repo.fullName}-workflow`) ? (
-                                <ChevronDown className="w-3 h-3" />
-                              ) : (
-                                <ChevronRight className="w-3 h-3" />
-                              )
-                            )}
-                          </button>
-                          
-                          {expandedSections.has(`${repo.fullName}-workflow`) && repo.workflowVersions.length > 0 && (
-                            <div className="ml-6 mt-1 space-y-1">
-                              {repo.workflowVersions.map((v) => (
-                                <a
-                                  key={v.version}
-                                  href={`/repo/${repo.fullName}/workflow/${v.version}`}
-                                  className={`block p-1.5 text-xs rounded transition-colors ${
-                                    isActive(`/repo/${repo.fullName}/workflow/${v.version}`)
-                                      ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
-                                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                  }`}
-                                >
-                                  {v.version.toUpperCase()}
-                                </a>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* API */}
-                        <a
-                          href={`/repo/${repo.fullName}/api`}
-                          className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.fullName}/api`)
-                              ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
-                              : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          }`}
-                        >
-                          {getDocIcon("api")}
-                          <span>API Documentation</span>
-                        </a>
-
-                        {/* Changes */}
-                        <a
-                          href={`/repo/${repo.fullName}/changes`}
-                          className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.fullName}/changes`)
-                              ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
-                              : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          }`}
-                        >
-                          {getDocIcon("changes")}
-                          <span>Recent Changes</span>
-                        </a>
-
-                        {/* Changelog */}
-                        <a
-                          href={`/repo/${repo.fullName}/changelog`}
-                          className={`flex items-center space-x-2 p-2 text-sm rounded-md transition-colors ${
-                            isActive(`/repo/${repo.fullName}/changelog`)
-                              ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
-                              : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          }`}
-                        >
-                          {getDocIcon("changelog")}
-                          <span>Changelog</span>
-                        </a>
+              {/* Docbook Content */}
+              <div className="p-3">
+                {!docbook.hasDocbook ? (
+                  // No Docbook Repo
+                  <div className="space-y-2">
+                    <div className="flex items-start space-x-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-md border border-yellow-200 dark:border-yellow-800">
+                      <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+                      <div className="text-xs text-yellow-700 dark:text-yellow-300">
+                        <p className="font-medium mb-1">No Docbook Repository Found</p>
+                        <p className="text-yellow-600 dark:text-yellow-400">
+                          Create a repository named <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded text-xs">pustak-docbook-{docbook.orgId}</code> to get started.
+                        </p>
                       </div>
-                    ) : null}
+                    </div>
+                    <button className="w-full flex items-center justify-center space-x-2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-medium transition-colors">
+                      <Plus className="w-3 h-3" />
+                      <span>Create Docbook</span>
+                    </button>
                   </div>
-                </div>
-              )}
+                ) : !docbook.hasGeneratedDocs ? (
+                  // Docbook exists but no docs generated
+                  <div className="space-y-2">
+                    <div className="flex items-start space-x-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-800">
+                      <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                      <div className="text-xs text-blue-700 dark:text-blue-300">
+                        <p className="font-medium">No Documents Generated Yet</p>
+                        <p className="text-blue-600 dark:text-blue-400 mt-1">
+                          Generate documentation for your repositories to see them here.
+                        </p>
+                      </div>
+                    </div>
+                    <button className="w-full flex items-center justify-center space-x-2 p-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-xs font-medium transition-colors">
+                      <Zap className="w-3 h-3" />
+                      <span>Generate Docs</span>
+                    </button>
+                  </div>
+                ) : (
+                  // Docbook exists with generated docs
+                  <div className="space-y-2">
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-2 font-medium">
+                      📁 Files in staging branch:
+                    </div>
+                    
+                    {/* Render the file tree starting from root level */}
+                    <div className="space-y-2">
+                      {renderFileTree(docbook.folders, [], docbook.fullName)}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
       </nav>
 
+      {/* Footer */}
       <div className="p-4 border-t border-gray-200 dark:border-gray-700 text-center text-xs text-gray-500 dark:text-gray-400">
-        Powered by DocAI v1.0.0
+        Powered by Pustak v1.0.0
       </div>
     </div>
   );

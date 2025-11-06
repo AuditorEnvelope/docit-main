@@ -23,6 +23,89 @@ interface RepoPageProps {
   }>;
 }
 
+const LEGACY_DOC_PATHS: Record<string, string> = {
+  summary: "docs/summary.md",
+  architecture: "docs/architecture/current.md",
+  workflow: "docs/workflow/current.md",
+  api: "docs/api.md",
+  changelog: "CHANGELOG.md",
+  changes: "docs/changes/index.md",
+  readme: "README.md",
+  quality_report: "docs/QUALITY_REPORT.md",
+};
+
+const DOC_TYPE_DISPLAY_MAP: Record<string, string> = {
+  summary: "Summary",
+  architecture: "Architecture",
+  workflow: "Workflow",
+  api: "API Documentation",
+  changes: "Recent Changes",
+  changelog: "Changelog",
+  readme: "Documentation",
+  quality_report: "Quality Report",
+};
+
+const normalizeDocType = (value: string): string => {
+  const lower = value.toLowerCase();
+  if (lower === "readme") return "summary";
+  if (lower === "qualityreport") return "quality_report";
+  return lower;
+};
+
+const extractDocInfo = (pathSegments: string[]): {
+  filePath: string;
+  docType: string;
+  version: string | null;
+} => {
+  if (pathSegments.length === 0) {
+    return {
+      filePath: "README.md",
+      docType: "summary",
+      version: null,
+    };
+  }
+
+  const lastSegment = pathSegments[pathSegments.length - 1];
+  const hasExtension = lastSegment.includes(".");
+  const joinedPath = pathSegments.join("/");
+
+  if (!hasExtension) {
+    const legacyPath = LEGACY_DOC_PATHS[lastSegment.toLowerCase()];
+    if (legacyPath) {
+      return {
+        filePath: legacyPath,
+        docType: normalizeDocType(lastSegment),
+        version: null,
+      };
+    }
+
+    return {
+      filePath: joinedPath,
+      docType: normalizeDocType(lastSegment),
+      version: null,
+    };
+  }
+
+  const filePath = joinedPath;
+  const fileNameWithoutExt = lastSegment.replace(/\.md$/i, "");
+  const versionMatch = fileNameWithoutExt.match(/^(v[\d.]+)-(.*)$/i);
+
+  if (versionMatch) {
+    const [, versionValue, docSlug] = versionMatch;
+    return {
+      filePath,
+      docType: normalizeDocType(docSlug),
+      version: versionValue,
+    };
+  }
+
+  return {
+    filePath,
+    docType: normalizeDocType(fileNameWithoutExt),
+    version: null,
+  };
+};
+
 export default function RepoPage({ params }: RepoPageProps) {
   const [content, setContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -30,6 +113,7 @@ export default function RepoPage({ params }: RepoPageProps) {
   const [docType, setDocType] = useState<string>("");
   const [version, setVersion] = useState<string | null>(null);
   const [repoName, setRepoName] = useState<string>("");
+  const [sourcePath, setSourcePath] = useState<string>("");
 
   // Load page only once on mount
   useEffect(() => {
@@ -40,46 +124,28 @@ export default function RepoPage({ params }: RepoPageProps) {
         const resolvedParams = await params;
         const slug = resolvedParams.slug;
 
-        // Parse docType and version from slug
-        const lastSegment = slug[slug.length - 1];
-        const isVersioned = lastSegment?.match(/^v\d+(\.\d+)?$/);
-
-        let parsedDocType: string;
-        let parsedVersion: string | null = null;
-
-        if (isVersioned) {
-          parsedVersion = lastSegment;
-          parsedDocType = slug[slug.length - 2];
-        } else {
-          parsedDocType = lastSegment;
+        if (!slug || slug.length < 2) {
+          if (!isMounted) return;
+          setError("Invalid repository path");
+          setLoading(false);
+          return;
         }
 
-        const repoNameSegments = isVersioned ? slug.slice(0, -2) : slug.slice(0, -1);
-        const parsedRepoName = repoNameSegments.join("/");
+        const [orgSegment, repoSegment, ...pathSegments] = slug;
+        const repoFullName = `${orgSegment}/${repoSegment}`;
+
+        const docInfo = extractDocInfo(pathSegments);
+        const parsedRepoName = repoFullName;
 
         if (!isMounted) return;
 
-        setDocType(parsedDocType);
-        setVersion(parsedVersion);
+        setDocType(docInfo.docType);
+        setVersion(docInfo.version);
         setRepoName(parsedRepoName);
+        setSourcePath(docInfo.filePath);
 
-        // Determine file path based on docType
-        let filePath: string;
-        if (parsedVersion) {
-          filePath = `docs/${parsedDocType}/${parsedVersion}-${parsedDocType}.md`;
-        } else {
-          const fileMap: Record<string, string> = {
-            summary: "README.md",
-            architecture: "docs/architecture/current.md",
-            workflow: "docs/workflow/current.md",
-            api: "docs/api.md",
-            changelog: "CHANGELOG.md",
-            changes: "docs/changes/",
-          };
-          filePath = fileMap[parsedDocType] || "README.md";
-        }
+        const filePath = docInfo.filePath;
 
-        // Fetch content from backend via /api/fetch-doc
         const userToken = localStorage.getItem('pustak_access_token');
         const response = await fetch(
           `/api/fetch-doc?repo=${encodeURIComponent(parsedRepoName)}&filePath=${encodeURIComponent(filePath)}`,
@@ -143,15 +209,7 @@ export default function RepoPage({ params }: RepoPageProps) {
   }, []);
 
   const getDocTitle = useCallback(() => {
-    const titles: Record<string, string> = {
-      summary: "Summary",
-      architecture: "Architecture",
-      workflow: "Workflow",
-      api: "API Documentation",
-      changes: "Recent Changes",
-      changelog: "Changelog",
-    };
-    const baseTitle = titles[docType] || docType;
+    const baseTitle = DOC_TYPE_DISPLAY_MAP[docType] || docType;
     return version ? `${baseTitle} ${version}` : baseTitle;
   }, [docType, version]);
 
@@ -191,9 +249,9 @@ export default function RepoPage({ params }: RepoPageProps) {
     );
   }
 
-  const fileName = version
+  const fileName = sourcePath || (version
     ? `docs/${docType}/${version}-${docType}.md`
-    : `docs/${docType}.md`;
+    : `docs/${docType}.md`);
 
   return (
     <Layout>

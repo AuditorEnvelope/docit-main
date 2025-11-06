@@ -241,3 +241,5 @@ scratch/
 test_output/
 
 docai-env
+venv
+.venv

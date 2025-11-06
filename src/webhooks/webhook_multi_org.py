@@ -220,7 +220,48 @@ async def webhook_multi_org(
     print(f"✅ Webhook signature verified")
     
     # ========================================================================
-    # STEP 4: Handle push events
+    # STEP 4: Handle installation events (store app repo access)
+    # ========================================================================
+    
+    if x_github_event == "installation":
+        try:
+            action = payload.get("action")
+            installation = payload.get("installation", {})
+            repositories = payload.get("repositories", [])
+            
+            if action in ["created", "updated"] and db_pool:
+                # Store app installation in database
+                from core.app_installation_service import AppInstallationService
+                
+                app_install_service = AppInstallationService(db_pool)
+                org_id = installation.get("account", {}).get("login")
+                app_id = installation.get("app_id")
+                installation_id = installation.get("id")
+                repository_selection = installation.get("repository_selection", "all")
+                
+                if org_id and app_id:
+                    success = await app_install_service.store_app_installation(
+                        org_id=org_id,
+                        app_id=app_id,
+                        installation_id=installation_id,
+                        repository_selection=repository_selection,
+                        repositories=repositories,
+                        user_id=None  # Will be filled by webhook context if available
+                    )
+                    
+                    if success:
+                        print(f"✅ Stored app installation: org={org_id}, app={app_id}, repos={len(repositories)}")
+                    else:
+                        print(f"⚠️  Failed to store app installation")
+        except Exception as e:
+            print(f"⚠️  Error handling installation event: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return {"status": "accepted", "event": "installation"}
+    
+    # ========================================================================
+    # STEP 5: Handle push events
     # ========================================================================
     
     if x_github_event == "push":

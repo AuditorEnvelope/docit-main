@@ -6,6 +6,8 @@ import re  # Added for regex pattern matching
 from aiolimiter import AsyncLimiter
 from webhooks.github_app import get_installation_token
 from utilities.llm_provider_v2 import get_rotator
+from utilities.github_dual_app_helper import get_github_dual_app_helper
+from core.app_installation_service import AppInstallationService
 from pathlib import Path
 from processors.comprehensive_doc_generator import generate_comprehensive_documentation
 
@@ -58,9 +60,10 @@ async def handle_push_event(payload, github_token=None, doc_persona="internal"):
     # If no token provided but we have installation_id, try to get app token
     if not github_token and installation_id:
         try:
-            github_token = get_installation_token(installation_id)
+            dual_app = get_github_dual_app_helper()
+            github_token = await dual_app.get_reader_token(installation_id)
             if github_token:
-                print(f"✅ Using GitHub App installation token")
+                print(f"✅ Using GitHub App installation token (Reader)")
         except Exception as e:
             print(f"⚠️  Failed to get app token: {e}")
             github_token = os.getenv("GITHUB_TOKEN")
@@ -156,7 +159,53 @@ async def handle_push_event(payload, github_token=None, doc_persona="internal"):
         
         # ⭐ V4: Push to docbook repo instead of source repo
         print(f"📚 V4 Mode - Publishing to docbook repo (staging branch)")
-        await push_to_docbook_v4(tmpdir, repo, analysis, after_sha, token, payload)
+
+        dual_app = get_github_dual_app_helper()
+
+        writer_installation_id = installation_id
+
+        if dual_app.dual_app_mode and dual_app.writer_app_id:
+            writer_installation_id = None
+            org_id = payload.get("_org_id")
+            if not org_id and repo_full and "/" in repo_full:
+                org_id = repo_full.split("/", 1)[0]
+
+            db_pool = payload.get("_db_pool")
+
+            if org_id and db_pool:
+                try:
+                    service = AppInstallationService(db_pool)
+                    writer_installation_id = await service.get_app_installation_id(
+                        org_id,
+                        int(dual_app.writer_app_id),
+                    )
+                    if writer_installation_id:
+                        print(
+                            f"✅ Resolved writer installation ID {writer_installation_id} for org {org_id}"
+                        )
+                except Exception as lookup_error:
+                    print(f"⚠️  Could not resolve writer installation ID from DB: {lookup_error}")
+
+            if not writer_installation_id:
+                writer_installation_id = installation_id
+
+        if not writer_installation_id:
+            raise RuntimeError("Writer app installation ID missing for docbook publish")
+
+        writer_token = await dual_app.get_writer_token(writer_installation_id)
+        if not writer_token:
+            raise RuntimeError("Writer token unavailable for docbook publish")
+
+        print(f"✅ Using Writer token for docbook publish")
+
+        await push_to_docbook_v4(
+            tmpdir,
+            repo,
+            analysis,
+            after_sha,
+            writer_token,
+            payload,
+        )
     
     except Exception as e:
         print(f"❌ Error in handle_push_event: {e}")
@@ -828,27 +877,66 @@ async def push_to_docbook_v4(tmpdir, repo, analysis, commit_sha, token, payload)
             print(f"⚠️  No database pool in payload, skipping docbook publish")
             print(f"   (This is normal for webhook mode - use event_consumer for auto-publish)")
             return
-        
-        # Publish to docbook
-        print(f"📚 AUTO-PUBLISHING to docbook/staging...")
-        publisher = DocbookPublisher(db_pool)
-        result = await publisher.publish_to_docbook(
-            user_id=user_id,
-            org_id=org_id,
-            source_repo_name=source_repo,
-            docs_dir=docs_dir,
-            user_token=token,
-            commit_message=f"docs: {analysis.get('type', 'update')} - {analysis.get('title', 'Auto-generated')}"
-        )
-        
-        if result.get('status') == 'published_to_staging':
-            print(f"✅ AUTO-PUBLISHED to docbook/staging!")
-            print(f"   Repo: {result.get('docbook_repo')}")
-            print(f"   User can review & approve in Pending Reviews tab")
-        else:
-            print(f"⚠️  Auto-publish result: {result.get('status')}")
-    
+
+        # Get writer token using dual app helper
+        try:
+            print("🔑 Getting writer token using dual app helper...")
+            dual_app = get_github_dual_app_helper()
+            if not dual_app:
+                print("❌ Failed to initialize GitHubDualAppHelper")
+                return
+            
+            # Get installation ID for writer app
+            publisher = DocbookPublisher(db_pool)
+            installation_id = await publisher.get_docbook_installation_id(org_id)
+            if not installation_id:
+                print("❌ Failed to get installation ID for writer app")
+                return
+                
+            # Get writer token with installation ID
+            try:
+                writer_token = await dual_app.get_writer_token(installation_id)
+                if not writer_token:
+                    print("❌ Failed to get writer token: No token returned from dual app helper")
+                    return False
+                    
+                print("✅ Successfully obtained writer token")
+                
+                # Publish to docbook with the obtained token
+                print(f"📚 AUTO-PUBLISHING to docbook/staging...")
+                # Extract user_id and org_id from the payload
+                user_id = payload.get('_user_id', '')
+                org_id = payload.get('_org_id', '')
+                result = await publisher.publish_to_docbook(
+                    user_id=user_id,
+                    org_id=org_id,
+                    source_repo_name=repo_full.split('/')[-1],  # Get just the repo name
+                    docs_dir=Path(str(docs_dir)),
+                    writer_token=writer_token,
+                    commit_message=f"docs: Auto-generated documentation for {commit_sha}"
+                )
+                
+                if result:
+                    print("✅ Successfully published to docbook")
+                    return True
+                else:
+                    print("❌ Failed to publish to docbook")
+                    return False
+                
+            except Exception as e:
+                print(f"❌ Error in docbook publishing: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return False
+                
+        except Exception as e:
+            print(f"❌ Failed to get writer token: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+            
     except Exception as e:
         print(f"⚠️  Auto-publish error: {e}")
         import traceback
         traceback.print_exc()
+        return False
