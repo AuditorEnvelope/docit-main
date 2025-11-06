@@ -904,12 +904,16 @@ async def push_to_docbook_v4(tmpdir, repo, analysis, commit_sha, token, payload)
                 
                 # Publish to docbook with the obtained token
                 print(f"📚 AUTO-PUBLISHING to docbook/staging...")
+                # Extract user_id and org_id from the payload
+                user_id = payload.get('_user_id', '')
+                org_id = payload.get('_org_id', '')
                 result = await publisher.publish_to_docbook(
-                    repo_full,
-                    str(docs_dir),
-                    commit_sha,
-                    writer_token,
-                    branch="staging"
+                    user_id=user_id,
+                    org_id=org_id,
+                    source_repo_name=repo_full.split('/')[-1],  # Get just the repo name
+                    docs_dir=Path(str(docs_dir)),
+                    writer_token=writer_token,
+                    commit_message=f"docs: Auto-generated documentation for {commit_sha}"
                 )
                 
                 if result:
