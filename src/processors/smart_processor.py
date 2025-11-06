@@ -882,21 +882,31 @@ async def push_to_docbook_v4(tmpdir, repo, analysis, commit_sha, token, payload)
         try:
             print("🔑 Getting writer token using dual app helper...")
             dual_app = get_github_dual_app_helper()
+            if not dual_app:
+                print("❌ Failed to initialize GitHubDualAppHelper")
+                return None
             
             # Get installation ID for writer app
             publisher = DocbookPublisher(db_pool)
             installation_id = await publisher.get_docbook_installation_id(org_id)
             if not installation_id:
                 print("❌ Failed to get installation ID for writer app")
-                return
+                return None
                 
             # Get writer token with installation ID
-            writer_token = await dual_app.get_writer_token(installation_id)
-            if not writer_token:
-                print("❌ Failed to get writer token: No token returned from dual app helper")
-                return
-                
-            print("✅ Successfully obtained writer token")
+            try:
+                writer_token = await dual_app.get_writer_token(installation_id)
+                if not writer_token:
+                    print("❌ Failed to get writer token: No token returned from dual app helper")
+                    return None
+                    
+                print("✅ Successfully obtained writer token")
+                return writer_token
+            except Exception as e:
+                print(f"❌ Error getting writer token: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return None
         except Exception as e:
             print(f"❌ Failed to get writer token: {e}")
             import traceback
