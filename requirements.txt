@@ -1,25 +1,38 @@
-fastapi
-uvicorn
-PyJWT
-PyGithub
-python-dotenv
-python-dateutil
-google-generativeai
-groq
-openai
-requests
-gitpython
+# Core Dependencies
+fastapi>=0.68.0
+uvicorn>=0.15.0
+python-dotenv>=0.19.0
+python-jose[cryptography]>=3.3.0
+python-multipart>=0.0.5
 
-# Day 1: Commit Bus
-asyncpg==0.29.0
+# Database
+sqlalchemy>=1.4.0
+asyncpg>=0.24.0
+alembic>=1.7.4
 
-# Day 3: RAG System
-pymilvus==2.3.3
+# GitHub Integration
+PyGithub>=1.59.0
+PyJWT>=2.3.0
 
-# Embeddings (choose one or use all)
-# openai  # Optional - only if you have OpenAI key
-sentence-transformers  # FREE local embeddings (no API key needed!)
+aiohttp>=3.8.0
+gitpython>=3.1.30
 
-# Additional
-pydantic==2.5.0
-aiolimiter==1.1.0
+# AI/ML
+openai>=0.28.0
+google-generativeai>=0.3.0
+groq>=0.3.0
+sentence-transformers>=2.2.2
+
+# Utils
+python-dateutil>=2.8.2
+aiolimiter>=1.1.0
+pydantic>=1.10.0
+
+# Development
+pytest>=7.0.0
+pytest-asyncio>=0.20.0
+httpx>=0.24.0
+
+# Documentation
+mkdocs>=1.4.0
+mkdocs-material>=8.5.0

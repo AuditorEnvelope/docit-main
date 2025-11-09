@@ -8,7 +8,7 @@ import json
 import subprocess
 from pathlib import Path
 from datetime import datetime
-from utilities.llm_provider_v2 import get_rotator
+from src.utilities.llm_provider_v2 import get_rotator
 
 def check_documentation_quality(repo_dir):
     """

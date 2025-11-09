@@ -53,7 +53,7 @@ export default function DocbookSetupModal({
         setError("Authentication token not found. Please log in again.");
         return;
       }
-      const response = await fetch(`${BACKEND_URL}/docbook/link-repo`, {
+      const response = await fetch(`${BACKEND_URL}/documentation/link-repo`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

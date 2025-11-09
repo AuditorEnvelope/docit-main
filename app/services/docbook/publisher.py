@@ -1,0 +1,705 @@
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import tempfile
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+from uuid import UUID, uuid4
+
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.base import DocumentationPublication, GitHubInstallation
+from app.models.docbook import DocbookRepo, DocbookReview, DocbookStatus
+from app.utils.github_dual_app import GitHubDualAppHelper
+
+DEFAULT_STAGING_BRANCH = "staging"
+DEFAULT_MAIN_BRANCH = "main"
+
+
+class DocbookPublisher:
+    """Publish documentation to the org's docbook staging branch."""
+
+    def __init__(
+        self,
+        db_pool=None,
+        *,
+        dual_app: Optional[GitHubDualAppHelper] = None,
+        db_session: Optional[AsyncSession] = None,
+    ) -> None:
+        self.db_pool = db_pool
+        self._dual_app = dual_app
+        self.db_session = db_session
+
+    async def publish_to_docbook(
+        self,
+        *,
+        user_id: str | UUID,
+        org_id: str,
+        source_repo_name: str,
+        docs_dir: Path,
+        writer_token: Optional[str] = None,
+        commit_message: str = "docs: Auto-generated documentation",
+        commit_sha: Optional[str] = None,
+        installation_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Publish documentation artefacts to the staging branch."""
+
+        if not docs_dir.exists():
+            raise FileNotFoundError(f"Docs directory does not exist: {docs_dir}")
+
+        user_uuid, user_label = self._normalize_user_id(user_id)
+
+        print(f"\n{'=' * 80}")
+        print(f"📦 Starting docbook publish for {source_repo_name}")
+        print(f"👤 User: {user_label}, Org: {org_id}")
+        print(f"📂 Docs dir: {docs_dir}")
+        print(f"{'=' * 80}\n")
+
+        docbook_repo = await self._get_docbook_repo(user_uuid, org_id)
+        if docbook_repo:
+            docbook_full_name = docbook_repo["full_name"]
+            docbook_url = docbook_repo["url"]
+            staging_branch = docbook_repo["staging_branch"]
+            main_branch = docbook_repo["main_branch"]
+            print(f"✅ Found linked docbook repo: {docbook_full_name}")
+        else:
+            docbook_full_name = f"{org_id}/pustak-docbook-{org_id}"
+            docbook_url = f"https://github.com/{docbook_full_name}"
+            staging_branch = DEFAULT_STAGING_BRANCH
+            main_branch = DEFAULT_MAIN_BRANCH
+            print(f"ℹ️  Using default docbook repo naming: {docbook_full_name}")
+
+        if not writer_token:
+            token_source = "provided installation" if installation_id else "database"
+            print(f"🔑 Writer token not provided. Resolving via {token_source}...")
+            installation_id = installation_id or await self._get_installation_id(org_id)
+            if not installation_id:
+                # Don't raise - make it non-blocking, just log and return error status
+                error_msg = f"No GitHub installation found for org {org_id}. Please install Writer App."
+                print(f"⚠️  {error_msg}")
+                return {
+                    "status": "error",
+                    "message": error_msg,
+                    "docbook_repo": docbook_full_name,
+                    "branch": staging_branch,
+                }
+            writer_token = await self._get_writer_token(installation_id)
+            if not writer_token:
+                # Don't raise - make it non-blocking
+                error_msg = "Failed to resolve writer token. Installation may not exist or app credentials may be invalid."
+                print(f"⚠️  {error_msg}")
+                return {
+                    "status": "error",
+                    "message": error_msg,
+                    "docbook_repo": docbook_full_name,
+                    "branch": staging_branch,
+                }
+            print("✅ Obtained writer token from GitHub App")
+        else:
+            print("ℹ️  Using provided writer token")
+
+        tmp_dir = Path(tempfile.mkdtemp(prefix="docai_docbook_"))
+        print(f"📁 Working directory: {tmp_dir}")
+
+        try:
+            self._clone_repo(docbook_full_name, writer_token, tmp_dir)
+            self._configure_git_identity(tmp_dir)
+            self._checkout_staging(tmp_dir, staging_branch, main_branch, writer_token, docbook_full_name)
+            self._sync_docs(tmp_dir, source_repo_name, docs_dir)
+
+            if not self._has_changes(tmp_dir):
+                print("ℹ️  No changes detected – skipping push")
+                return {
+                    "status": "no_changes",
+                    "message": "No documentation updates detected",
+                    "docbook_repo": docbook_full_name,
+                    "branch": staging_branch,
+                }
+
+            full_commit_msg = f"{commit_message} ({source_repo_name})"
+            self._commit_changes(tmp_dir, full_commit_msg)
+            self._push_changes(tmp_dir, docbook_full_name, staging_branch, writer_token)
+
+            metadata = {
+                "source_repo": source_repo_name,
+                "docbook_repo": docbook_full_name,
+                "branch": staging_branch,
+                "commit_sha": commit_sha,
+            }
+
+            if self.db_pool and user_uuid:
+                await self._record_pending_review(
+                    user_uuid,
+                    org_id,
+                    source_repo_name,
+                    docbook_full_name,
+                    full_commit_msg,
+                    metadata,
+                )
+
+                if commit_sha:
+                    await self.log_publication(
+                        user_id=str(user_uuid),
+                        org_id=org_id,
+                        repo_name=source_repo_name,
+                        commit_sha=commit_sha,
+                        status="pending_review",
+                    )
+            else:
+                print("⚠️  Skipping review logging – missing db_pool or user UUID")
+
+            review_url = f"{docbook_url}/compare/{main_branch}...{staging_branch}"
+            print(f"✅ Published to {docbook_full_name}/{staging_branch}")
+            print(f"🔗 Review diff: {review_url}")
+
+            return {
+                "status": "published_to_staging",
+                "message": f"Documentation staged in {docbook_full_name}",
+                "docbook_repo": docbook_full_name,
+                "source_repo": source_repo_name,
+                "branch": staging_branch,
+                "review_url": review_url,
+                "commit_message": full_commit_msg,
+            }
+
+        except Exception as exc:  # noqa: BLE001 - surface full error upstream
+            print(f"❌ Error publishing to docbook: {exc}")
+            return {
+                "status": "error",
+                "message": str(exc),
+                "docbook_repo": docbook_full_name,
+                "branch": staging_branch,
+            }
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    async def log_publication(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        repo_name: str,
+        commit_sha: str,
+        status: str,
+    ) -> None:
+        if self.db_session:
+            await self._log_publication_session(
+                user_id=user_id,
+                org_id=org_id,
+                repo_name=repo_name,
+                commit_sha=commit_sha,
+                status=status,
+            )
+            return
+
+        if not self.db_pool:
+            return
+
+        try:
+            async with self.db_pool.acquire() as conn:
+                existing = await conn.fetchrow(
+                    """
+                    SELECT id FROM documentation_publications
+                    WHERE org_id = $1 AND repo_name = $2 AND commit_sha = $3
+                    """,
+                    org_id,
+                    repo_name,
+                    commit_sha,
+                )
+
+                if existing:
+                    await conn.execute(
+                        """
+                        UPDATE documentation_publications
+                        SET status = $1,
+                            updated_at = NOW()
+                        WHERE id = $2
+                        """,
+                        status,
+                        existing["id"],
+                    )
+                else:
+                    await conn.execute(
+                        """
+                        INSERT INTO documentation_publications (
+                            user_id, org_id, repo_name, commit_sha, status, published_at
+                        ) VALUES ($1, $2, $3, $4, $5, NOW())
+                        """,
+                        user_id,
+                        org_id,
+                        repo_name,
+                        commit_sha,
+                        status,
+                    )
+        except Exception as exc:  # noqa: BLE001 - log and continue
+            print(f"❌ Failed to log publication: {exc}")
+
+    async def _log_publication_session(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        repo_name: str,
+        commit_sha: str,
+        status: str,
+    ) -> None:
+        if not self.db_session:
+            return
+
+        try:
+            result = await self.db_session.execute(
+                select(DocumentationPublication).where(
+                    DocumentationPublication.org_id == org_id,
+                    DocumentationPublication.repo_name == repo_name,
+                    DocumentationPublication.commit_sha == commit_sha,
+                )
+            )
+            publication = result.scalar_one_or_none()
+
+            if publication:
+                publication.status = status
+                publication.updated_at = datetime.utcnow()
+            else:
+                publication = DocumentationPublication(
+                    user_id=user_id,
+                    org_id=org_id,
+                    repo_name=repo_name,
+                    commit_sha=commit_sha,
+                    status=status,
+                    published_at=datetime.utcnow(),
+                )
+                self.db_session.add(publication)
+
+                # Don't flush here - let the caller handle the transaction
+                # await self.db_session.flush()
+        except Exception as exc:
+            # Log but don't fail - publication logging is non-critical
+            print(f"⚠️  Failed to log publication (non-critical): {exc}")
+
+    async def _get_docbook_repo(self, user_uuid: Optional[UUID], org_id: str) -> Optional[Dict[str, Any]]:
+        if not user_uuid:
+            return None
+
+        if self.db_session:
+            result = await self.db_session.execute(
+                select(DocbookRepo).where(
+                    DocbookRepo.user_id == user_uuid,
+                    DocbookRepo.org_id == org_id,
+                    DocbookRepo.is_active.is_(True),
+                )
+            )
+            repo = result.scalar_one_or_none()
+            if not repo:
+                return None
+            return {
+                "full_name": repo.docbook_full_name,
+                "url": repo.docbook_url,
+                "staging_branch": repo.staging_branch or DEFAULT_STAGING_BRANCH,
+                "main_branch": repo.main_branch or DEFAULT_MAIN_BRANCH,
+                "auto_merge": repo.auto_merge,
+            }
+
+        if not self.db_pool:
+            return None
+
+        async with self.db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT docbook_full_name,
+                       docbook_url,
+                       staging_branch,
+                       main_branch,
+                       auto_merge
+                FROM docbook_repos
+                WHERE user_id = $1 AND org_id = $2 AND is_active = TRUE
+                """,
+                user_uuid,
+                org_id,
+            )
+
+        if not row:
+            return None
+
+        return {
+            "full_name": row["docbook_full_name"],
+            "url": row["docbook_url"],
+            "staging_branch": row["staging_branch"] or DEFAULT_STAGING_BRANCH,
+            "main_branch": row["main_branch"] or DEFAULT_MAIN_BRANCH,
+            "auto_merge": row["auto_merge"],
+        }
+
+    async def _get_installation_id(self, org_id: str) -> Optional[int]:
+        """
+        Get writer app installation ID for an org (like old codebase)
+        Uses AppInstallationService to query app_installations table
+        """
+        from app.services.github.app_installation_service import AppInstallationService
+        
+        writer_app_id = self._writer_app_id()
+        if not writer_app_id:
+            return None
+
+        try:
+            writer_app_id_int = int(writer_app_id)
+        except (TypeError, ValueError):
+                return None
+
+        # Use AppInstallationService like old codebase does
+        # This is the correct way - matches old codebase behavior
+        if self.db_pool:
+            try:
+                service = AppInstallationService(db_pool=self.db_pool)
+                installation_id = await service.get_app_installation_id(org_id, writer_app_id_int)
+                if installation_id:
+                    print(f"✅ Resolved writer installation ID {installation_id} for org {org_id} (app {writer_app_id_int})")
+                    return installation_id
+            except Exception as e:
+                print(f"⚠️  Error using AppInstallationService: {e}")
+
+        if self.db_session:
+            try:
+                service = AppInstallationService(db_session=self.db_session)
+                installation_id = await service.get_app_installation_id(org_id, writer_app_id_int)
+                if installation_id:
+                    print(f"✅ Resolved writer installation ID {installation_id} for org {org_id} (app {writer_app_id_int})")
+                    return installation_id
+            except Exception as e:
+                print(f"⚠️  Error using AppInstallationService: {e}")
+
+        # Fallback: try legacy github_installations table
+        if self.db_pool:
+            try:
+                async with self.db_pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT installation_id
+                        FROM github_installations
+                        WHERE org_id = $1 AND app_id = $2
+                        """,
+                        org_id,
+                        writer_app_id_int,
+                    )
+                    if row:
+                        return row["installation_id"]
+            except Exception as e:
+                print(f"⚠️  Error looking up legacy installation: {e}")
+
+        print(f"⚠️  No installation found for org {org_id}, app {writer_app_id_int}")
+        return None
+
+    async def _get_writer_token(self, installation_id: int) -> Optional[str]:
+        helper = self._get_dual_app_helper()
+        token = await helper.get_writer_token(installation_id)
+        if token:
+            preview = f"{token[:4]}...{token[-4:]}" if len(token) > 8 else "<short>"
+            print(f"🔐 Writer token acquired ({preview})")
+        return token
+
+    def _clone_repo(self, repo_full_name: str, writer_token: str, destination: Path) -> None:
+        clone_url, masked_url = self._tokenized_urls(repo_full_name, writer_token)
+        print(f"📚 Cloning docbook repository: {masked_url}")
+        # Don't use --depth 1 to ensure we can see all branches (like old codebase)
+        self._run_git([
+            "git",
+            "clone",
+            clone_url,
+            str(destination),
+        ], mask_tokens=[writer_token])
+
+    def _configure_git_identity(self, repo_dir: Path) -> None:
+        name, email = self._writer_identity()
+        self._run_git(["git", "config", "user.name", name], cwd=repo_dir)
+        self._run_git(["git", "config", "user.email", email], cwd=repo_dir)
+
+    def _checkout_staging(
+        self,
+        repo_dir: Path,
+        staging_branch: str,
+        main_branch: str,
+        writer_token: str,
+        repo_full_name: str,
+    ) -> None:
+        """
+        Checkout staging branch (like old codebase)
+        Handles empty repos by creating initial commit on main, then staging from main
+        """
+        # Fetch all branches (like old codebase)
+        try:
+            self._run_git(["git", "fetch", "origin"], cwd=repo_dir)
+        except RuntimeError:
+            # If fetch fails, repo might be empty
+            pass
+        
+        # Check if repo is empty (like old codebase)
+        try:
+            branches = self._run_git(["git", "branch", "-r"], cwd=repo_dir, capture_output=True).strip()
+            is_empty = not branches or "origin/" not in branches
+        except RuntimeError:
+            is_empty = True
+        
+        if is_empty:
+            # Repo is empty - create initial commit on main, then staging (like old codebase)
+            print(f"📝 Repo is empty, creating initial commit...")
+            clone_url, _ = self._tokenized_urls(repo_full_name, writer_token)
+            self._initialize_empty_repo(
+                repo_dir=repo_dir,
+                main_branch=main_branch,
+                staging_branch=staging_branch,
+                writer_token=writer_token,
+                repo_full_name=repo_full_name,
+                clone_url=clone_url,
+            )
+            print(f"✅ Created staging branch")
+            return
+        
+        # Repo has content - try to checkout staging (like old codebase)
+        try:
+            self._run_git(["git", "checkout", staging_branch], cwd=repo_dir)
+            print(f"✅ Checked out existing staging branch")
+            return
+        except RuntimeError:
+            # Staging doesn't exist - create it from main (like old codebase)
+            try:
+                # Try to checkout main first
+                self._run_git(["git", "checkout", main_branch], cwd=repo_dir)
+            except RuntimeError:
+                # Try master as fallback
+                try:
+                    self._run_git(["git", "checkout", "master"], cwd=repo_dir)
+                    main_branch = "master"
+                except RuntimeError:
+                    # Try to checkout from remote
+                    try:
+                        self._run_git(["git", "checkout", "-b", main_branch, f"origin/{main_branch}"], cwd=repo_dir)
+                    except RuntimeError:
+                        # Last resort - try master from remote
+                        self._run_git(["git", "checkout", "-b", "master", "origin/master"], cwd=repo_dir)
+                        main_branch = "master"
+            
+            # Now create staging from main (like old codebase)
+            self._run_git(["git", "checkout", "-b", staging_branch], cwd=repo_dir)
+            print(f"✅ Created staging branch from {main_branch}")
+
+    def _determine_base_ref(
+        self,
+        repo_dir: Path,
+        preferred_main: str,
+    ) -> Optional[str]:
+        candidates = [preferred_main, "main", "master"]
+        for candidate in candidates:
+            if self._remote_branch_exists(repo_dir, candidate):
+                return f"origin/{candidate}"
+
+        # Try default remote HEAD
+        try:
+            head_ref = self._run_git(
+                ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+                cwd=repo_dir,
+                capture_output=True,
+            ).strip()
+            if head_ref:
+                return head_ref
+        except RuntimeError:
+            pass
+
+        return None
+
+    def _remote_branch_exists(self, repo_dir: Path, branch: str) -> bool:
+        try:
+            output = self._run_git(
+                ["git", "ls-remote", "--heads", "origin", branch],
+                cwd=repo_dir,
+                capture_output=True,
+            )
+            return bool(output.strip())
+        except RuntimeError:
+            return False
+
+    def _initialize_empty_repo(
+        self,
+        *,
+        repo_dir: Path,
+        main_branch: str,
+        staging_branch: str,
+        writer_token: str,
+        repo_full_name: str,
+        clone_url: str,
+    ) -> None:
+        print(
+            f"ℹ️  Repository {repo_full_name} has no default branch. Initializing {main_branch}."
+        )
+
+        self._run_git(["git", "checkout", "--orphan", main_branch], cwd=repo_dir)
+
+        placeholder = repo_dir / "README.md"
+        if not placeholder.exists():
+            placeholder.write_text(
+                f"# {repo_full_name}\n\nInitial commit for docbook repository."
+            )
+
+        self._run_git(["git", "add", "README.md"], cwd=repo_dir)
+        self._run_git(
+            ["git", "commit", "-m", "chore: initialize docbook main branch"],
+            cwd=repo_dir,
+        )
+
+        self._run_git(
+            ["git", "push", clone_url, f"HEAD:{main_branch}"],
+            cwd=repo_dir,
+            mask_tokens=[writer_token],
+        )
+
+        # Create staging from freshly created main
+        self._run_git(
+            ["git", "checkout", "-B", staging_branch, main_branch],
+            cwd=repo_dir,
+        )
+
+    def _sync_docs(self, repo_dir: Path, source_repo_name: str, docs_dir: Path) -> None:
+        target_dir = repo_dir / source_repo_name
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        shutil.copytree(docs_dir, target_dir)
+        self._run_git(["git", "add", f"{source_repo_name}/"], cwd=repo_dir)
+
+    def _has_changes(self, repo_dir: Path) -> bool:
+        status = self._run_git(
+            ["git", "status", "--porcelain"],
+            cwd=repo_dir,
+            capture_output=True,
+        )
+        return bool(status.strip())
+
+    def _commit_changes(self, repo_dir: Path, commit_message: str) -> None:
+        self._run_git(["git", "commit", "-m", commit_message], cwd=repo_dir)
+
+    def _push_changes(
+        self,
+        repo_dir: Path,
+        repo_full_name: str,
+        staging_branch: str,
+        writer_token: str,
+    ) -> None:
+        push_url, masked_url = self._tokenized_urls(repo_full_name, writer_token)
+        print(f"🚀 Pushing updates to {masked_url} ({staging_branch})")
+        self._run_git(
+            ["git", "push", push_url, f"HEAD:{staging_branch}"],
+            cwd=repo_dir,
+            mask_tokens=[writer_token],
+        )
+
+    async def _record_pending_review(
+        self,
+        user_uuid: UUID,
+        org_id: str,
+        source_repo_name: str,
+        docbook_full_name: str,
+        commit_message: str,
+        metadata: Dict[str, Any],
+    ) -> None:
+        """Record pending review in database (like old codebase - no review_metadata column)"""
+        # Always use asyncpg pool (like old codebase) to avoid schema mismatches
+        # The SQLAlchemy model has review_metadata but database doesn't have this column
+        if self.db_session:
+            # If db_session is provided, we still use db_pool to avoid schema issues
+            # This ensures consistency with old codebase
+            pass
+
+        if not self.db_pool:
+            return
+
+        # Use asyncpg pool directly (like old codebase) - no review_metadata column
+        async with self.db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO docbook_reviews (
+                    user_id, org_id, source_repo_name, docbook_full_name,
+                    status, commit_message, created_at
+                ) VALUES ($1, $2, $3, $4, 'pending_review', $5, NOW())
+                ON CONFLICT (user_id, org_id, source_repo_name) DO UPDATE
+                SET status = 'pending_review', commit_message = $5, updated_at = NOW()
+                """,
+                user_uuid,
+                org_id,
+                source_repo_name,
+                docbook_full_name,
+                commit_message,
+            )
+
+    def _normalize_user_id(self, user_id: str | UUID) -> Tuple[Optional[UUID], str]:
+        if isinstance(user_id, UUID):
+            return user_id, str(user_id)
+
+        if not user_id:
+            return None, "<unknown>"
+
+        try:
+            user_uuid = UUID(str(user_id))
+            return user_uuid, str(user_uuid)
+        except (ValueError, TypeError):
+            fallback_uuid = uuid4()
+            return None, f"{user_id} (anon {fallback_uuid})"
+
+    def _writer_app_id(self) -> Optional[int]:
+        helper = self._get_dual_app_helper()
+        app_id = helper.writer_app_id or helper.github_app_id
+        try:
+            return int(app_id) if app_id else None
+        except (TypeError, ValueError):
+            return None
+
+    def _writer_identity(self) -> Tuple[str, str]:
+        helper = self._get_dual_app_helper()
+        app_id = helper.writer_app_id or helper.github_app_id or "pustak-bot"
+        slug = "pustak-publisher-ai"
+        bot_name = f"{slug}[bot]"
+        bot_email = f"{app_id}+{slug}[bot]@users.noreply.github.com"
+        return bot_name, bot_email
+
+    def _tokenized_urls(self, repo_full_name: str, token: str) -> Tuple[str, str]:
+        url = f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
+        masked = f"https://x-access-token:***MASKED***@github.com/{repo_full_name}.git"
+        return url, masked
+
+    def _run_git(
+        self,
+        cmd: list[str],
+        *,
+        cwd: Optional[Path] = None,
+        capture_output: bool = False,
+        mask_tokens: Optional[list[str]] = None,
+    ) -> str:
+        mask_tokens = mask_tokens or []
+        proc = subprocess.run(
+            cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if proc.returncode != 0:
+            stderr = self._mask(proc.stderr, mask_tokens)
+            stdout = self._mask(proc.stdout, mask_tokens)
+            cmd_str = " ".join(cmd)
+            print(f"❌ Command failed: {cmd_str}\nstdout: {stdout}\nstderr: {stderr}")
+            raise RuntimeError(stderr or stdout or f"Command failed: {cmd_str}")
+
+        output = proc.stdout if capture_output else ""
+        return self._mask(output, mask_tokens)
+
+    def _mask(self, text: str, tokens: list[str]) -> str:
+        masked = text
+        for token in tokens:
+            if token and len(token) > 4:
+                masked = masked.replace(token, "***MASKED***")
+        return masked
+
+    def _get_dual_app_helper(self) -> GitHubDualAppHelper:
+        if not self._dual_app:
+            self._dual_app = GitHubDualAppHelper()
+        return self._dual_app

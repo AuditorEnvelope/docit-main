@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docai"
+version = "0.1.0"
+description = "Documentation AI Service"
+authors = [
+    { name = "Your Name", email = "your.email@example.com" },
+]
+requires-python = ">=3.8"
+dependencies = [
+    "fastapi>=0.68.0",
+    "uvicorn>=0.15.0",
+    "sqlalchemy>=1.4.0",
+    "asyncpg>=0.24.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-multipart>=0.0.5",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=0.19.0",
+    "httpx>=0.23.0",
+    "aiohttp>=3.8.0",
+    "alembic>=1.7.0",
+    "pytest>=6.0.0",
+    "PyGithub>=1.59.0",
+    "PyJWT>=2.3.0",
+    "gitpython>=3.1.30",
+    "openai>=0.28.0",
+    "google-generativeai>=0.3.0",
+    "groq>=0.3.0",
+    "sentence-transformers>=2.2.2",
+    "python-dateutil>=2.8.2",
+    "aiolimiter>=1.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest-asyncio>=0.15.0",
+    "black>=22.0.0",
+    "isort>=5.0.0",
+    "mypy>=0.900",
+    "flake8>=4.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[project.scripts]
+docai-api = "app.main:app"
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
