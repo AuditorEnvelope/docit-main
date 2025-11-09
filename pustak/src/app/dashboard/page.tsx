@@ -75,7 +75,7 @@ export default function DashboardPage() {
         const org = connectedOrgs[0]; // Check first org
 
         const response = await fetch(
-          `${BACKEND_URL}/api/v1/org/${org}/verify-apps`,
+          `${BACKEND_URL}/org/${org}/verify-apps`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -107,7 +107,7 @@ export default function DashboardPage() {
         const org = connectedOrgs[0];
 
         const response = await fetch(
-          `${BACKEND_URL}/api/v1/org/${org}/verify-apps`,
+          `${BACKEND_URL}/org/${org}/verify-apps`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -296,7 +296,7 @@ export default function DashboardPage() {
         const org = connectedOrgs[0];
 
         const response = await fetch(
-          `${BACKEND_URL}/api/v1/org/${org}/verify-apps`,
+          `${BACKEND_URL}/org/${org}/verify-apps`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -325,7 +325,7 @@ export default function DashboardPage() {
   const checkWriterAppAccess = async (org: string, docbookRepo: string) => {
     try {
       const response = await fetch(
-        `${BACKEND_URL}/api/v1/org/${org}/verify-writer-app-access?repo=${docbookRepo}`,
+        `${BACKEND_URL}/org/${org}/verify-writer-app-access?repo=${docbookRepo}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -355,7 +355,7 @@ export default function DashboardPage() {
         console.log(`⏱️ [POLLING] Checking if Writer App is installed...`);
 
         const response = await fetch(
-          `${BACKEND_URL}/api/v1/org/${org}/verify-apps`,
+          `${BACKEND_URL}/org/${org}/verify-apps`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -480,7 +480,7 @@ export default function DashboardPage() {
       setLoadingRepos(true);
       try {
         const org = connectedOrgs[0];
-        const endpoint = `${BACKEND_URL}/api/v1/org/${org}/reader/repositories`;
+        const endpoint = `${BACKEND_URL}/org/${org}/reader/repositories`;
 
         console.log(`\n📚 === STEP 3: FETCHING READER APP REPOSITORIES ===`);
         console.log(`📍 Organization: ${org}`);
@@ -529,7 +529,7 @@ export default function DashboardPage() {
       if (!token) return;
       setLoadingOrgs(true);
       try {
-        const response = await fetch(`${BACKEND_URL}/auth/user-organizations`, {
+        const response = await fetch(`${BACKEND_URL}/user/organizations`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },

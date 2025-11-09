@@ -1,53 +1,98 @@
-# Lekhak AI
+# DocAI (formerly Lekhak AI)
 
-**AI-powered documentation system** that automatically analyzes codebases and generates comprehensive, hierarchical documentation with intelligent insights.
+**Next-generation AI-powered documentation system** that automatically analyzes codebases and generates comprehensive, hierarchical documentation with intelligent insights.
 
-## System Overview
+## 🚀 Quick Start
 
-Lekhak AI is a production-grade documentation platform that transforms code analysis into structured, searchable documentation. The system processes Git commits, analyzes code patterns, and generates documentation with AI assistance.
+### Prerequisites
+- Python 3.8+
+- pip (latest version)
+- Git
+- PostgreSQL (for production)
 
-**Core Capabilities:**
-- **Intelligent Code Analysis** - Multi-language parsing with AST analysis
-- **Hierarchical Documentation** - SDK → Module → Feature → Function structure
-- **Event-Driven Processing** - GitHub webhook integration with durable event storage
-- **AI-Enhanced Descriptions** - LLM-powered code documentation generation
-- **Version Management** - Semantic versioning with change tracking
+### Installation
 
-## Quick Start
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd doc_ai
+   ```
 
-### Basic Setup
+2. **Create and activate a virtual environment**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
+3. **Install the package in development mode**
+   ```bash
+   pip install -e ".[dev]"
+   ```
+
+4. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
+
+### Running the Application
+
+#### Development Server
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment (minimal setup)
-export GITHUB_TOKEN="ghp_your_token"
-export GEMINI_API_KEY="your_gemini_key"
-
-# Start the server
-python src/main.py
+uvicorn app.main:app --reload
 ```
 
-### Database Setup (Optional)
-
+#### Production Server
 ```bash
-# Create PostgreSQL database
-createdb lekhak_ai
-
-# Run schema
-psql lekhak_ai < schema.sql
-
-# Add to environment
-export DATABASE_URL="postgresql://localhost/lekhak_ai"
-
-# Start with Docker
-docker-compose up -d
+gunicorn app.main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
-## Architecture
+#### Running the Event Worker
+```bash
+python -m app.worker
+```
 
-### System Components
+### API Documentation
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+## 🛠 Development
+
+### Running Tests
+```bash
+pytest
+```
+
+### Code Formatting
+```bash
+black .
+isort .
+```
+
+### Type Checking
+```bash
+mypy .
+```
+
+## 📦 Deployment
+
+### Environment Variables
+Required environment variables are listed in `.env.example`
+
+### Database Migrations
+```bash
+alembic upgrade head
+```
+
+## 🤝 Contributing
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## 📄 License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 - **Event Consumer** - Processes GitHub webhooks and analyzes commits
 - **Smart Processor** - AI-powered code analysis and documentation generation
 - **Document Generator** - Creates hierarchical documentation structure

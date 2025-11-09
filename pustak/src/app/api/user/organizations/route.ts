@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user's organizations from backend
-    const response = await fetch(`${BACKEND_URL}/api/v1/user/organizations`, {
+    const response = await fetch(`${BACKEND_URL}/user/organizations`, {
       headers: {
         Authorization: authHeader,
       },

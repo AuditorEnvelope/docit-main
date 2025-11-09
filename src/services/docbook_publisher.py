@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
 
 import asyncpg
+import uuid
 
 from core.app_installation_service import AppInstallationService
 from utilities.github_dual_app_helper import get_github_dual_app_helper
@@ -51,14 +52,16 @@ class DocbookPublisher:
             print(f"⚠️  Failed to get writer installation ID for {org_id}: {e}")
             return None
     
-    async def get_docbook_repo(self, user_id: str, org_id: str) -> Optional[Dict[str, str]]:
+    async def get_docbook_repo(self, user_id: str | uuid.UUID, org_id: str) -> Optional[Dict[str, str]]:
         """Get linked docbook repo for organization"""
+        user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+
         async with self.db_pool.acquire() as conn:
             result = await conn.fetchrow("""
                 SELECT docbook_full_name, docbook_url
                 FROM docbook_repos
                 WHERE user_id = $1 AND org_id = $2 AND is_active = TRUE
-            """, user_id, org_id)
+            """, user_uuid, org_id)
             
             if result:
                 return {
@@ -69,7 +72,7 @@ class DocbookPublisher:
     
     async def publish_to_docbook(
         self,
-        user_id: str,
+        user_id: str | uuid.UUID,
         org_id: str,
         source_repo_name: str,
         docs_dir: Path,
@@ -94,7 +97,9 @@ class DocbookPublisher:
         """
         print("\n" + "="*80)
         print(f"📦 Starting docbook publish for {source_repo_name}")
-        print(f"👤 User: {user_id}, Org: {org_id}")
+        user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+
+        print(f"👤 User: {user_uuid}, Org: {org_id}")
         print(f"📂 Docs dir: {docs_dir}")
         print("="*80 + "\n")
         
@@ -102,7 +107,7 @@ class DocbookPublisher:
         try:
             # Get docbook repo info
             print("\n🔍 Looking up docbook repository...")
-            docbook = await self.get_docbook_repo(user_id, org_id)
+            docbook = await self.get_docbook_repo(user_uuid, org_id)
             
             # If no docbook found, create a default one following the pattern
             if not docbook:

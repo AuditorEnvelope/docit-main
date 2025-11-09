@@ -140,7 +140,6 @@ dmypy.json
 *.onnx
 *.tflite
 *.mlmodel
-models/
 checkpoints/
 data/
 datasets/

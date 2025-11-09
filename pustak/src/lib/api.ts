@@ -1,6 +1,7 @@
 // Production API integration for DocAI backend
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 export interface RepoData {
   name: string;
@@ -36,18 +37,18 @@ export interface HierarchicalNode {
 // Fetch repositories from backend
 export async function fetchRepositories(): Promise<RepoData[]> {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/repositories`, {
+    const response = await fetch(`${BACKEND_URL}/repositories`, {
       next: { revalidate: 30 }, // Revalidate every 30 seconds
     });
-    
+
     if (!response.ok) {
       throw new Error(`Failed to fetch repositories: ${response.statusText}`);
     }
-    
+
     const repos = await response.json();
     return repos;
   } catch (error) {
-    console.error('Error fetching repositories:', error);
+    console.error("Error fetching repositories:", error);
     return [];
   }
 }
@@ -70,17 +71,17 @@ export async function fetchRepoTree(
   repoName: string
 ): Promise<HierarchicalNode | null> {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/repos/${repoName}/tree`, {
+    const response = await fetch(`${BACKEND_URL}/repos/${repoName}/tree`, {
       next: { revalidate: 60 }, // Revalidate every 60 seconds
     });
-    
+
     if (!response.ok) {
       if (response.status === 404) {
         return null;
       }
       throw new Error(`Failed to fetch tree: ${response.statusText}`);
     }
-    
+
     const tree = await response.json();
     return tree;
   } catch (error) {
@@ -95,17 +96,20 @@ export async function fetchNodeDetails(
   nodeId: string
 ): Promise<HierarchicalNode | null> {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/repos/${repoName}/node/${nodeId}`, {
-      next: { revalidate: 60 },
-    });
-    
+    const response = await fetch(
+      `${BACKEND_URL}/repos/${repoName}/node/${nodeId}`,
+      {
+        next: { revalidate: 60 },
+      }
+    );
+
     if (!response.ok) {
       if (response.status === 404) {
         return null;
       }
       throw new Error(`Failed to fetch node: ${response.statusText}`);
     }
-    
+
     const node = await response.json();
     return node;
   } catch (error) {
@@ -120,24 +124,26 @@ export async function searchDocs(
   repoName?: string
 ): Promise<SearchResult[]> {
   if (query.length <= 2) return [];
-  
+
   try {
-    const url = repoName 
-      ? `${BACKEND_URL}/api/repos/${repoName}/search?query=${encodeURIComponent(query)}`
-      : `${BACKEND_URL}/api/search?query=${encodeURIComponent(query)}`;
-    
+    const url = repoName
+      ? `${BACKEND_URL}/repos/${repoName}/search?query=${encodeURIComponent(
+          query
+        )}`
+      : `${BACKEND_URL}/search?query=${encodeURIComponent(query)}`;
+
     const response = await fetch(url, {
       next: { revalidate: 10 }, // Short cache for search
     });
-    
+
     if (!response.ok) {
       throw new Error(`Search failed: ${response.statusText}`);
     }
-    
+
     const results = await response.json();
     return results;
   } catch (error) {
-    console.error('Error searching docs:', error);
+    console.error("Error searching docs:", error);
     return [];
   }
 }

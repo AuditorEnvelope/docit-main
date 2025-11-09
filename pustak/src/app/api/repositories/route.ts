@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,10 +16,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log("📡 Calling backend /auth/repositories with token...");
+    console.log("📡 Calling backend /api/v1/repositories with token...");
 
-    // Call backend /auth/repositories endpoint
-    const response = await fetch(`${BACKEND_URL}/auth/repositories`, {
+    // Call backend /api/v1/repositories endpoint
+    const response = await fetch(`${BACKEND_URL}/repositories`, {
       headers: {
         Authorization: `Bearer ${userToken}`,
         "Content-Type": "application/json",

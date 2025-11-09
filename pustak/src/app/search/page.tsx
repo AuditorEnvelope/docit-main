@@ -1,11 +1,19 @@
 import { Layout } from "@/components/Layout";
-import { Search, FileText, Code, Building2, GitBranch, Clock, Filter } from "lucide-react";
+import {
+  Search,
+  FileText,
+  Code,
+  Building2,
+  GitBranch,
+  Clock,
+  Filter,
+} from "lucide-react";
 import Link from "next/link";
-import type { Metadata } from 'next';
+import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: 'Search Documentation',
-  description: 'Search across all documentation in Pustak',
+  title: "Search Documentation",
+  description: "Search across all documentation in Pustak",
 };
 
 interface SearchPageProps {
@@ -14,7 +22,7 @@ interface SearchPageProps {
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
   const params = await searchParams;
-  const query = params.q || '';
+  const query = params.q || "";
   const typeFilter = params.type;
   const repoFilter = params.repo;
 
@@ -22,11 +30,14 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   let results: any[] = [];
   if (query && query.length > 2) {
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-      let url = `${backendUrl}/api/search?query=${encodeURIComponent(query)}`;
-      
+      const backendUrl =
+        process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      let url = `${backendUrl}/search?query=${encodeURIComponent(query)}`;
+
       if (repoFilter) {
-        url = `${backendUrl}/api/repos/${repoFilter}/search?query=${encodeURIComponent(query)}`;
+        url = `${backendUrl}/repos/${repoFilter}/search?query=${encodeURIComponent(
+          query
+        )}`;
       }
 
       const response = await fetch(url, {
@@ -35,14 +46,14 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
       if (response.ok) {
         results = await response.json();
-        
+
         // Apply type filter if specified
         if (typeFilter) {
           results = results.filter((r: any) => r.type === typeFilter);
         }
       }
     } catch (error) {
-      console.error('Search error:', error);
+      console.error("Search error:", error);
     }
   }
 
@@ -94,12 +105,21 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                 Search Results
               </h1>
             </div>
-            
+
             {query && (
               <p className="text-gray-600 dark:text-gray-400">
-                Showing results for <span className="font-semibold">&quot;{query}&quot;</span>
-                {typeFilter && <span className="ml-2">in <span className="font-semibold">{typeFilter}</span></span>}
-                {repoFilter && <span className="ml-2">from <span className="font-semibold">{repoFilter}</span></span>}
+                Showing results for{" "}
+                <span className="font-semibold">&quot;{query}&quot;</span>
+                {typeFilter && (
+                  <span className="ml-2">
+                    in <span className="font-semibold">{typeFilter}</span>
+                  </span>
+                )}
+                {repoFilter && (
+                  <span className="ml-2">
+                    from <span className="font-semibold">{repoFilter}</span>
+                  </span>
+                )}
               </p>
             )}
           </div>
@@ -110,24 +130,30 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
               <Filter className="w-4 h-4" />
               <span>Filter by:</span>
             </div>
-            
-            {['summary', 'architecture', 'workflow', 'api', 'changes'].map((type) => (
-              <Link
-                key={type}
-                href={`/search?q=${query}${type === typeFilter ? '' : `&type=${type}`}${repoFilter ? `&repo=${repoFilter}` : ''}`}
-                className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                  type === typeFilter
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                }`}
-              >
-                {type}
-              </Link>
-            ))}
-            
+
+            {["summary", "architecture", "workflow", "api", "changes"].map(
+              (type) => (
+                <Link
+                  key={type}
+                  href={`/search?q=${query}${
+                    type === typeFilter ? "" : `&type=${type}`
+                  }${repoFilter ? `&repo=${repoFilter}` : ""}`}
+                  className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                    type === typeFilter
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  {type}
+                </Link>
+              )
+            )}
+
             {typeFilter && (
               <Link
-                href={`/search?q=${query}${repoFilter ? `&repo=${repoFilter}` : ''}`}
+                href={`/search?q=${query}${
+                  repoFilter ? `&repo=${repoFilter}` : ""
+                }`}
                 className="px-3 py-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
               >
                 Clear filter
@@ -159,9 +185,9 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
           ) : (
             <div className="space-y-4">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Found {results.length} result{results.length !== 1 ? 's' : ''}
+                Found {results.length} result{results.length !== 1 ? "s" : ""}
               </p>
-              
+
               {results.map((result) => (
                 <Link
                   key={result.id}
@@ -170,7 +196,9 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                 >
                   <div className="flex items-start gap-4">
                     {/* Type Icon */}
-                    <div className={`p-3 rounded-lg ${getTypeColor(result.type)}`}>
+                    <div
+                      className={`p-3 rounded-lg ${getTypeColor(result.type)}`}
+                    >
                       {getTypeIcon(result.type)}
                     </div>
 
@@ -184,11 +212,11 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                           {result.type}
                         </span>
                       </div>
-                      
+
                       <p className="text-gray-600 dark:text-gray-400 mb-3 line-clamp-3">
                         {result.content.substring(0, 200)}...
                       </p>
-                      
+
                       <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
                         <span className="flex items-center gap-1">
                           <GitBranch className="w-3 h-3" />
