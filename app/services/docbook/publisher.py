@@ -78,10 +78,26 @@ class DocbookPublisher:
             print(f"🔑 Writer token not provided. Resolving via {token_source}...")
             installation_id = installation_id or await self._get_installation_id(org_id)
             if not installation_id:
-                raise RuntimeError(f"No GitHub installation found for org {org_id}")
+                # Don't raise - make it non-blocking, just log and return error status
+                error_msg = f"No GitHub installation found for org {org_id}. Please install Writer App."
+                print(f"⚠️  {error_msg}")
+                return {
+                    "status": "error",
+                    "message": error_msg,
+                    "docbook_repo": docbook_full_name,
+                    "branch": staging_branch,
+                }
             writer_token = await self._get_writer_token(installation_id)
             if not writer_token:
-                raise RuntimeError("Failed to resolve writer token")
+                # Don't raise - make it non-blocking
+                error_msg = "Failed to resolve writer token. Installation may not exist or app credentials may be invalid."
+                print(f"⚠️  {error_msg}")
+                return {
+                    "status": "error",
+                    "message": error_msg,
+                    "docbook_repo": docbook_full_name,
+                    "branch": staging_branch,
+                }
             print("✅ Obtained writer token from GitHub App")
         else:
             print("ℹ️  Using provided writer token")
@@ -234,30 +250,35 @@ class DocbookPublisher:
         if not self.db_session:
             return
 
-        result = await self.db_session.execute(
-            select(DocumentationPublication).where(
-                DocumentationPublication.org_id == org_id,
-                DocumentationPublication.repo_name == repo_name,
-                DocumentationPublication.commit_sha == commit_sha,
+        try:
+            result = await self.db_session.execute(
+                select(DocumentationPublication).where(
+                    DocumentationPublication.org_id == org_id,
+                    DocumentationPublication.repo_name == repo_name,
+                    DocumentationPublication.commit_sha == commit_sha,
+                )
             )
-        )
-        publication = result.scalar_one_or_none()
+            publication = result.scalar_one_or_none()
 
-        if publication:
-            publication.status = status
-            publication.updated_at = datetime.utcnow()
-        else:
-            publication = DocumentationPublication(
-                user_id=user_id,
-                org_id=org_id,
-                repo_name=repo_name,
-                commit_sha=commit_sha,
-                status=status,
-                published_at=datetime.utcnow(),
-            )
-            self.db_session.add(publication)
+            if publication:
+                publication.status = status
+                publication.updated_at = datetime.utcnow()
+            else:
+                publication = DocumentationPublication(
+                    user_id=user_id,
+                    org_id=org_id,
+                    repo_name=repo_name,
+                    commit_sha=commit_sha,
+                    status=status,
+                    published_at=datetime.utcnow(),
+                )
+                self.db_session.add(publication)
 
-        await self.db_session.flush()
+                # Don't flush here - let the caller handle the transaction
+                # await self.db_session.flush()
+        except Exception as exc:
+            # Log but don't fail - publication logging is non-critical
+            print(f"⚠️  Failed to log publication (non-critical): {exc}")
 
     async def _get_docbook_repo(self, user_uuid: Optional[UUID], org_id: str) -> Optional[Dict[str, Any]]:
         if not user_uuid:
@@ -312,95 +333,63 @@ class DocbookPublisher:
         }
 
     async def _get_installation_id(self, org_id: str) -> Optional[int]:
+        """
+        Get writer app installation ID for an org (like old codebase)
+        Uses AppInstallationService to query app_installations table
+        """
+        from app.services.github.app_installation_service import AppInstallationService
+        
         writer_app_id = self._writer_app_id()
-
-        def _as_int(value: Optional[str | int]) -> Optional[int]:
-            if value is None:
-                return None
-            try:
-                return int(value)
-            except (TypeError, ValueError):  # pragma: no cover - defensive
-                return None
-
-        writer_app_id_int = _as_int(writer_app_id)
-
-        if self.db_session:
-            if writer_app_id_int is not None:
-                session_result = await self.db_session.execute(
-                    text(
-                        """
-                        SELECT installation_id
-                        FROM app_installations
-                        WHERE org_id = :org_id AND app_id = :app_id
-                        """
-                    ),
-                    {"org_id": org_id, "app_id": writer_app_id_int},
-                )
-                row = session_result.first()
-                if row:
-                    return row[0]
-
-            if writer_app_id_int is not None:
-                result = await self.db_session.execute(
-                    select(GitHubInstallation.installation_id).where(
-                        GitHubInstallation.org_id == org_id,
-                        GitHubInstallation.app_id == writer_app_id_int,
-                    )
-                )
-                installation_id = result.scalar_one_or_none()
-                if installation_id:
-                    return installation_id
-
-            result = await self.db_session.execute(
-                select(GitHubInstallation.installation_id)
-                .where(GitHubInstallation.org_id == org_id)
-                .order_by(GitHubInstallation.updated_at.desc())
-            )
-            installation_id = result.scalar_one_or_none()
-            if installation_id:
-                return installation_id
-
-        if not self.db_pool:
+        if not writer_app_id:
             return None
 
-        async with self.db_pool.acquire() as conn:
-            if writer_app_id_int is not None:
-                app_installation_row = await conn.fetchrow(
-                    """
-                    SELECT installation_id
-                    FROM app_installations
-                    WHERE org_id = $1 AND app_id = $2
-                    """,
-                    org_id,
-                    writer_app_id_int,
-                )
-                if app_installation_row:
-                    return app_installation_row["installation_id"]
+        try:
+            writer_app_id_int = int(writer_app_id)
+        except (TypeError, ValueError):
+                return None
 
-            if writer_app_id_int is not None:
-                row = await conn.fetchrow(
-                    """
-                    SELECT installation_id
-                    FROM github_installations
-                    WHERE org_id = $1 AND app_id = $2
-                    """,
-                    org_id,
-                    writer_app_id_int,
-                )
-                if row:
-                    return row["installation_id"]
+        # Use AppInstallationService like old codebase does
+        # This is the correct way - matches old codebase behavior
+        if self.db_pool:
+            try:
+                service = AppInstallationService(db_pool=self.db_pool)
+                installation_id = await service.get_app_installation_id(org_id, writer_app_id_int)
+                if installation_id:
+                    print(f"✅ Resolved writer installation ID {installation_id} for org {org_id} (app {writer_app_id_int})")
+                    return installation_id
+            except Exception as e:
+                print(f"⚠️  Error using AppInstallationService: {e}")
 
-            row = await conn.fetchrow(
-                """
-                SELECT installation_id
-                FROM github_installations
-                WHERE org_id = $1
-                ORDER BY updated_at DESC NULLS LAST
-                """,
-                org_id,
-            )
+        if self.db_session:
+            try:
+                service = AppInstallationService(db_session=self.db_session)
+                installation_id = await service.get_app_installation_id(org_id, writer_app_id_int)
+                if installation_id:
+                    print(f"✅ Resolved writer installation ID {installation_id} for org {org_id} (app {writer_app_id_int})")
+                    return installation_id
+            except Exception as e:
+                print(f"⚠️  Error using AppInstallationService: {e}")
 
-        return row["installation_id"] if row else None
+        # Fallback: try legacy github_installations table
+        if self.db_pool:
+            try:
+                async with self.db_pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT installation_id
+                        FROM github_installations
+                        WHERE org_id = $1 AND app_id = $2
+                        """,
+                        org_id,
+                        writer_app_id_int,
+                    )
+                    if row:
+                        return row["installation_id"]
+            except Exception as e:
+                print(f"⚠️  Error looking up legacy installation: {e}")
+
+        print(f"⚠️  No installation found for org {org_id}, app {writer_app_id_int}")
+        return None
 
     async def _get_writer_token(self, installation_id: int) -> Optional[str]:
         helper = self._get_dual_app_helper()
@@ -413,11 +402,10 @@ class DocbookPublisher:
     def _clone_repo(self, repo_full_name: str, writer_token: str, destination: Path) -> None:
         clone_url, masked_url = self._tokenized_urls(repo_full_name, writer_token)
         print(f"📚 Cloning docbook repository: {masked_url}")
+        # Don't use --depth 1 to ensure we can see all branches (like old codebase)
         self._run_git([
             "git",
             "clone",
-            "--depth",
-            "1",
             clone_url,
             str(destination),
         ], mask_tokens=[writer_token])
@@ -435,33 +423,141 @@ class DocbookPublisher:
         writer_token: str,
         repo_full_name: str,
     ) -> None:
-        clone_url, _ = self._tokenized_urls(repo_full_name, writer_token)
-        self._run_git(["git", "fetch", "origin"], cwd=repo_dir)
-
-        branches = self._run_git(
-            ["git", "branch", "-r"],
-            cwd=repo_dir,
-            capture_output=True,
-        )
-        remote_branch = f"origin/{staging_branch}"
-        if remote_branch in branches:
-            self._run_git(["git", "checkout", staging_branch], cwd=repo_dir)
-            self._run_git(["git", "reset", "--hard", remote_branch], cwd=repo_dir)
-            return
-
-        print(f"ℹ️  Staging branch missing. Creating {staging_branch} from {main_branch}")
-        main_remote = f"origin/{main_branch}"
-        if main_remote not in branches:
-            raise RuntimeError(
-                f"Main branch {main_branch} not found in repo {repo_full_name}."
+        """
+        Checkout staging branch (like old codebase)
+        Handles empty repos by creating initial commit on main, then staging from main
+        """
+        # Fetch all branches (like old codebase)
+        try:
+            self._run_git(["git", "fetch", "origin"], cwd=repo_dir)
+        except RuntimeError:
+            # If fetch fails, repo might be empty
+            pass
+        
+        # Check if repo is empty (like old codebase)
+        try:
+            branches = self._run_git(["git", "branch", "-r"], cwd=repo_dir, capture_output=True).strip()
+            is_empty = not branches or "origin/" not in branches
+        except RuntimeError:
+            is_empty = True
+        
+        if is_empty:
+            # Repo is empty - create initial commit on main, then staging (like old codebase)
+            print(f"📝 Repo is empty, creating initial commit...")
+            clone_url, _ = self._tokenized_urls(repo_full_name, writer_token)
+            self._initialize_empty_repo(
+                repo_dir=repo_dir,
+                main_branch=main_branch,
+                staging_branch=staging_branch,
+                writer_token=writer_token,
+                repo_full_name=repo_full_name,
+                clone_url=clone_url,
             )
-        self._run_git(["git", "checkout", "-b", staging_branch, main_remote], cwd=repo_dir)
-        self._run_git([
-            "git",
-            "push",
-            clone_url,
-            f"HEAD:{staging_branch}",
-        ], cwd=repo_dir, mask_tokens=[writer_token])
+            print(f"✅ Created staging branch")
+            return
+        
+        # Repo has content - try to checkout staging (like old codebase)
+        try:
+            self._run_git(["git", "checkout", staging_branch], cwd=repo_dir)
+            print(f"✅ Checked out existing staging branch")
+            return
+        except RuntimeError:
+            # Staging doesn't exist - create it from main (like old codebase)
+            try:
+                # Try to checkout main first
+                self._run_git(["git", "checkout", main_branch], cwd=repo_dir)
+            except RuntimeError:
+                # Try master as fallback
+                try:
+                    self._run_git(["git", "checkout", "master"], cwd=repo_dir)
+                    main_branch = "master"
+                except RuntimeError:
+                    # Try to checkout from remote
+                    try:
+                        self._run_git(["git", "checkout", "-b", main_branch, f"origin/{main_branch}"], cwd=repo_dir)
+                    except RuntimeError:
+                        # Last resort - try master from remote
+                        self._run_git(["git", "checkout", "-b", "master", "origin/master"], cwd=repo_dir)
+                        main_branch = "master"
+            
+            # Now create staging from main (like old codebase)
+            self._run_git(["git", "checkout", "-b", staging_branch], cwd=repo_dir)
+            print(f"✅ Created staging branch from {main_branch}")
+
+    def _determine_base_ref(
+        self,
+        repo_dir: Path,
+        preferred_main: str,
+    ) -> Optional[str]:
+        candidates = [preferred_main, "main", "master"]
+        for candidate in candidates:
+            if self._remote_branch_exists(repo_dir, candidate):
+                return f"origin/{candidate}"
+
+        # Try default remote HEAD
+        try:
+            head_ref = self._run_git(
+                ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+                cwd=repo_dir,
+                capture_output=True,
+            ).strip()
+            if head_ref:
+                return head_ref
+        except RuntimeError:
+            pass
+
+        return None
+
+    def _remote_branch_exists(self, repo_dir: Path, branch: str) -> bool:
+        try:
+            output = self._run_git(
+                ["git", "ls-remote", "--heads", "origin", branch],
+                cwd=repo_dir,
+                capture_output=True,
+            )
+            return bool(output.strip())
+        except RuntimeError:
+            return False
+
+    def _initialize_empty_repo(
+        self,
+        *,
+        repo_dir: Path,
+        main_branch: str,
+        staging_branch: str,
+        writer_token: str,
+        repo_full_name: str,
+        clone_url: str,
+    ) -> None:
+        print(
+            f"ℹ️  Repository {repo_full_name} has no default branch. Initializing {main_branch}."
+        )
+
+        self._run_git(["git", "checkout", "--orphan", main_branch], cwd=repo_dir)
+
+        placeholder = repo_dir / "README.md"
+        if not placeholder.exists():
+            placeholder.write_text(
+                f"# {repo_full_name}\n\nInitial commit for docbook repository."
+            )
+
+        self._run_git(["git", "add", "README.md"], cwd=repo_dir)
+        self._run_git(
+            ["git", "commit", "-m", "chore: initialize docbook main branch"],
+            cwd=repo_dir,
+        )
+
+        self._run_git(
+            ["git", "push", clone_url, f"HEAD:{main_branch}"],
+            cwd=repo_dir,
+            mask_tokens=[writer_token],
+        )
+
+        # Create staging from freshly created main
+        self._run_git(
+            ["git", "checkout", "-B", staging_branch, main_branch],
+            cwd=repo_dir,
+        )
 
     def _sync_docs(self, repo_dir: Path, source_repo_name: str, docs_dir: Path) -> None:
         target_dir = repo_dir / source_repo_name
@@ -505,85 +601,34 @@ class DocbookPublisher:
         commit_message: str,
         metadata: Dict[str, Any],
     ) -> None:
+        """Record pending review in database (like old codebase - no review_metadata column)"""
+        # Always use asyncpg pool (like old codebase) to avoid schema mismatches
+        # The SQLAlchemy model has review_metadata but database doesn't have this column
         if self.db_session:
-            result = await self.db_session.execute(
-                select(DocbookReview).where(
-                    DocbookReview.user_id == user_uuid,
-                    DocbookReview.org_id == org_id,
-                    DocbookReview.source_repo_name == source_repo_name,
-                )
-            )
-            review = result.scalar_one_or_none()
-
-            if review:
-                review.status = DocbookStatus.PENDING_REVIEW
-                review.commit_message = commit_message
-                review.review_metadata = metadata
-                review.updated_at = datetime.utcnow()
-            else:
-                review = DocbookReview(
-                    user_id=user_uuid,
-                    org_id=org_id,
-                    source_repo_name=source_repo_name,
-                    docbook_full_name=docbook_full_name,
-                    status=DocbookStatus.PENDING_REVIEW,
-                    commit_message=commit_message,
-                    review_metadata=metadata,
-                )
-                self.db_session.add(review)
-
-            await self.db_session.flush()
-            return
+            # If db_session is provided, we still use db_pool to avoid schema issues
+            # This ensures consistency with old codebase
+            pass
 
         if not self.db_pool:
             return
 
+        # Use asyncpg pool directly (like old codebase) - no review_metadata column
         async with self.db_pool.acquire() as conn:
-            existing = await conn.fetchrow(
+            await conn.execute(
                 """
-                SELECT id FROM docbook_reviews
-                WHERE user_id = $1 AND org_id = $2 AND source_repo_name = $3
+                INSERT INTO docbook_reviews (
+                    user_id, org_id, source_repo_name, docbook_full_name,
+                    status, commit_message, created_at
+                ) VALUES ($1, $2, $3, $4, 'pending_review', $5, NOW())
+                ON CONFLICT (user_id, org_id, source_repo_name) DO UPDATE
+                SET status = 'pending_review', commit_message = $5, updated_at = NOW()
                 """,
                 user_uuid,
                 org_id,
                 source_repo_name,
+                docbook_full_name,
+                commit_message,
             )
-
-            if existing:
-                await conn.execute(
-                    """
-                    UPDATE docbook_reviews
-                    SET status = 'pending_review',
-                        commit_message = $1,
-                        review_metadata = $2,
-                        updated_at = NOW()
-                    WHERE id = $3
-                    """,
-                    commit_message,
-                    json.dumps(metadata, default=str),
-                    existing["id"],
-                )
-            else:
-                await conn.execute(
-                    """
-                    INSERT INTO docbook_reviews (
-                        user_id,
-                        org_id,
-                        source_repo_name,
-                        docbook_full_name,
-                        status,
-                        commit_message,
-                        review_metadata,
-                        created_at
-                    ) VALUES ($1, $2, $3, $4, 'pending_review', $5, $6, NOW())
-                    """,
-                    user_uuid,
-                    org_id,
-                    source_repo_name,
-                    docbook_full_name,
-                    commit_message,
-                    json.dumps(metadata, default=str),
-                )
 
     def _normalize_user_id(self, user_id: str | UUID) -> Tuple[Optional[UUID], str]:
         if isinstance(user_id, UUID):

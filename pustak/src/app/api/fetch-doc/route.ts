@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
     console.log('[/api/fetch-doc] Using repo name:', fullRepoName);
 
     // Call backend to fetch file using user's token and full repo name
+    // BACKEND_URL already includes /api/v1 prefix (like other routes)
     const backendUrl = `${BACKEND_URL}/docs/fetch-file?repo=${encodeURIComponent(fullRepoName)}&filePath=${encodeURIComponent(filePath)}`;
     console.log('[/api/fetch-doc] Calling backend:', backendUrl);
     const response = await fetch(

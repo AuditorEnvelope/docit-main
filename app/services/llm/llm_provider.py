@@ -16,6 +16,16 @@ from groq import Groq
 import openai
 from aiolimiter import AsyncLimiter
 
+# Define a module-level rate limiter for LLM calls
+try:
+    llm_rate_limiter = AsyncLimiter(50, 60)
+except Exception:
+    # Fallback no-op limiter if aiolimiter is not available
+    class _NoopLimiter:
+        async def __aenter__(self): return None
+        async def __aexit__(self, *args): return False
+    llm_rate_limiter = _NoopLimiter()
+
 class LLMProvider:
     """Base class for LLM providers"""
     

@@ -6,6 +6,7 @@ from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
 from app.core.config import settings
 import time
+from fastapi.responses import JSONResponse
 
 # Initialize rate limiter
 limiter = Limiter(
@@ -52,7 +53,9 @@ class RateLimitMiddleware:
             
             # Check if limit exceeded
             if current_count >= settings.RATE_LIMIT:
-                response = Response(
+                # FIX: return JSONResponse instead of a raw dict Response
+                current_time = int(time.time())
+                response = JSONResponse(
                     content={"detail": "Too many requests"},
                     status_code=429,
                     headers={

@@ -13,10 +13,7 @@ import google.generativeai as genai
 from groq import Groq
 import openai
 
-try:  # Optional dependency – if missing we just skip rate limiting
-    from aiolimiter import AsyncLimiter
-except ImportError:  # pragma: no cover - optional dependency
-    AsyncLimiter = None  # type: ignore
+# No rate limiting needed (like old codebase)
 
 
 class LLMProvider:
@@ -130,7 +127,7 @@ class LLMRotator:
     def __init__(self) -> None:
         self.providers: List[LLMProvider] = []
         self.current_index = 0
-        self.rate_limiter = AsyncLimiter(50, 60) if AsyncLimiter else None
+        # Don't use AsyncLimiter - old codebase doesn't use rate limiting (like old codebase)
         self._setup()
 
     def _setup(self) -> None:
@@ -165,28 +162,26 @@ class LLMRotator:
         return provider
 
     def generate_with_rotation(self, prompt: str, max_attempts: int = 3) -> Optional[str]:
+        """Generate content using rotation across providers (like old codebase - no rate limiter)"""
         attempts = 0
+        
         while attempts < max_attempts:
             provider = self.get_next_provider()
             if not provider:
                 break
-
-            if self.rate_limiter:
-                with self.rate_limiter:  # type: ignore[func-returns-value]
-                    result = provider.generate(prompt)
-            else:
-                result = provider.generate(prompt)
-
+                
             print(f"🔄 Trying {provider.name} (attempt {attempts + 1})")
+            result = provider.generate(prompt)
+            
             if result:
                 print(f"✅ Success with {provider.name}")
                 return result
-
+            
             attempts += 1
             if attempts < max_attempts:
                 print("⏳ Waiting 2 seconds before retry...")
                 time.sleep(2)
-
+        
         print("❌ All providers failed")
         return None
 

@@ -9,9 +9,10 @@ Handles the processing of events from the commit bus, including:
 """
 
 import asyncio
-import json
+import copy
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
+import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, and_
@@ -19,6 +20,7 @@ from sqlalchemy import select, update, and_
 from app.models.events import Event, EventProcessingLog, EventStatus
 from app.db.session import get_db
 from app.core.config import settings
+from app.schemas.events import EventCreate, EventUpdate
 
 class EventProcessingError(Exception):
     """Custom exception for event processing errors"""
@@ -43,6 +45,82 @@ class EventService:
             .limit(self.batch_size)
         )
         return result.scalars().all()
+
+    async def create_event(
+        self,
+        event_in: Optional[EventCreate] = None,
+        *,
+        event_type: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None,
+        source: Optional[str] = None,
+    ) -> Event:
+        """Persist a new event record."""
+
+        if event_in is None:
+            if event_type is None or payload is None:
+                raise ValueError("Must provide event_in or both event_type and payload")
+            event_type_value = event_type
+            raw_payload = payload
+        else:
+            event_type_value = event_in.event_type
+            raw_payload = event_in.payload
+
+        payload_copy: Dict[str, Any] = copy.deepcopy(raw_payload) if raw_payload else {}
+
+        if source:
+            meta: Dict[str, Any] = {}
+            existing_meta = payload_copy.get("_meta")
+            if isinstance(existing_meta, dict):
+                meta.update(existing_meta)
+            meta["source"] = source
+            payload_copy["_meta"] = meta
+
+        event = Event(
+            id=str(uuid.uuid4()),
+            event_type=event_type_value,
+            payload=payload_copy,
+            status=EventStatus.PENDING,
+            retry_count=0,
+            error=None,
+        )
+        self.db.add(event)
+        await self.db.flush()
+
+        log = EventProcessingLog(
+            event_id=event.id,
+            status=EventStatus.PENDING,
+            error=None,
+            retry_count=0,
+        )
+        self.db.add(log)
+        await self.db.flush()
+
+        return event
+
+    async def get_event(self, event_id: str, *, for_update: bool = False) -> Optional[Event]:
+        """Fetch a single event by ID."""
+        stmt = select(Event).where(Event.id == event_id)
+        if for_update:
+            stmt = stmt.with_for_update()
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def update_event(self, event_id: str, update_data: EventUpdate) -> Optional[Event]:
+        """Update an event with the provided data."""
+        event = await self.get_event(event_id)
+        if not event:
+            return None
+
+        payload = update_data.model_dump(exclude_unset=True)
+        if not payload:
+            return event
+
+        for field, value in payload.items():
+            setattr(event, field, value)
+
+        event.updated_at = datetime.utcnow()
+        await self.db.flush()
+        return event
     
     async def process_event(self, event: Event) -> bool:
         """Process a single event with retry logic"""

@@ -278,6 +278,58 @@ class AppInstallationService:
                 repo_data["repo_full_name"],
             )
 
+    async def get_app_installation_id(
+        self,
+        org_id: str,
+        app_id: int,
+    ) -> Optional[int]:
+        """
+        Get installation ID for an app in an org (like old codebase)
+        
+        Args:
+            org_id: Organization ID
+            app_id: GitHub App ID
+            
+        Returns:
+            Installation ID or None
+        """
+        if self.db_pool:
+            try:
+                async with self.db_pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT installation_id
+                        FROM app_installations
+                        WHERE org_id = $1 AND app_id = $2
+                        """,
+                        org_id,
+                        app_id,
+                    )
+                    return row["installation_id"] if row else None
+            except Exception as e:
+                print(f"❌ Error getting app installation ID: {e}")
+                return None
+        
+        if self.db_session:
+            try:
+                result = await self.db_session.execute(
+                    text(
+                        """
+                        SELECT installation_id
+                        FROM app_installations
+                        WHERE org_id = :org_id AND app_id = :app_id
+                        """
+                    ),
+                    {"org_id": org_id, "app_id": app_id},
+                )
+                row = result.first()
+                return row[0] if row else None
+            except Exception as e:
+                print(f"❌ Error getting app installation ID: {e}")
+                return None
+        
+        return None
+
     @staticmethod
     def _coerce_repo(repo: dict) -> dict:
         repo_id = repo.get("id")

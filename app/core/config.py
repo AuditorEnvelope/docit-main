@@ -103,8 +103,8 @@ class Settings(BaseSettings):
     
     # Background Processing
     ENABLE_EVENT_PROCESSOR: bool = True
-    EVENT_PROCESSOR_INTERVAL_SECONDS: int = 60
-    EVENT_POLL_INTERVAL: int = 60  # Seconds between polling for events
+    EVENT_PROCESSOR_INTERVAL_SECONDS: int = 5  # Match old codebase polling interval
+    EVENT_POLL_INTERVAL: int = 5  # Seconds between polling for events (reduced from 60 for faster processing)
     MAX_EVENTS_PER_BATCH: int = 100
     EVENT_BATCH_SIZE: int = 100  # Number of events to process per batch
     EVENT_MAX_RETRIES: int = 3  # Maximum retries for failed events

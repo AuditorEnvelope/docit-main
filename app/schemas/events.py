@@ -58,6 +58,7 @@ class EventInDBBase(EventBase):
     created_at: datetime
     updated_at: datetime
     processed_at: Optional[datetime] = None
+    source: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
 

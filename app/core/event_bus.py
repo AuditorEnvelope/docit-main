@@ -176,7 +176,8 @@ class EventBus:
     async def _recover_pending_events(self) -> None:
         """Recover pending events from the database"""
         try:
-            from models.events import Event as EventModel
+            # from models.events import Event as EventModel  # WRONG in new structure
+            from app.models.events import Event as EventModel  # FIXED
             from sqlalchemy import select
             
             # Get all pending or retrying events
@@ -347,9 +348,10 @@ def create_event(event_type: Union[str, EventType], data: Dict[str, Any], **kwar
         event_type = EventType(event_type)
         
     return Event(
-        event_id=kwargs.get('event_id', f"evt_{datetime.now(timezone.utc).timestamp()}"),
+        # FIX: Event model uses `id` not `event_id`, and `payload` not `data`
+        id=kwargs.get('event_id', f"evt_{datetime.now(timezone.utc).timestamp()}"),
         event_type=event_type,
-        data=data,
+        payload=data,
         **{k: v for k, v in kwargs.items() if k not in ['event_id']}
     )
 

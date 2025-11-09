@@ -11,19 +11,33 @@ class GitHubDualAppHelper:
     """Manages authentication for both Reader and Writer GitHub Apps"""
     
     def __init__(self):
-        # Reader App Config
-        self.reader_app_id = os.getenv("READER_APP_ID")
+        # Reader App Config - Check both READER_APP_ID and GITHUB_READER_APP_ID
+        self.reader_app_id = os.getenv("READER_APP_ID") or os.getenv("GITHUB_READER_APP_ID")
         self.reader_private_key = self._load_private_key(
             env_key_var="READER_PRIVATE_KEY",
             path_env_var="READER_PRIVATE_KEY_PATH",
             default_filename="pustak-reader.private-key.pem"
         )
+        # Also check GITHUB_READER_PRIVATE_KEY if READER_PRIVATE_KEY not found
+        if not self.reader_private_key:
+            self.reader_private_key = self._load_private_key(
+                env_key_var="GITHUB_READER_PRIVATE_KEY",
+                path_env_var="GITHUB_READER_PRIVATE_KEY_PATH",
+            default_filename="pustak-reader.private-key.pem"
+        )
         
-        # Writer App Config
-        self.writer_app_id = os.getenv("WRITER_APP_ID")
+        # Writer App Config - Check both WRITER_APP_ID and GITHUB_WRITER_APP_ID
+        self.writer_app_id = os.getenv("WRITER_APP_ID") or os.getenv("GITHUB_WRITER_APP_ID")
         self.writer_private_key = self._load_private_key(
             env_key_var="WRITER_PRIVATE_KEY",
             path_env_var="WRITER_PRIVATE_KEY_PATH",
+            default_filename="pustak-publisher-ai.private-key.pem"
+        )
+        # Also check GITHUB_WRITER_PRIVATE_KEY if WRITER_PRIVATE_KEY not found
+        if not self.writer_private_key:
+            self.writer_private_key = self._load_private_key(
+                env_key_var="GITHUB_WRITER_PRIVATE_KEY",
+                path_env_var="GITHUB_WRITER_PRIVATE_KEY_PATH",
             default_filename="pustak-publisher-ai.private-key.pem"
         )
         

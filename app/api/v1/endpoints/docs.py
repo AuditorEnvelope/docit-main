@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import Tuple
 from uuid import UUID
+from urllib.parse import unquote
 
+import httpx
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,3 +84,73 @@ async def generate_documentation_v4(
         branch=publish_result.get("branch"),
         review_url=publish_result.get("review_url"),
     )
+
+
+@router.get("/fetch-file")
+async def fetch_file_from_github(
+    repo: str = Query(..., description="Repository in the form org/repo"),
+    filePath: str = Query(..., description="Path to the file in the repository"),
+    branch: str = Query("staging", description="Branch to fetch from"),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Fetch a file from GitHub using user's token (like old codebase)"""
+    github_token = _require_github_token(user)
+    
+    try:
+        # Normalize and decode the file path
+        normalized_path = unquote(filePath or "").strip("/")
+        if not normalized_path:
+            raise HTTPException(status_code=400, detail="Invalid file path")
+
+        # Legacy aliases (pre-docbook folder structure) - like old codebase
+        legacy_map = {
+            "summary": "docs/summary.md",
+            "api": "docs/api.md",
+            "architecture": "docs/architecture/current.md",
+            "workflow": "docs/workflow/current.md",
+            "changelog": "CHANGELOG.md",
+            "readme": "README.md",
+            "quality_report": "docs/QUALITY_REPORT.md",
+        }
+
+        legacy_key = normalized_path.lower()
+        if legacy_key in legacy_map:
+            normalized_path = legacy_map[legacy_key]
+
+        # Fetch file from GitHub API
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            request_url = f"https://api.github.com/repos/{repo}/contents/{normalized_path}"
+            response = await client.get(
+                request_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                params={"ref": branch}
+            )
+
+            if response.status_code == 404:
+                raise HTTPException(status_code=404, detail="File not found")
+            if response.status_code in (401, 403):
+                raise HTTPException(status_code=403, detail="Access denied")
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Failed to fetch file: {response.status_code}"
+                )
+
+            data = response.json()
+
+            # Decode base64 content if present
+            if data.get("encoding") == "base64" and data.get("content"):
+                import base64
+                content = base64.b64decode(data["content"].replace("\n", "")).decode("utf-8")
+                return {"content": content, "fileName": normalized_path}
+
+            return {"content": data.get("content", ""), "fileName": normalized_path}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching file: {str(e)}")

@@ -259,9 +259,6 @@ def create_application() -> FastAPI:
         response.headers["Content-Security-Policy"] = "default-src 'self'"
         return response
     
-    # Include API routers
-    application.include_router(api_router, prefix=settings.API_V1_STR)
-    
     # Health check endpoint
     @application.get("/health", include_in_schema=False)
     async def health_check():
