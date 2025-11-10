@@ -43,10 +43,16 @@ class EventProcessor:
         """
         try:
             logger.info(f"Processing event {event.id} of type {event.event_type}")
-            
-            # Route to the appropriate handler based on event type
-            handler_name = f"_handle_{event.event_type.lower()}"
-            handler = getattr(self, handler_name, self._handle_unknown_event)
+
+            normalized_type = (event.event_type or "").lower()
+            handler_overrides = {
+                "github.installation": self._handle_installation,
+            }
+
+            handler = handler_overrides.get(normalized_type)
+            if handler is None:
+                handler_name = f"_handle_{normalized_type}"
+                handler = getattr(self, handler_name, self._handle_unknown_event)
             
             # Process the event
             success = await handler(event)
