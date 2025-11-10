@@ -54,7 +54,15 @@ class EventConsumerWorker:
             print(f"⚠️  Unexpected database URL format: {self.db_url}")
             return
         
-        self.pool = await asyncpg.create_pool(self.db_url, min_size=2, max_size=10)
+        async def _set_search_path(conn):
+            await conn.execute("SET search_path TO public")
+
+        self.pool = await asyncpg.create_pool(
+            self.db_url,
+            min_size=2,
+            max_size=10,
+            init=_set_search_path
+        )
         print("✅ Event Consumer initialized")
         print(f"   Batch size: {self.batch_size}")
         print(f"   Poll interval: {self.interval}s")

@@ -50,7 +50,15 @@ class CommitBusService:
     
     async def init_pool(self):
         """Initialize database connection pool"""
-        self.pool = await asyncpg.create_pool(self.db_url, min_size=2, max_size=10)
+        async def _set_search_path(conn):
+            await conn.execute("SET search_path TO public")
+
+        self.pool = await asyncpg.create_pool(
+            self.db_url,
+            min_size=2,
+            max_size=10,
+            init=_set_search_path,
+        )
     
     async def store_event(self, event: CommitEvent) -> str:
         """
