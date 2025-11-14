@@ -231,17 +231,12 @@ class EventConsumer:
                 else:
                     print(f"⚠️  No GitHub token found for user {user_id} org {org_id}")
             
-            # IMPORTANT: Only fall back to env var if NO user context at all
+
             # This prevents using wrong token for multi-org repos
             if not github_token and not user_id:
-                github_token = os.getenv("GITHUB_TOKEN")
-                
-                if github_token:
-                    print(f"⚠️  Using GITHUB_TOKEN from env (legacy single-org mode)")
-                else:
-                    print(f"❌ No GitHub token available")
-                    await self.bus.mark_failed(event_id, "No GitHub token available")
-                    return False
+                print(f"❌ No GitHub token available")
+                await self.bus.mark_failed(event_id, "No GitHub token available")
+                return False
             
             # If we have user_id but no token, this is a critical error
             if user_id and not github_token:
@@ -614,8 +609,7 @@ class EventConsumer:
                 
                 # Get token
                 github_token = await self.get_github_token(user_id, None)
-                if not github_token:
-                    github_token = os.getenv("GITHUB_TOKEN")
+
                 
                 if github_token:
                     repos = await self.get_org_repositories(github_token, org_id)

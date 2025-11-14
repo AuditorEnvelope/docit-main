@@ -48,9 +48,7 @@ async def handle_push_event(payload, github_token=None, doc_persona="internal"):
         github_token: GitHub token for authentication
         doc_persona: Documentation persona (internal|developer) - NEW!
     """
-    # Use provided token or fall back to env var
-    if not github_token:
-        github_token = os.getenv("GITHUB_TOKEN")
+
     
     repo = payload.get("repository", {})
     repo_full = repo.get("full_name")
@@ -66,7 +64,7 @@ async def handle_push_event(payload, github_token=None, doc_persona="internal"):
                 print(f"✅ Using GitHub App installation token (Reader)")
         except Exception as e:
             print(f"⚠️  Failed to get app token: {e}")
-            github_token = os.getenv("GITHUB_TOKEN")
+
     
     # Get changed files
     changed_files = set()
@@ -99,12 +97,7 @@ async def handle_push_event(payload, github_token=None, doc_persona="internal"):
         if installation_id:
             token = get_installation_token(installation_id)
             print(f"✨ Using GitHub App installation token")
-        else:
-            # Only use env token as last resort
-            token = os.getenv("GITHUB_TOKEN")
-            if token:
-                print(f"⚠️  Using env GITHUB_TOKEN (no user token provided)")
-    
+
     if not token:
         print("❌ No GitHub token available")
         return

@@ -620,29 +620,22 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/webhook/github")
-async def github_webhook(request: Request):
-    """GitHub webhook for automatic documentation generation on push"""
-    from webhooks.webhook_handler import verify_github_signature, handle_push_webhook
+# @app.post("/webhook/github")
+# async def github_webhook(request: Request):
+#     """GitHub webhook for automatic documentation generation on push"""
+#     from webhooks.webhook_handler import verify_github_signature, handle_push_webhook
     
-    # Verify signature
-    body = await request.body()
-    signature = request.headers.get("X-Hub-Signature-256", "")
+#     # Verify signature
+#     body = await request.body()
+#     signature = request.headers.get("X-Hub-Signature-256", "")
     
-    if not verify_github_signature(body, signature):
-        raise HTTPException(status_code=401, detail="Invalid signature")
+#     if not verify_github_signature(body, signature):
+#         raise HTTPException(status_code=401, detail="Invalid signature")
     
-    payload = await request.json()
-    event_type = request.headers.get("X-GitHub-Event", "")
+#     payload = await request.json()
+#     event_type = request.headers.get("X-GitHub-Event", "")
     
-    if event_type == "push":
-        # Get the repository's GitHub token from database
-        # For now, use the environment token as fallback
-        github_token = os.getenv("GITHUB_TOKEN")
-        if github_token:
-            await handle_push_webhook(payload, github_token)
-    
-    return {"status": "received"}
+#     return {"status": "received"}
 
 
 # ============================================

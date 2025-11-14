@@ -19,7 +19,6 @@
   ],
   "env": {
     "NEXT_PUBLIC_API_URL": "@pustak_api_url",
-    "GITHUB_TOKEN": "@github_token",
     "DOCAI_WEBHOOK_URL": "@docai_webhook_url"
   },
   "functions": {

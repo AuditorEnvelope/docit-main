@@ -209,21 +209,3 @@ class GitHubSync:
         
         return missed
 
-
-# Example usage
-if __name__ == "__main__":
-    github_token = os.getenv("GITHUB_TOKEN")
-    if not github_token:
-        print("❌ GITHUB_TOKEN not set")
-        exit(1)
-    
-    sync = GitHubSync(github_token)
-    
-    # Test: Find missed commits
-    import asyncio
-    
-    async def test():
-        missed = await sync.find_missed_commits("AuditorEnvelope/lekhak_ai")
-        print(f"\nTotal missed: {len(missed)}")
-    
-    asyncio.run(test())

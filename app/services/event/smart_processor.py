@@ -10,14 +10,13 @@ from typing import Dict, Iterable, Tuple
 
 from app.services.docbook.publisher import DocbookPublisher
 from app.services.documentation.comprehensive import ComprehensiveDocBuilder
+from app.services.documentation.comprehensive import generate_smart_documentation
 from app.services.documentation.quality_integration import (
     read_generated_docs,
     validate_documentation_quality,
 )
 from app.services.github.change_analysis import smart_analyze_change
 from app.utils.github_dual_app import GitHubDualAppHelper
-
-
 async def handle_push_event(
     payload: Dict[str, object],
     *,
@@ -71,9 +70,7 @@ async def handle_push_event(
 
         print(f"✅ Significant change detected: {analysis.get('title', commit_sha[:12])}")
 
-        # Use generate_smart_documentation (like old codebase) - this orchestrates everything
-        from app.services.documentation.comprehensive import generate_smart_documentation
-        
+
         ref = payload.get("ref", "unknown")
         await generate_smart_documentation(
             repo_path,
@@ -117,10 +114,6 @@ async def _resolve_token(
             print("✅ Using GitHub App installation token (reader)")
             return token
 
-    env_token = os.getenv("GITHUB_TOKEN")
-    if env_token:
-        print("⚠️  Fallback to GITHUB_TOKEN from environment")
-        return env_token
     return None
 
 
