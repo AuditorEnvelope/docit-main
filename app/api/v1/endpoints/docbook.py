@@ -1,18 +1,22 @@
 """Docbook helper endpoints."""
 
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
+import aiohttp
 import httpx
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.docbook import DocbookRepo
+from app.models.docbook import DocbookRepo, DocbookReview, DocbookStatus
 from app.models.user import User
 from app.services.auth import get_current_user
 from app.services.docbook.service import DocbookService
+from app.services.auth import AuthService
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +160,49 @@ async def link_docbook_repo_logic(
     }
 
 
+async def _get_user_github_token(
+    db: AsyncSession,
+    user_id: str | UUID,
+    token_id: Optional[str] = None,
+) -> Optional[str]:
+    """Fetch user's GitHub token (primary or fallback org token)."""
+
+    try:
+        user_uuid = UUID(str(user_id)) if not isinstance(user_id, UUID) else user_id
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user identifier")
+
+    result = await db.execute(
+        text(
+            """
+            SELECT github_access_token FROM users
+            WHERE id = :user_id
+            """
+        ),
+        {"user_id": str(user_uuid)},
+    )
+
+    primary_token = result.scalar_one_or_none()
+    if primary_token:
+        return primary_token
+
+    if token_id and token_id != "00000000-0000-0000-0000-000000000000":
+        result = await db.execute(
+            text(
+                """
+                SELECT github_token FROM user_github_tokens
+                WHERE user_id = :user_id AND token_id = :token_id AND is_active = TRUE
+                """
+            ),
+            {"user_id": str(user_uuid), "token_id": token_id},
+        )
+        fallback_token = result.scalar_one_or_none()
+        if fallback_token:
+            return fallback_token
+
+    return None
+
+
 async def _get_docbook_repo(
     db: AsyncSession,
     user: User,
@@ -169,6 +216,40 @@ async def _get_docbook_repo(
             detail=f"No docbook linked for {org_id}",
         )
     return repo
+
+
+async def _mark_docbook_review_approved(
+    db: AsyncSession,
+    *,
+    user_id: str | UUID,
+    org_id: str,
+    docbook_full_name: str,
+) -> None:
+    try:
+        user_uuid = UUID(str(user_id)) if not isinstance(user_id, UUID) else user_id
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user identifier")
+
+    await db.execute(
+        text(
+            """
+            UPDATE docbook_reviews
+            SET status = :approved_status
+            WHERE user_id = :user_id
+              AND org_id = :org_id
+              AND docbook_full_name = :docbook_full_name
+              AND status = :pending_status
+            """
+        ),
+        {
+            "approved_status": DocbookStatus.APPROVED.value,
+            "user_id": str(user_uuid),
+            "org_id": org_id,
+            "docbook_full_name": docbook_full_name,
+            "pending_status": DocbookStatus.PENDING_REVIEW.value,
+        },
+    )
+    await db.commit()
 
 
 async def _fetch_folder_contents(
@@ -317,3 +398,187 @@ async def link_docbook_repo(
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     return await link_docbook_repo_logic(user=user, db=db, request=request)
+
+
+@router.get("/docbook/pending-reviews")
+async def get_pending_reviews(
+    org_id: str,
+    user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get pending documentation reviews for an organization
+    
+    Returns:
+    - reviews: List of pending reviews waiting for user approval
+    """
+    try:
+        raw_user_id = user.get("id") if isinstance(user, dict) else getattr(user, "id", None)
+        if not raw_user_id:
+            raise HTTPException(status_code=401, detail="User context missing")
+
+        try:
+            user_uuid = UUID(str(raw_user_id))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid user identifier")
+
+        result = await db.execute(
+            text(
+                """
+                SELECT id, source_repo_name, docbook_full_name, status, commit_message, created_at
+                FROM docbook_reviews
+                WHERE user_id = :user_id
+                  AND org_id = :org_id
+                  AND status = :status
+                ORDER BY created_at DESC
+                """
+            ),
+            {
+                "user_id": str(user_uuid),
+                "org_id": org_id,
+                "status": DocbookStatus.PENDING_REVIEW.value,
+            },
+        )
+        rows = result.mappings().all()
+
+        reviews = [
+            {
+                "id": row["id"],
+                "source_repo_name": row["source_repo_name"],
+                "docbook_full_name": row["docbook_full_name"],
+                "status": row["status"],
+                "commit_message": row["commit_message"],
+                "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            }
+            for row in rows
+        ]
+
+        return {
+            "org_id": org_id,
+            "reviews": reviews,
+            "count": len(reviews)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching pending reviews: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+class MergeDocbookRequest(BaseModel):
+    org_id: str
+    repo_name: str  # Source repo name
+    message: str = "docs: Approve and merge documentation"  # Merge commit message
+
+
+@router.post("/docbook/approve-and-merge")
+async def approve_and_merge_docbook(
+    request: MergeDocbookRequest,
+    user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Approve and merge documentation from staging to main branch
+    
+    This endpoint:
+    1. Gets the linked docbook repo
+    2. Creates a pull request from staging → main
+    3. Merges the PR (auto-merge)
+    4. Returns confirmation
+    """
+    try:
+        user_obj = user if hasattr(user, "id") else None
+        user_id = str(getattr(user_obj, "id")) if user_obj else user.get("id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User context missing")
+
+        org_id = request.org_id
+        repo_name = request.repo_name
+        merge_message = request.message
+
+        # Resolve user's GitHub token
+        github_token = await _get_user_github_token(db, user_id)
+        if not github_token:
+            raise HTTPException(status_code=401, detail="No GitHub token found")
+
+        # Fetch linked docbook repo via service
+        docbook_service = DocbookService(db)
+        docbook_repo = await docbook_service.get_repo(user_id=user_id, org_id=org_id)
+        if not docbook_repo or not docbook_repo.is_active:
+            raise HTTPException(status_code=404, detail=f"No docbook linked for {org_id}")
+
+        docbook_full_name = docbook_repo.docbook_full_name
+        
+        # Merge staging → main using GitHub API
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                'Authorization': f'token {github_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            # Create merge commit
+            merge_payload = {
+                "base": "main",
+                "head": "staging",
+                "commit_message": merge_message
+            }
+            
+            async with session.post(
+                f'https://api.github.com/repos/{docbook_full_name}/merges',
+                headers=headers,
+                json=merge_payload
+            ) as resp:
+                if resp.status == 201:
+                    merge_data = await resp.json()
+                    await _mark_docbook_review_approved(
+                        db,
+                        user_id=user_id,
+                        org_id=org_id,
+                        docbook_full_name=docbook_full_name,
+                    )
+                    print(f"✅ Merged staging → main in {docbook_full_name}")
+                    return {
+                        "status": "merged",
+                        "org_id": org_id,
+                        "repo_name": repo_name,
+                        "docbook_repo": docbook_full_name,
+                        "commit_sha": merge_data.get('sha'),
+                        "message": "Documentation approved and merged to main branch!"
+                    }
+                elif resp.status == 204:
+                    # No changes to merge
+                    await _mark_docbook_review_approved(
+                        db,
+                        user_id=user_id,
+                        org_id=org_id,
+                        docbook_full_name=docbook_full_name,
+                    )
+                    print(f"⚠️  No changes to merge in {docbook_full_name}")
+                    return {
+                        "status": "no_changes",
+                        "org_id": org_id,
+                        "message": "No changes to merge between staging and main"
+                    }
+                elif resp.status == 409:
+                    # Conflict
+                    error = await resp.text()
+                    print(f"❌ Merge conflict in {docbook_full_name}")
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Merge conflict detected. Please resolve manually on GitHub."
+                    )
+                else:
+                    error = await resp.text()
+                    print(f"❌ Failed to merge: {resp.status} - {error}")
+                    raise HTTPException(
+                        status_code=resp.status,
+                        detail=f"Failed to merge documentation: {error}"
+                    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error merging docbook: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
