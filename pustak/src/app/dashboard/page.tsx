@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user, loading, logout, isAuthenticated, token } = useAuth();
   const [repositories, setRepositories] = useState<any[]>([]);
+  const [repoSummaries, setRepoSummaries] = useState<Record<string, any>>({});
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState<string>("");
   const [repoSearchQuery, setRepoSearchQuery] = useState<string>("");
@@ -57,31 +58,48 @@ export default function DashboardPage() {
   const [docbookLinked, setDocbookLinked] = useState(false);
   const [writerAppInstalled, setWriterAppInstalled] = useState(false);
   const [pollingWriterApp, setPollingWriterApp] = useState(false);
-  const [writerAppHasCorrectAccess, setWriterAppHasCorrectAccess] = useState(false);
+  const [writerAppHasCorrectAccess, setWriterAppHasCorrectAccess] =
+    useState(false);
+  const [docbookTrackedBranch, setDocbookTrackedBranch] =
+    useState<string>("main");
+  const [branchInputValue, setBranchInputValue] = useState<string>("main");
+  const [branchModalContext, setBranchModalContext] = useState<{
+    type: "docbook" | "repository";
+    repoFullName?: string;
+    defaultBranch?: string;
+  } | null>(null);
+  const [showTrackedBranchDialog, setShowTrackedBranchDialog] = useState(false);
+  const [trackedBranchSource, setTrackedBranchSource] = useState<string | null>(
+    null
+  );
+  const [branchModalFallback, setBranchModalFallback] = useState<string | null>(
+    null
+  );
+  const [trackedBranchError, setTrackedBranchError] = useState<string | null>(
+    null
+  );
+  const [updatingTrackedBranch, setUpdatingTrackedBranch] = useState(false);
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
+  const [loadingBranches, setLoadingBranches] = useState(false);
 
-  // Redirect if not authenticated
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       router.push("/login");
     }
   }, [isAuthenticated, loading, router]);
 
-  // Check Reader App installation status on page load (ONCE)
   useEffect(() => {
     if (!token || !connectedOrgs.length) return;
 
     const checkReaderAppInstallation = async () => {
       try {
-        const org = connectedOrgs[0]; // Check first org
+        const org = connectedOrgs[0];
 
-        const response = await fetch(
-          `${BACKEND_URL}/org/${org}/verify-apps`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const response = await fetch(`${BACKEND_URL}/org/${org}/verify-apps`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
         if (response.ok) {
           const data = await response.json();
@@ -94,11 +112,9 @@ export default function DashboardPage() {
       }
     };
 
-    // Check ONCE on page load
     checkReaderAppInstallation();
   }, [token, connectedOrgs]);
 
-  // Poll for Reader App installation after user clicks button
   useEffect(() => {
     if (!pollingReaderApp || !connectedOrgs.length) return;
 
@@ -106,20 +122,17 @@ export default function DashboardPage() {
       try {
         const org = connectedOrgs[0];
 
-        const response = await fetch(
-          `${BACKEND_URL}/org/${org}/verify-apps`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const response = await fetch(`${BACKEND_URL}/org/${org}/verify-apps`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
         if (response.ok) {
           const data = await response.json();
           if (data.reader_app?.installed) {
             setReaderAppInstalled(true);
-            setPollingReaderApp(false); // Stop polling
+            setPollingReaderApp(false);
             console.log("✅ Reader App found!");
           }
         }
@@ -128,10 +141,7 @@ export default function DashboardPage() {
       }
     };
 
-    // Poll every 5 seconds
     const interval = setInterval(checkReaderAppInstallation, 5000);
-
-    // Stop polling after 2 minutes (120 seconds)
     const timeout = setTimeout(() => {
       setPollingReaderApp(false);
       console.log("⏱️ Polling stopped (2 minute timeout)");
@@ -143,7 +153,6 @@ export default function DashboardPage() {
     };
   }, [pollingReaderApp, connectedOrgs, token]);
 
-  // Generate docbook repo name and check if it exists on GitHub (when Reader App is installed)
   useEffect(() => {
     if (!readerAppInstalled || !connectedOrgs.length) return;
 
@@ -151,7 +160,6 @@ export default function DashboardPage() {
     const generatedName = `pustak-docbook-${org}`;
     setDocbookRepoName(generatedName);
 
-    // Check if docbook repo actually exists on GitHub (not in database)
     const checkDocbookRepoOnGitHub = async () => {
       try {
         const backendUrl =
@@ -161,7 +169,6 @@ export default function DashboardPage() {
         console.log(`📍 Organization: ${org}`);
         console.log(`📝 Generated repo name: ${generatedName}`);
 
-        // Call backend endpoint to check if repo exists on GitHub
         console.log(
           `📡 Calling: ${backendUrl}/docbook/check-github-repo?org_id=${org}&repo_name=${generatedName}`
         );
@@ -200,7 +207,6 @@ export default function DashboardPage() {
         setDocbookRepoExists(repoExistsOnGitHub);
         console.log(`🔧 Set docbookRepoExists = ${repoExistsOnGitHub}`);
 
-        // Check if it's linked in database
         console.log(
           `\n📡 Calling: ${backendUrl}/docbook/check-exists?org_id=${org}`
         );
@@ -229,13 +235,9 @@ export default function DashboardPage() {
           );
         }
 
-        // Build expected full name
         const expectedFullName = `${org}/${generatedName}`;
         console.log(`📦 Expected full name: ${expectedFullName}`);
 
-        // ONLY mark as linked if BOTH conditions are true:
-        // 1. Repo exists on GitHub
-        // 2. It's linked in database with correct full name
         console.log(`\n🔍 DECISION LOGIC:`);
         console.log(`  - Repo exists on GitHub? ${repoExistsOnGitHub}`);
         console.log(`  - Linked in database? ${isLinkedInDatabase}`);
@@ -287,7 +289,6 @@ export default function DashboardPage() {
     checkDocbookRepoOnGitHub();
   }, [readerAppInstalled, connectedOrgs, token]);
 
-  // Check Writer App installation status on page load (ONCE)
   useEffect(() => {
     if (!token || !connectedOrgs.length || !docbookLinked) return;
 
@@ -295,20 +296,19 @@ export default function DashboardPage() {
       try {
         const org = connectedOrgs[0];
 
-        const response = await fetch(
-          `${BACKEND_URL}/org/${org}/verify-apps`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const response = await fetch(`${BACKEND_URL}/org/${org}/verify-apps`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
         if (response.ok) {
           const data = await response.json();
           if (data.writer_app?.installed) {
-            // Check if it has access to the correct docbook repo
-            const hasCorrectAccess = await checkWriterAppAccess(org, docbookRepoName);
+            const hasCorrectAccess = await checkWriterAppAccess(
+              org,
+              docbookRepoName
+            );
             setWriterAppInstalled(true);
             setWriterAppHasCorrectAccess(hasCorrectAccess);
           }
@@ -321,7 +321,6 @@ export default function DashboardPage() {
     checkWriterAppInstallation();
   }, [token, connectedOrgs, docbookLinked, docbookRepoName]);
 
-  // Helper function to check if Writer App has access to the docbook repo
   const checkWriterAppAccess = async (org: string, docbookRepo: string) => {
     try {
       const response = await fetch(
@@ -344,7 +343,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Poll for Writer App installation after user clicks button
   useEffect(() => {
     if (!pollingWriterApp || !connectedOrgs.length || !docbookRepoName) return;
 
@@ -354,24 +352,23 @@ export default function DashboardPage() {
 
         console.log(`⏱️ [POLLING] Checking if Writer App is installed...`);
 
-        const response = await fetch(
-          `${BACKEND_URL}/org/${org}/verify-apps`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const response = await fetch(`${BACKEND_URL}/org/${org}/verify-apps`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
         if (response.ok) {
           const data = await response.json();
           if (data.writer_app?.installed) {
-            // Check if it has access to the correct docbook repo
-            const hasCorrectAccess = await checkWriterAppAccess(org, docbookRepoName);
+            const hasCorrectAccess = await checkWriterAppAccess(
+              org,
+              docbookRepoName
+            );
             if (hasCorrectAccess) {
               setWriterAppInstalled(true);
               setWriterAppHasCorrectAccess(true);
-              setPollingWriterApp(false); // Stop polling
+              setPollingWriterApp(false);
               console.log("✅ Writer App found with correct access!");
             } else {
               console.log(
@@ -385,10 +382,7 @@ export default function DashboardPage() {
       }
     };
 
-    // Poll every 5 seconds
     const interval = setInterval(checkWriterAppInstallation, 5000);
-
-    // Stop polling after 2 minutes (120 seconds)
     const timeout = setTimeout(() => {
       setPollingWriterApp(false);
       console.log("⏱️ Polling stopped (2 minute timeout)");
@@ -400,7 +394,6 @@ export default function DashboardPage() {
     };
   }, [pollingWriterApp, connectedOrgs, token, docbookRepoName]);
 
-  // Poll for docbook repo creation after user clicks button
   useEffect(() => {
     if (!pollingDocbookRepo || !connectedOrgs.length || !docbookRepoName)
       return;
@@ -415,7 +408,6 @@ export default function DashboardPage() {
           `⏱️ [POLLING] Checking if docbook repo exists: ${docbookRepoName}`
         );
 
-        // Call backend endpoint to check if repo exists on GitHub
         const repoCheckResponse = await fetch(
           `${backendUrl}/docbook/check-github-repo?org_id=${org}&repo_name=${docbookRepoName}`,
           {
@@ -430,9 +422,8 @@ export default function DashboardPage() {
           console.log(`⏱️ [POLLING] Response:`, data);
 
           if (data.exists === true) {
-            // Repo found on GitHub!
             setDocbookRepoExists(true);
-            setPollingDocbookRepo(false); // Stop polling
+            setPollingDocbookRepo(false);
             console.log(
               `✅ [POLLING] Docbook repo FOUND on GitHub! Stopping polling.`
             );
@@ -451,10 +442,7 @@ export default function DashboardPage() {
       }
     };
 
-    // Poll every 5 seconds
     const interval = setInterval(checkDocbookRepoExists, 5000);
-
-    // Stop polling after 2 minutes (120 seconds)
     const timeout = setTimeout(() => {
       setPollingDocbookRepo(false);
       console.log("⏱️ Docbook polling stopped (2 minute timeout)");
@@ -466,64 +454,107 @@ export default function DashboardPage() {
     };
   }, [pollingDocbookRepo, connectedOrgs, token, docbookRepoName]);
 
-  // Fetch repositories that Reader App can access (ONLY if Reader App is installed)
-  useEffect(() => {
-    const fetchRepositories = async () => {
-      // STEP 3: Only fetch repos if Reader App is installed
-      if (!token || !connectedOrgs.length || !readerAppInstalled) {
-        console.log(
-          `⏭️  Skipping repo fetch: token=${!!token}, orgs=${connectedOrgs.length}, readerAppInstalled=${readerAppInstalled}`
-        );
-        return;
-      }
+  const loadRepositories = useCallback(async () => {
+    if (!token || !connectedOrgs.length || !readerAppInstalled) {
+      console.log(
+        `⏭️  Skipping repo fetch: token=${!!token}, orgs=${
+          connectedOrgs.length
+        }, readerAppInstalled=${readerAppInstalled}`
+      );
+      return;
+    }
 
-      setLoadingRepos(true);
-      try {
-        const org = connectedOrgs[0];
-        const endpoint = `${BACKEND_URL}/org/${org}/reader/repositories`;
+    setLoadingRepos(true);
+    try {
+      const org = connectedOrgs[0];
+      const endpoint = `${BACKEND_URL}/org/${org}/repositories/summary`;
 
-        console.log(`\n📚 === STEP 3: FETCHING READER APP REPOSITORIES ===`);
-        console.log(`📍 Organization: ${org}`);
-        console.log(`📡 Calling: ${endpoint}`);
+      console.log(`\n📚 === STEP 3: FETCHING READER APP REPOSITORIES ===`);
+      console.log(`📍 Organization: ${org}`);
+      console.log(`📡 Calling: ${endpoint}`);
 
-        const response = await fetch(endpoint, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+      const response = await fetch(endpoint, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const repos = data.repositories || [];
+
+        console.log(`✅ Response received:`, data);
+        console.log(`📦 Repositories the Reader App can access:`);
+        repos.forEach((repo: any) => {
+          console.log(`   - ${repo.full_name}`);
         });
+        console.log(`📊 Total: ${repos.length} repositories`);
 
-        if (response.ok) {
-          const data = await response.json();
-          const repos = data.repositories || [];
-
-          console.log(`✅ Response received:`, data);
-          console.log(`📦 Repositories the Reader App can access:`);
-          repos.forEach((repo: any) => {
-            console.log(`   - ${repo.full_name}`);
-          });
-          console.log(`📊 Total: ${repos.length} repositories`);
-
-          setRepositories(repos);
-        } else {
-          const errorText = await response.text();
-          console.error(
-            `❌ Failed to fetch repositories (${response.status}):`,
-            errorText
-          );
-          setRepositories([]);
-        }
-      } catch (error) {
-        console.error("❌ Error fetching repositories:", error);
+        setRepositories(repos);
+        const trackedBranch = data.docbook_tracked_branch || "main";
+        setDocbookTrackedBranch(trackedBranch);
+        setBranchInputValue(trackedBranch);
+        const summaryByRepo: Record<string, any> = {};
+        repos.forEach((repo: any) => {
+          const fullName = repo.full_name || repo.name;
+          if (fullName) {
+            summaryByRepo[fullName] = repo;
+          }
+        });
+        setRepoSummaries(summaryByRepo);
+      } else {
+        const errorText = await response.text();
+        console.error(
+          `❌ Failed to fetch repositories (${response.status}):`,
+          errorText
+        );
         setRepositories([]);
-      } finally {
-        setLoadingRepos(false);
+        setRepoSummaries({});
+        setDocbookTrackedBranch("main");
       }
-    };
-
-    fetchRepositories();
+    } catch (error) {
+      console.error("❌ Error fetching repositories:", error);
+      setRepositories([]);
+      setRepoSummaries({});
+      setDocbookTrackedBranch("main");
+    } finally {
+      setLoadingRepos(false);
+    }
   }, [token, connectedOrgs, readerAppInstalled]);
 
-  // Fetch connected organizations
+  useEffect(() => {
+    loadRepositories();
+  }, [loadRepositories]);
+
+  const isDocbookRepo = (repo: any) => {
+    const fullName = repo?.full_name || repo?.name || "";
+    return (
+      typeof fullName === "string" && fullName.includes("/pustak-docbook-")
+    );
+  };
+
+  const filteredRepositories = useMemo(() => {
+    const query = repoSearchQuery.toLowerCase();
+    const nonDocbookRepos = repositories.filter(
+      (repo: any) => !isDocbookRepo(repo)
+    );
+    setSelectedRepo(
+      nonDocbookRepos.length
+        ? nonDocbookRepos[0].full_name || nonDocbookRepos[0].name
+        : ""
+    );
+    return nonDocbookRepos.filter((repo: any) =>
+      (repo.full_name || repo.name || "").toLowerCase().includes(query)
+    );
+  }, [repositories, repoSearchQuery]);
+
+  const selectedRepoSummary = selectedRepo
+    ? repoSummaries[selectedRepo] ||
+      repositories.find(
+        (repo) => (repo.full_name || repo.name) === selectedRepo
+      )
+    : null;
+
   useEffect(() => {
     const fetchConnectedOrgs = async () => {
       if (!token) return;
@@ -547,6 +578,170 @@ export default function DashboardPage() {
     };
     fetchConnectedOrgs();
   }, [token]);
+
+  const fetchDocbookBranches = useCallback(async () => {
+    if (!connectedOrgs.length || !token) {
+      return;
+    }
+
+    const orgId = connectedOrgs[0];
+
+    try {
+      setLoadingBranches(true);
+      const response = await fetch(`${BACKEND_URL}/docbook/${orgId}/branches`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const branches: string[] = Array.isArray(data.branches)
+          ? data.branches.filter(
+              (branch: unknown): branch is string => typeof branch === "string"
+            )
+          : [];
+
+        setAvailableBranches(branches);
+        if (branches.length && !branches.includes(branchInputValue)) {
+          setBranchInputValue(branches[0]);
+        }
+        setTrackedBranchError(null);
+      } else {
+        const errorBody = await response.json().catch(() => ({
+          detail: "Failed to load branches",
+        }));
+        setTrackedBranchError(errorBody.detail || "Failed to load branches");
+      }
+    } catch (err) {
+      console.error("Error fetching branches:", err);
+      const message =
+        err instanceof Error ? err.message : "Failed to load branches";
+      setTrackedBranchError(message);
+    } finally {
+      setLoadingBranches(false);
+    }
+  }, [branchInputValue, connectedOrgs, token]);
+
+  const fetchRepositoryTrackedBranch = useCallback(
+    async (repoFullName: string) => {
+      if (!token) {
+        throw new Error("Authentication token missing");
+      }
+
+      const response = await fetch(
+        `${BACKEND_URL}/repositories/${encodeURIComponent(
+          repoFullName
+        )}/tracked-branch`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({
+          detail: "Failed to load repository tracked branch",
+        }));
+        throw new Error(
+          errorBody.detail || "Failed to load repository tracked branch"
+        );
+      }
+
+      return response.json();
+    },
+    [token]
+  );
+
+  const fetchRepositoryBranches = useCallback(
+    async (repoFullName: string) => {
+      if (!token) {
+        throw new Error("Authentication token missing");
+      }
+
+      const response = await fetch(
+        `${BACKEND_URL}/repositories/${encodeURIComponent(
+          repoFullName
+        )}/branches`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({
+          detail: "Failed to load repository branches",
+        }));
+        throw new Error(
+          errorBody.detail || "Failed to load repository branches"
+        );
+      }
+
+      const data = await response.json();
+      const branches: string[] = Array.isArray(data.branches)
+        ? data.branches.filter(
+            (branch: unknown): branch is string => typeof branch === "string"
+          )
+        : [];
+      setAvailableBranches(branches);
+    },
+    [token]
+  );
+
+  const openTrackedBranchModal = useCallback(
+    async (
+      context:
+        | { type: "docbook" }
+        | { type: "repository"; repoFullName: string; defaultBranch?: string }
+    ) => {
+      setTrackedBranchError(null);
+      setAvailableBranches([]);
+      setTrackedBranchSource(null);
+      setBranchModalFallback(null);
+      setBranchModalContext(context);
+      setShowTrackedBranchDialog(true);
+
+      if (context.type === "docbook") {
+        setBranchInputValue(docbookTrackedBranch);
+        setTrackedBranchSource("docbook");
+        await fetchDocbookBranches();
+        return;
+      }
+
+      const repoFullName = context.repoFullName;
+
+      try {
+        setLoadingBranches(true);
+        const branchInfo = await fetchRepositoryTrackedBranch(repoFullName);
+        const resolvedBranch =
+          (branchInfo.tracked_branch || "").trim() ||
+          (branchInfo.default_branch || "").trim() ||
+          "main";
+        setBranchInputValue(resolvedBranch);
+        setTrackedBranchSource(branchInfo.source || null);
+        setBranchModalFallback(branchInfo.fallback_branch || null);
+        await fetchRepositoryBranches(repoFullName);
+      } catch (err) {
+        console.error("Error opening repo tracked-branch modal:", err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Failed to load repository branch data";
+        setTrackedBranchError(message);
+      } finally {
+        setLoadingBranches(false);
+      }
+    },
+    [
+      docbookTrackedBranch,
+      fetchDocbookBranches,
+      fetchRepositoryBranches,
+      fetchRepositoryTrackedBranch,
+    ]
+  );
 
   if (loading) {
     return (
@@ -592,11 +787,9 @@ export default function DashboardPage() {
     <Layout>
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
         <div className="container mx-auto px-4 py-12">
-          {/* Header */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 mb-8 border border-gray-200 dark:border-gray-700">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-4">
-                {/* Avatar */}
                 {user.avatar_url ? (
                   <img
                     src={user.avatar_url}
@@ -609,7 +802,6 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {/* User Info */}
                 <div>
                   <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1">
                     {user.name || user.username || "User"}
@@ -636,7 +828,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Actions */}
               <button
                 onClick={logout}
                 className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors flex items-center gap-2"
@@ -647,7 +838,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Quick Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-3 mb-2">
@@ -707,7 +897,191 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Tabs */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-200 dark:border-gray-700 mb-8">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  Repository Overview
+                </h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Managed repositories for {connectedOrgs[0] || "your org"}
+                </p>
+              </div>
+              <div className="w-full md:w-72">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search repositories..."
+                    value={repoSearchQuery}
+                    onChange={(e) => setRepoSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  Tracked branch:
+                </span>{" "}
+                <span className="text-gray-900 dark:text-white">
+                  {docbookTrackedBranch}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  openTrackedBranchModal({ type: "docbook" });
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 dark:hover:bg-blue-900/60"
+                disabled={!connectedOrgs.length || !docbookLinked}
+              >
+                Change branch
+              </button>
+            </div> */}
+
+            {loadingRepos ? (
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Loading repositories…</span>
+              </div>
+            ) : repositories.length === 0 ? (
+              <div className="text-center py-10 text-gray-600 dark:text-gray-400">
+                {readerAppInstalled
+                  ? "Installations are set up but no repositories were returned."
+                  : "Install the Reader App to view repositories."}
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {filteredRepositories.map((repo: any) => {
+                  const fullName = repo.full_name || repo.name;
+                  const trackedBranch =
+                    repo.tracked_branch ||
+                    repo.docbook_tracked_branch ||
+                    docbookTrackedBranch ||
+                    repo.default_branch ||
+                    "main";
+                  const branchSource =
+                    repo.tracked_branch_source ||
+                    (repo.tracked_branch ? "repository" : "docbook");
+                  const fallbackBranch =
+                    branchSource === "repository"
+                      ? repo.docbook_tracked_branch ||
+                        docbookTrackedBranch ||
+                        null
+                      : null;
+                  const docPersona = repo.doc_persona || "internal";
+                  const lastDocumentedAt = repo.last_documented_at
+                    ? new Date(repo.last_documented_at).toLocaleString()
+                    : "Never";
+                  const pendingReviews = repo.pending_reviews || 0;
+                  const isSelected = selectedRepo === fullName;
+
+                  const newLocal = <div className="flex items-center gap-2">
+                    {/* <button
+                      onClick={() => {
+                        setSelectedRepo(fullName);
+                        setShowRepoDropdown(false);
+                      } }
+                      className={`flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${isSelected
+                          ? "bg-blue-600 text-white hover:bg-blue-700"
+                          : "bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 dark:hover:bg-blue-900/60"}`}
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      {isSelected ? "Selected" : "Select"}
+                    </button> */}
+                    {repo.html_url && (
+                      <a
+                        href={repo.html_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-2 rounded-lg text-sm font-semibold border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        View
+                      </a>
+                    )}
+                  </div>;
+                  return (
+                    <div
+                      key={fullName}
+                      className={`border rounded-xl p-6 bg-white dark:bg-gray-900/60 border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 transition-colors`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-4">
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                            {repo.name || fullName}
+                          </h3>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            {fullName}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className="px-2 py-1 text-xs rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                            {trackedBranch}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {/* <span className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                              {branchSource === "repository"
+                                ? "Repo override"
+                                : "Docbook default"}
+                            </span> */}
+                            {/* {fallbackBranch && (
+                              <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                                Fallback: {fallbackBranch}
+                              </span>
+                            )} */}
+                            <button
+                              onClick={() =>
+                                openTrackedBranchModal({
+                                  type: "repository",
+                                  repoFullName: fullName,
+                                  defaultBranch: repo.default_branch,
+                                })
+                              }
+                              className="inline-flex items-center gap-1 rounded-full border border-blue-100 dark:border-blue-800 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-200 dark:hover:bg-blue-900/40"
+                            >
+                              Change Branch
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300 mb-4">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500 dark:text-gray-400">
+                            Doc persona
+                          </span>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {docPersona}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500 dark:text-gray-400">
+                            Last documented
+                          </span>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {lastDocumentedAt}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500 dark:text-gray-400">
+                            Pending reviews
+                          </span>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {pendingReviews}
+                          </span>
+                        </div>
+                      </div>
+
+                      {newLocal}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-200 dark:border-gray-700 mb-8">
             <div className="flex gap-4 mb-6 border-b border-gray-200 dark:border-gray-700">
               <button
@@ -773,7 +1147,6 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Getting Started */}
           {activeTab === "getting-started" && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-200 dark:border-gray-700">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
@@ -781,7 +1154,6 @@ export default function DashboardPage() {
               </h2>
 
               <div className="space-y-4">
-                {/* Step 1: Install Reader App - Show button until Reader App is actually installed */}
                 <div
                   className={`flex items-start gap-4 p-4 ${
                     !readerAppInstalled
@@ -812,7 +1184,6 @@ export default function DashboardPage() {
                               process.env.NEXT_PUBLIC_BACKEND_URL ||
                               "http://localhost:8000";
 
-                            // Get GitHub App installation URL from backend
                             const response = await fetch(
                               `${backendUrl}/auth/install-reader-app`
                             );
@@ -824,11 +1195,7 @@ export default function DashboardPage() {
                             }
 
                             const data = await response.json();
-
-                            // Start polling for app installation
                             setPollingReaderApp(true);
-
-                            // Redirect to GitHub App installation page (opens in new tab)
                             window.open(data.url, "_blank");
                           } catch (error) {
                             console.error(
@@ -861,7 +1228,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Step 2: Create & Link Docbook Repository (Two-step process) */}
                 <div
                   className={`flex items-start gap-4 p-4 rounded-xl ${
                     readerAppInstalled
@@ -893,7 +1259,6 @@ export default function DashboardPage() {
 
                     {readerAppInstalled && (
                       <>
-                        {/* Step 2a: Create Repo - Show if repo doesn't exist */}
                         {!docbookRepoExists ? (
                           <>
                             <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg p-3 mb-3">
@@ -926,7 +1291,6 @@ export default function DashboardPage() {
                           </>
                         ) : !docbookLinked ? (
                           <>
-                            {/* Step 2b: Link Repo - Show if repo exists but NOT linked */}
                             <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg p-3 mb-3">
                               <p className="text-sm text-green-800 dark:text-green-200 mb-2 flex items-center gap-2">
                                 <CheckCircle className="w-4 h-4" />
@@ -1003,7 +1367,6 @@ export default function DashboardPage() {
                           </>
                         ) : (
                           <>
-                            {/* Step 2 Complete - Show if repo exists AND linked */}
                             <div className="text-sm text-green-600 dark:text-green-400 flex items-center gap-2">
                               <CheckCircle className="w-4 h-4" />
                               Docbook repository linked: {docbookRepoName}
@@ -1015,7 +1378,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Step 3: Select Repositories to Document */}
                 <div
                   className={`flex items-start gap-4 p-4 rounded-xl ${
                     docbookLinked && repositories.length > 0
@@ -1054,9 +1416,7 @@ export default function DashboardPage() {
                           App can access:
                         </p>
 
-                        {/* Custom Searchable Dropdown */}
                         <div className="relative mb-3">
-                          {/* Dropdown Button */}
                           <button
                             onClick={() =>
                               setShowRepoDropdown(!showRepoDropdown)
@@ -1087,10 +1447,8 @@ export default function DashboardPage() {
                             />
                           </button>
 
-                          {/* Dropdown Menu */}
                           {showRepoDropdown && (
                             <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-50">
-                              {/* Search Bar */}
                               <div className="p-3 border-b border-gray-200 dark:border-gray-600">
                                 <div className="relative">
                                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1107,69 +1465,58 @@ export default function DashboardPage() {
                                 </div>
                               </div>
 
-                              {/* Scrollable Repo List */}
                               <div className="max-h-64 overflow-y-auto">
-                                {repositories.filter((repo) =>
-                                  (repo.full_name || repo.name)
-                                    .toLowerCase()
-                                    .includes(repoSearchQuery.toLowerCase())
-                                ).length === 0 ? (
+                                {filteredRepositories.length === 0 ? (
                                   <div className="p-4 text-center text-gray-500 dark:text-gray-400">
                                     No repositories found
                                   </div>
                                 ) : (
-                                  repositories
-                                    .filter((repo) =>
-                                      (repo.full_name || repo.name)
-                                        .toLowerCase()
-                                        .includes(repoSearchQuery.toLowerCase())
-                                    )
-                                    .map((repo: any) => {
-                                      const repoName =
-                                        repo.full_name || repo.name;
-                                      const isSelected =
-                                        selectedRepo === repoName;
-                                      return (
-                                        <button
-                                          key={repo.id}
-                                          onClick={() => {
-                                            setSelectedRepo(repoName);
-                                            setShowRepoDropdown(false);
-                                            setRepoSearchQuery("");
-                                          }}
-                                          className={`w-full text-left px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors flex items-center gap-3 ${
+                                  filteredRepositories.map((repo: any) => {
+                                    const repoName =
+                                      repo.full_name || repo.name;
+                                    const isSelected =
+                                      selectedRepo === repoName;
+                                    return (
+                                      <button
+                                        key={repoName}
+                                        onClick={() => {
+                                          setSelectedRepo(repoName);
+                                          setShowRepoDropdown(false);
+                                          setRepoSearchQuery("");
+                                        }}
+                                        className={`w-full text-left px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors flex items-center gap-3 ${
+                                          isSelected
+                                            ? "bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500"
+                                            : ""
+                                        }`}
+                                      >
+                                        <BookOpen
+                                          className={`w-4 h-4 flex-shrink-0 ${
                                             isSelected
-                                              ? "bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500"
-                                              : ""
+                                              ? "text-blue-500"
+                                              : "text-gray-400"
                                           }`}
-                                        >
-                                          <BookOpen
-                                            className={`w-4 h-4 flex-shrink-0 ${
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                          <p
+                                            className={`text-sm font-medium truncate ${
                                               isSelected
-                                                ? "text-blue-500"
-                                                : "text-gray-400"
+                                                ? "text-blue-600 dark:text-blue-400"
+                                                : "text-gray-900 dark:text-gray-100"
                                             }`}
-                                          />
-                                          <div className="flex-1 min-w-0">
-                                            <p
-                                              className={`text-sm font-medium truncate ${
-                                                isSelected
-                                                  ? "text-blue-600 dark:text-blue-400"
-                                                  : "text-gray-900 dark:text-gray-100"
-                                              }`}
-                                            >
-                                              {repoName.split("/").pop()}
-                                            </p>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                              {repoName}
-                                            </p>
-                                          </div>
-                                          {isSelected && (
-                                            <CheckCircle className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                                          )}
-                                        </button>
-                                      );
-                                    })
+                                          >
+                                            {repoName.split("/").pop()}
+                                          </p>
+                                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                            {repoName}
+                                          </p>
+                                        </div>
+                                        {isSelected && (
+                                          <CheckCircle className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                                        )}
+                                      </button>
+                                    );
+                                  })
                                 )}
                               </div>
                             </div>
@@ -1180,7 +1527,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Step 4: Install Writer App */}
                 <div
                   className={`flex items-start gap-4 p-4 rounded-xl ${
                     docbookLinked && !writerAppHasCorrectAccess
@@ -1272,11 +1618,15 @@ export default function DashboardPage() {
                           </p>
                         )}
                       </>
-                    ) : null}
+                    ) : (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        Link your docbook repository first to enable the Writer
+                        App.
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                {/* Step 5: Generate Documentation */}
                 <div
                   className={`flex items-start gap-4 p-4 rounded-xl ${
                     repositories.length > 0 && selectedRepo
@@ -1315,7 +1665,6 @@ export default function DashboardPage() {
                               process.env.NEXT_PUBLIC_BACKEND_URL ||
                               "http://localhost:8000";
 
-                            // Use V4 endpoint (publishes to docbook/staging)
                             const response = await fetch(
                               `${backendUrl}/docs/generate-v4?repo_name=${encodeURIComponent(
                                 selectedRepo
@@ -1334,13 +1683,11 @@ export default function DashboardPage() {
                                 "✅ Documentation generated and published to staging"
                               );
 
-                              // Show success modal
                               setSuccessMessage(
                                 `✅ Documentation published to staging!\n\nYour docs are now in the staging branch. Check your Pustak dashboard to review and approve.`
                               );
                               setShowSuccessModal(true);
 
-                              // Refresh page after modal is closed
                               setTimeout(() => {
                                 window.location.reload();
                               }, 2000);
@@ -1383,7 +1730,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Upgrade CTA (if on free plan) */}
           {user.plan === "free" && (
             <div className="mt-8 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl shadow-xl p-8 text-white">
               <div className="flex items-center justify-between">
@@ -1406,33 +1752,192 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Connect Organization Modal */}
-        <ConnectOrganizationModal
-          isOpen={showOrgModal}
-          onClose={() => setShowOrgModal(false)}
-          backendUrl={BACKEND_URL}
-          userToken={token || ""}
-          onSuccess={() => {
-            // Repositories will auto-refresh via useEffect when connectedOrgs changes
-          }}
-        />
+        {activeTab === "getting-started" && showDocbookModal && (
+          <DocbookSetupModal
+            isOpen={showDocbookModal}
+            onClose={() => setShowDocbookModal(false)}
+            orgId={selectedOrgForDocbook}
+            onSuccess={(repoName) => {
+              setDocbookLinked(true);
+              setDocbookRepoName(repoName);
+              setShowDocbookModal(false);
+            }}
+          />
+        )}
 
-        {/* Docbook Setup Modal */}
-        <DocbookSetupModal
-          isOpen={showDocbookModal}
-          onClose={() => setShowDocbookModal(false)}
-          orgId={selectedOrgForDocbook}
-          onSuccess={(docbookRepo) => {
-            setLinkedDocbooks({
-              ...linkedDocbooks,
-              [selectedOrgForDocbook]: docbookRepo,
-            });
-          }}
-        />
+        {showOrgModal && (
+          <ConnectOrganizationModal
+            isOpen={showOrgModal}
+            onClose={() => setShowOrgModal(false)}
+            backendUrl={BACKEND_URL}
+            userToken={token || ""}
+            onSuccess={() => {}}
+          />
+        )}
 
-        {/* Success Modal */}
+        {showTrackedBranchDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-8 border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in-95 duration-200">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                Change Tracked Branch
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Set the branch that will be monitored for documentation updates
+              </p>
+              {loadingBranches ? (
+                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-4">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading branches…
+                </div>
+              ) : availableBranches.length > 0 ? (
+                <select
+                  value={branchInputValue}
+                  onChange={(e) => setBranchInputValue(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white mb-4"
+                >
+                  {availableBranches.map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={branchInputValue}
+                  onChange={(e) => setBranchInputValue(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white mb-4"
+                  placeholder="e.g., main, develop"
+                />
+              )}
+              {trackedBranchError && (
+                <p className="text-sm text-red-600 dark:text-red-400 mb-4">
+                  {trackedBranchError}
+                </p>
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowTrackedBranchDialog(false)}
+                  className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!branchInputValue.trim()) {
+                      setTrackedBranchError("Branch name cannot be empty");
+                      return;
+                    }
+
+                    if (!branchModalContext) {
+                      setTrackedBranchError(
+                        "No context available for branch update"
+                      );
+                      return;
+                    }
+
+                    setUpdatingTrackedBranch(true);
+                    setTrackedBranchError(null);
+
+                    try {
+                      const backendUrl =
+                        process.env.NEXT_PUBLIC_BACKEND_URL ||
+                        "http://localhost:8000";
+                      const trimmedBranch = branchInputValue.trim();
+
+                      if (branchModalContext.type === "docbook") {
+                        const response = await fetch(
+                          `${backendUrl}/docbook/${connectedOrgs[0]}/tracked-branch`,
+                          {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                              Authorization: `Bearer ${token}`,
+                            },
+                            body: JSON.stringify({
+                              tracked_branch: trimmedBranch,
+                            }),
+                          }
+                        );
+
+                        if (response.ok) {
+                          setDocbookTrackedBranch(trimmedBranch);
+                          setShowTrackedBranchDialog(false);
+                          setSuccessMessage(
+                            `✅ Org tracked branch updated to: ${trimmedBranch}`
+                          );
+                          setShowSuccessModal(true);
+                          await loadRepositories();
+                        } else {
+                          const errorBody = await response.json().catch(() => ({
+                            detail: "Failed to update branch",
+                          }));
+                          setTrackedBranchError(
+                            errorBody.detail || "Failed to update branch"
+                          );
+                        }
+                      } else {
+                        const repoFullName =
+                          branchModalContext.repoFullName || "";
+                        const response = await fetch(
+                          `${backendUrl}/repositories/${encodeURIComponent(
+                            repoFullName
+                          )}/tracked-branch`,
+                          {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                              Authorization: `Bearer ${token}`,
+                            },
+                            body: JSON.stringify({
+                              tracked_branch: trimmedBranch,
+                              default_branch: branchModalContext.defaultBranch,
+                            }),
+                          }
+                        );
+
+                        if (response.ok) {
+                          setShowTrackedBranchDialog(false);
+                          setSuccessMessage(
+                            `✅ ${repoFullName} tracked branch updated to: ${trimmedBranch}`
+                          );
+                          setShowSuccessModal(true);
+                          await loadRepositories();
+                        } else {
+                          const errorBody = await response.json().catch(() => ({
+                            detail: "Failed to update branch",
+                          }));
+                          setTrackedBranchError(
+                            errorBody.detail || "Failed to update branch"
+                          );
+                        }
+                      }
+                    } catch (err) {
+                      console.error("Error updating branch:", err);
+                      const message =
+                        err instanceof Error
+                          ? err.message
+                          : "Failed to update branch";
+                      setTrackedBranchError(message);
+                    } finally {
+                      setUpdatingTrackedBranch(false);
+                    }
+                  }}
+                  disabled={updatingTrackedBranch}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {updatingTrackedBranch && (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
+                  {updatingTrackedBranch ? "Updating..." : "Update Branch"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showSuccessModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-8 border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in-95 duration-200">
               <div className="text-center">
                 {successMessage.includes("❌") ? (

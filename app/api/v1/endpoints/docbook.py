@@ -30,6 +30,21 @@ class LinkDocbookRepoRequest(BaseModel):
     docbook_repo_name: str
 
 
+class DocbookTrackedBranchResponse(BaseModel):
+    org_id: str
+    tracked_branch: str
+
+
+class DocbookTrackedBranchUpdate(BaseModel):
+    tracked_branch: str
+
+
+class DocbookBranchesResponse(BaseModel):
+    org_id: str
+    repo: str
+    branches: List[str]
+
+
 def _require_github_token(user: User) -> str:
     token = user.github_access_token
     if not token:
@@ -119,6 +134,100 @@ async def _fetch_repo_data(org_id: str, repo_name: str, token: str) -> Optional[
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail=f"GitHub API error ({response.status_code}): {detail}",
     )
+
+
+async def _fetch_repo_branches(org_id: str, repo_name: str, token: str) -> List[str]:
+    url = f"https://api.github.com/repos/{org_id}/{repo_name}/branches"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Pustak-AI",
+    }
+
+    branches: List[str] = []
+    page = 1
+
+    logger.debug(
+        "🌿 Fetching repo branches",
+        extra={
+            "org_id": org_id,
+            "repo_name": repo_name,
+            "url": url,
+        },
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            while True:
+                response = await client.get(
+                    url,
+                    headers=headers,
+                    params={"per_page": 100, "page": page},
+                )
+
+                logger.debug(
+                    "📡 GitHub branch response",
+                    extra={
+                        "org_id": org_id,
+                        "repo_name": repo_name,
+                        "status_code": response.status_code,
+                        "page": page,
+                        "x_github_request_id": response.headers.get("X-GitHub-Request-Id"),
+                    },
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    if not isinstance(data, list):
+                        break
+
+                    page_branches = [
+                        item.get("name")
+                        for item in data
+                        if isinstance(item, dict) and item.get("name")
+                    ]
+                    branches.extend(page_branches)
+
+                    if len(data) < 100:
+                        break
+
+                    page += 1
+                    continue
+
+                if response.status_code == 404:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Repository or branches not found on GitHub",
+                    )
+
+                if response.status_code == 401:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="GitHub token unauthorized",
+                    )
+
+                detail = response.text
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"GitHub API error ({response.status_code}): {detail}",
+                )
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "❌ GitHub branches request failed",
+            extra={
+                "org_id": org_id,
+                "repo_name": repo_name,
+                "error": str(exc),
+            },
+        )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"GitHub API error: {exc}")
+
+    unique_branches: List[str] = []
+    for branch in branches:
+        if branch not in unique_branches:
+            unique_branches.append(branch)
+
+    return unique_branches
 
 
 async def link_docbook_repo_logic(
@@ -362,6 +471,65 @@ async def check_docbook_exists(
         "docbook_repo": repo.docbook_full_name,
         "docbook_url": repo.docbook_url,
     }
+
+
+@router.get("/docbook/{org_id}/branches", response_model=DocbookBranchesResponse)
+async def list_docbook_branches(
+    org_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    repo = await _get_docbook_repo(db, user, org_id)
+    token = _require_github_token(user)
+
+    if repo.docbook_full_name and "/" in repo.docbook_full_name:
+        owner, repo_name = repo.docbook_full_name.split("/", 1)
+    else:
+        owner = org_id
+        repo_name = repo.docbook_repo_name
+
+    branches = await _fetch_repo_branches(owner, repo_name, token)
+
+    return DocbookBranchesResponse(
+        org_id=org_id,
+        repo=repo.docbook_full_name or f"{owner}/{repo_name}",
+        branches=branches,
+    )
+
+
+@router.get("/docbook/{org_id}/tracked-branch", response_model=DocbookTrackedBranchResponse)
+async def get_docbook_tracked_branch(
+    org_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    service = DocbookService(db)
+    repo = await service.get_repo(user_id=user.id, org_id=org_id)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Docbook repository not linked")
+
+    tracked = (repo.tracked_branch or repo.main_branch or "main").strip() or "main"
+    return DocbookTrackedBranchResponse(org_id=org_id, tracked_branch=tracked)
+
+
+@router.post("/docbook/{org_id}/tracked-branch", response_model=DocbookTrackedBranchResponse)
+async def update_docbook_tracked_branch(
+    org_id: str,
+    payload: DocbookTrackedBranchUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    branch_value = (payload.tracked_branch or "").strip()
+    if not branch_value:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tracked branch cannot be empty")
+
+    service = DocbookService(db)
+    try:
+        repo = await service.update_tracked_branch(user_id=user.id, org_id=org_id, tracked_branch=branch_value)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return DocbookTrackedBranchResponse(org_id=org_id, tracked_branch=repo.tracked_branch or repo.main_branch or "main")
 
 
 @router.get("/docbook/{org_id}/structure")

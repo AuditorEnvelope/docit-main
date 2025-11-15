@@ -22,6 +22,11 @@ class DocbookService:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_repo_by_org(self, org_id: str) -> Optional[DocbookRepo]:
+        stmt = select(DocbookRepo).where(DocbookRepo.org_id == org_id, DocbookRepo.is_active.is_(True))
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def upsert_repo(
         self,
         *,
@@ -55,3 +60,40 @@ class DocbookService:
         await self.db.commit()
         await self.db.refresh(repo)
         return repo
+
+    async def get_tracked_branch(self, user_id: str | UUID, org_id: str) -> Optional[str]:
+        repo = await self.get_repo(user_id, org_id)
+        if not repo:
+            return None
+        tracked = (repo.tracked_branch or "").strip()
+        return tracked or None
+
+    async def update_tracked_branch(
+        self,
+        *,
+        user_id: str | UUID,
+        org_id: str,
+        tracked_branch: str,
+    ) -> DocbookRepo:
+        repo = await self.get_repo(user_id, org_id)
+        if not repo:
+            raise ValueError("Docbook repository not linked for this organization")
+
+        repo.tracked_branch = tracked_branch.strip() or "main"
+        await self.db.commit()
+        await self.db.refresh(repo)
+        return repo
+
+    async def get_tracked_branches_for_orgs(self, org_ids: list[str]) -> dict[str, str]:
+        if not org_ids:
+            return {}
+
+        stmt = select(DocbookRepo.org_id, DocbookRepo.tracked_branch).where(
+            DocbookRepo.org_id.in_(org_ids),
+            DocbookRepo.is_active.is_(True),
+        )
+        result = await self.db.execute(stmt)
+        return {
+            row.org_id: (row.tracked_branch or "main").strip() or "main"
+            for row in result.all()
+        }

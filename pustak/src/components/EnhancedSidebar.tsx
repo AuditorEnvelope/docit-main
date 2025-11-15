@@ -74,6 +74,23 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
         const orgsData = await response.json();
         const docbookRepos: DocbookRepo[] = [];
 
+        const cleanDocbookFolders = (
+          items: DocbookFile[] | undefined,
+          docbookName: string
+        ): DocbookFile[] => {
+          if (!items || !Array.isArray(items)) return [];
+          return items
+            .filter((item) => item.name !== docbookName)
+            .map((item) =>
+              item.type === "folder"
+                ? {
+                    ...item,
+                    files: cleanDocbookFolders(item.files, docbookName),
+                  }
+                : item
+            );
+        };
+
         // For each org, check if docbook repo exists and load its structure
         for (const org of orgsData.organizations || []) {
           const orgLogin = org.login;
@@ -92,12 +109,16 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
             if (structureResponse.ok) {
               const structure = await structureResponse.json();
+              const cleanedFolders = cleanDocbookFolders(
+                structure.folders,
+                docbookName
+              );
               docbookRepos.push({
                 orgId: orgLogin,
                 fullName: `${orgLogin}/${docbookName}`,
                 hasDocbook: true,
-                folders: structure.folders || [],
-                hasGeneratedDocs: (structure.folders || []).length > 0,
+                folders: cleanedFolders,
+                hasGeneratedDocs: cleanedFolders.length > 0,
               });
             } else {
               // Docbook repo doesn't exist

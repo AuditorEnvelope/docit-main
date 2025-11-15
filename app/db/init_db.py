@@ -226,7 +226,16 @@ async def init_models():
                 """
             )
         )
-    
+
+        await conn.execute(
+            text(
+                """
+                ALTER TABLE docbook_repos
+                ALTER COLUMN tracked_branch SET DEFAULT 'main'
+                """
+            )
+        )
+
     print("✅ Database schema initialized!")
 
 if __name__ == "__main__":
