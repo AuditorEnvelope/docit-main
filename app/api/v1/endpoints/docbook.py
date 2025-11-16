@@ -260,6 +260,20 @@ async def link_docbook_repo_logic(
         url=repo_data.get("html_url", ""),
     )
 
+    # Ensure background workers discover this org
+    await db.execute(
+        text(
+            """
+            INSERT INTO org_registrations (user_id, org_id, registered_at)
+            VALUES (:user_id, :org_id, NOW())
+            ON CONFLICT (user_id, org_id) DO UPDATE
+            SET registered_at = NOW()
+            """
+        ),
+        {"user_id": str(saved.user_id), "org_id": saved.org_id},
+    )
+    await db.commit()
+
     return {
         "status": "linked",
         "org_id": saved.org_id,

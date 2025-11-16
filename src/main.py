@@ -2337,6 +2337,18 @@ async def setup_docbook(org_id: str, docbook_repo: str, user = Depends(get_curre
                     # Store docbook repo in database
                     if commit_bus and commit_bus.pool:
                         async with commit_bus.pool.acquire() as conn:
+                            # Ensure org is registered for background workers
+                            await conn.execute(
+                                """
+                                INSERT INTO org_registrations (user_id, org_id, registered_at)
+                                VALUES ($1, $2, NOW())
+                                ON CONFLICT (user_id, org_id) DO UPDATE
+                                SET registered_at = NOW()
+                                """,
+                                user_id,
+                                org_id,
+                            )
+
                             await conn.execute("""
                                 INSERT INTO docbook_repos (org_id, repo_name, repo_full_name, user_id, created_at)
                                 VALUES ($1, $2, $3, $4, NOW())
