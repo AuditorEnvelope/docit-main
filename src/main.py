@@ -908,15 +908,32 @@ async def link_docbook_repo(
         
         # Store in database
         async with commit_bus.pool.acquire() as conn:
-            await conn.execute("""
+            # Ensure the org is registered for background workers
+            await conn.execute(
+                """
+                INSERT INTO org_registrations (user_id, org_id, registered_at)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (user_id, org_id) DO UPDATE
+                SET registered_at = NOW()
+                """,
+                user_id,
+                org_id,
+            )
+
+            await conn.execute(
+                """
                 INSERT INTO docbook_repos 
                 (user_id, org_id, docbook_repo_name, docbook_full_name, docbook_url, is_active)
                 VALUES ($1, $2, $3, $4, $5, TRUE)
                 ON CONFLICT (user_id, org_id) DO UPDATE
                 SET docbook_repo_name = $3, docbook_full_name = $4, docbook_url = $5, 
                     is_active = TRUE, updated_at = NOW()
-            """,
-            user_id, org_id, docbook_repo_name, docbook_full_name, docbook_url
+                """,
+                user_id,
+                org_id,
+                docbook_repo_name,
+                docbook_full_name,
+                docbook_url,
             )
         
         print(f"✅ Linked docbook repo: {docbook_full_name}")
