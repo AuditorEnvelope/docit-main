@@ -595,7 +595,7 @@ async def get_pending_reviews(
     - reviews: List of pending reviews waiting for user approval
     """
     try:
-        raw_user_id = user.get("id") if isinstance(user, dict) else getattr(user, "id", None)
+        raw_user_id = user.id if hasattr(user, "id") else user.get("id")
         if not raw_user_id:
             raise HTTPException(status_code=401, detail="User context missing")
 

@@ -4,13 +4,16 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:800
 
 interface GenerateDocsRequest {
   repoName: string;
+  docPersona?: string;
+  commitMessage?: string;
+  commitSha?: string;
 }
 
 // Call backend to generate docs
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateDocsRequest = await request.json();
-    const { repoName } = body;
+    const { repoName, docPersona = "internal", commitMessage, commitSha } = body;
 
     if (!repoName) {
       return NextResponse.json(
@@ -32,8 +35,20 @@ export async function POST(request: NextRequest) {
 
     console.log(`📝 Calling backend to generate docs for ${repoName}...`);
 
-    // Call backend /docs/generate endpoint
-    const response = await fetch(`${BACKEND_URL}/docs/generate?repo_name=${repoName}`, {
+    const params = new URLSearchParams({
+      repo_name: repoName,
+      doc_persona: docPersona,
+    });
+
+    if (commitMessage) {
+      params.set("commit_message", commitMessage);
+    }
+    if (commitSha) {
+      params.set("commit_sha", commitSha);
+    }
+
+    // Call backend /docs/generate-v4 endpoint (docbook publish flow)
+    const response = await fetch(`${BACKEND_URL}/docs/generate-v4?${params.toString()}`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${userToken}`,
@@ -98,7 +113,7 @@ export async function GET(request: NextRequest) {
 
     // Call backend to check status
     const response = await fetch(
-      `${BACKEND_URL}/docs/generate?repo_name=${repoName}`,
+      `${BACKEND_URL}/docs/generate-v4?repo_name=${repoName}`,
       {
         headers: {
           "Authorization": `Bearer ${userToken}`,

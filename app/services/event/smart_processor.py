@@ -164,6 +164,55 @@ def _is_docai_bot_commit(commits: Iterable[Dict[str, object]]) -> bool:
     return "docai" in name or "docai@bots.local" in email
 
 
+async def _resolve_user_id(
+    payload: Dict[str, object],
+    org_id: str,
+    db_pool,
+) -> str | None:
+    """Best-effort lookup of user UUID for docbook publishing."""
+
+    existing = payload.get("_user_id")
+    if isinstance(existing, str) and existing:
+        return existing
+
+    if db_pool is None:
+        return None
+
+    try:
+        async with db_pool.acquire() as conn:
+            repo_row = await conn.fetchrow(
+                """
+                SELECT user_id
+                FROM docbook_repos
+                WHERE org_id = $1 AND is_active = TRUE
+                LIMIT 1
+                """,
+                org_id,
+            )
+            if repo_row and repo_row.get("user_id"):
+                resolved = str(repo_row["user_id"])
+                payload["_user_id"] = resolved
+                return resolved
+
+            registration_row = await conn.fetchrow(
+                """
+                SELECT user_id
+                FROM org_registrations
+                WHERE org_id = $1
+                LIMIT 1
+                """,
+                org_id,
+            )
+            if registration_row and registration_row.get("user_id"):
+                resolved = str(registration_row["user_id"])
+                payload["_user_id"] = resolved
+                return resolved
+    except Exception as lookup_error:  # pragma: no cover - diagnostics only
+        print(f"⚠️  Unable to resolve docbook user for org {org_id}: {lookup_error}")
+
+    return None
+
+
 async def _publish_to_docbook(
     repo_dir: Path,
     repository: Dict[str, object],
@@ -186,7 +235,6 @@ async def _publish_to_docbook(
         print("ℹ️  No database pool in payload; skipping docbook publish (webhook mode)")
         return
 
-    user_id = payload.get("_user_id")
     org_id = payload.get("_org_id")
     if not isinstance(org_id, str) or not org_id:
         full_name = repository.get("full_name")
@@ -195,6 +243,8 @@ async def _publish_to_docbook(
         else:
             print("⚠️  Unable to resolve organization for docbook publish; skipping")
             return  # Don't raise - make it non-blocking
+
+    user_id = await _resolve_user_id(payload, org_id, db_pool)
 
     source_repo = repository.get("name")
     if not isinstance(source_repo, str) or not source_repo:

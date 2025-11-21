@@ -2,7 +2,7 @@
 
 import { useState, useEffect, memo } from "react";
 import { useTheme } from "next-themes";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   BookOpen,
   Search,
@@ -21,6 +21,8 @@ import {
   LogOut,
   Settings,
   Crown,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { EnhancedSidebar as EnhancedSidebarComponent } from "./EnhancedSidebar";
 
@@ -35,12 +37,21 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarPinned, setSidebarPinned] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   const { user, logout, isAuthenticated } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+
+  const sidebarHiddenExact = new Set(["/", "/settings", "/pricing", "/login"]);
+  const sidebarHiddenPrefixes = ["/pending-reviews", "/repo/settings"];
+  const currentPath = pathname ?? "";
+  const hideNavigation =
+    sidebarHiddenExact.has(currentPath) ||
+    sidebarHiddenPrefixes.some((prefix) => currentPath.startsWith(prefix));
 
   useEffect(() => {
     setMounted(true);
@@ -53,7 +64,7 @@ export function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors">
       {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
+      {!hideNavigation && sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
           onClick={() => setSidebarOpen(false)}
@@ -61,28 +72,59 @@ export function Layout({ children }: LayoutProps) {
       )}
 
       {/* Sidebar */}
-      <div
-        className={`
-        fixed inset-y-0 left-0 z-50 w-80 transform transition-transform duration-300 ease-in-out
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-        lg:translate-x-0
-      `}
-      >
-        <EnhancedSidebar key="sidebar" onClose={() => setSidebarOpen(false)} />
-      </div>
+      {!hideNavigation && (
+        <div
+          className={`
+          fixed inset-y-0 left-0 z-50 w-80 transform transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+          ${sidebarPinned ? "lg:translate-x-0" : "lg:-translate-x-full"}
+        `}
+        >
+          <EnhancedSidebar
+            key="sidebar"
+            onClose={() => {
+              setSidebarOpen(false);
+              setSidebarPinned(false);
+            }}
+          />
+        </div>
+      )}
 
       {/* Main content */}
-      <div className="lg:pl-80">
+      <div className={!hideNavigation && sidebarPinned ? "lg:pl-80" : ""}>
         {/* Header */}
         <header className="sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
+              {!hideNavigation && (
+                <>
+                  <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                    aria-label="Open sidebar"
+                  >
+                    <Menu className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (sidebarPinned) {
+                        setSidebarPinned(false);
+                      } else {
+                        setSidebarPinned(true);
+                        setSidebarOpen(false);
+                      }
+                    }}
+                    className="hidden lg:inline-flex items-center justify-center rounded-md border border-transparent bg-gray-100/60 px-2 py-1 text-gray-600 transition hover:bg-gray-200/70 dark:bg-gray-800/60 dark:text-gray-300 dark:hover:bg-gray-700/60"
+                    aria-label={sidebarPinned ? "Collapse sidebar" : "Expand sidebar"}
+                  >
+                    {sidebarPinned ? (
+                      <PanelLeftClose className="h-4 w-4" />
+                    ) : (
+                      <PanelLeftOpen className="h-4 w-4" />
+                    )}
+                  </button>
+                </>
+              )}
 
               <div className="flex items-center space-x-2">
                 <BookOpen className="w-6 h-6 text-blue-600 dark:text-blue-400" />

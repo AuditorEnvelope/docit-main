@@ -131,7 +131,7 @@ class DocbookPublisher:
                 "commit_sha": commit_sha,
             }
 
-            if self.db_pool and user_uuid:
+            if user_uuid:
                 await self._record_pending_review(
                     user_uuid,
                     org_id,
@@ -150,7 +150,7 @@ class DocbookPublisher:
                         status="pending_review",
                     )
             else:
-                print("⚠️  Skipping review logging – missing db_pool or user UUID")
+                print("⚠️  Skipping review logging – missing user UUID")
 
             review_url = f"{docbook_url}/compare/{main_branch}...{staging_branch}"
             print(f"✅ Published to {docbook_full_name}/{staging_branch}")
@@ -605,9 +605,34 @@ class DocbookPublisher:
         # Always use asyncpg pool (like old codebase) to avoid schema mismatches
         # The SQLAlchemy model has review_metadata but database doesn't have this column
         if self.db_session:
-            # If db_session is provided, we still use db_pool to avoid schema issues
-            # This ensures consistency with old codebase
-            pass
+            try:
+                await self.db_session.execute(
+                    text(
+                        """
+                        INSERT INTO docbook_reviews (
+                            user_id, org_id, source_repo_name, docbook_full_name,
+                            status, commit_message
+                        ) VALUES (:user_id, :org_id, :source_repo_name, :docbook_full_name,
+                                  'pending_review', :commit_message)
+                        ON CONFLICT (user_id, org_id, source_repo_name) DO UPDATE
+                        SET status = 'pending_review',
+                            commit_message = :commit_message,
+                            updated_at = NOW()
+                        """
+                    ),
+                    {
+                        "user_id": str(user_uuid),
+                        "org_id": org_id,
+                        "source_repo_name": source_repo_name,
+                        "docbook_full_name": docbook_full_name,
+                        "commit_message": commit_message,
+                    },
+                )
+                await self.db_session.flush()
+                return
+            except Exception as exc:
+                print(f"⚠️  Failed to record pending review via SQLAlchemy: {exc}")
+                # Fall back to asyncpg pool if available
 
         if not self.db_pool:
             return

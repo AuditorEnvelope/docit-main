@@ -43,6 +43,8 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
     last_login_at = Column(DateTime(timezone=True), nullable=True)
+    is_onboarding_complete = Column(Boolean, nullable=False, server_default="false", default=False)
+    onboarding_completed_at = Column(DateTime(timezone=True), nullable=True)
     
     def __repr__(self):
         return f"<User(id='{self.id}', username='{self.username}', plan='{self.plan}')>"

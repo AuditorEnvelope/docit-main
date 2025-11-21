@@ -14,6 +14,9 @@ import {
   Users,
   Zap,
   Search,
+  Sparkles,
+  ShieldCheck,
+  Globe2,
 } from "lucide-react";
 
 export default function HomePage() {
@@ -24,6 +27,77 @@ export default function HomePage() {
     lastUpdate: "Loading...",
   });
   const [loading, setLoading] = useState(true);
+
+  const heroHighlights = [
+    {
+      icon: Sparkles,
+      title: "AI doc orchestration",
+      description:
+        "Let Pustak draft architecture, workflow, and changelog docs in minutes.",
+    },
+    {
+      icon: Globe2,
+      title: "Multi-org aware",
+      description: "Seamlessly route staging updates across every org you manage.",
+    },
+    {
+      icon: ShieldCheck,
+      title: "Transparent & secure",
+      description:
+        "Ship docs with your GitHub identity—tokens stay scoped and auditable.",
+    },
+  ];
+
+  const capabilityTiles = [
+    {
+      icon: Zap,
+      title: "AI-Powered",
+      description:
+        "Generate release-ready documentation from code changes with contextual AI.",
+      accent: "from-blue-500/20 via-blue-500/10 to-transparent",
+    },
+    {
+      icon: TrendingUp,
+      title: "Always Updated",
+      description:
+        "Keep staging docbooks in lockstep with commits—no more stale Confluence pages.",
+      accent: "from-emerald-500/25 via-emerald-500/10 to-transparent",
+    },
+    {
+      icon: Users,
+      title: "Team Ready",
+      description:
+        "Review, approve, and publish docs together with built-in workflows.",
+      accent: "from-purple-500/25 via-purple-500/10 to-transparent",
+    },
+  ];
+
+  const welcomeTiles = [
+    {
+      title: "🚀 AI-Powered",
+      description:
+        "Automatically generates documentation from your code changes using advanced AI.",
+      bg: "bg-blue-500/10",
+    },
+    {
+      title: "🔄 Real-time Updates",
+      description:
+        "Automatic synchronization with repository changes keeps staging branches fresh.",
+      bg: "bg-emerald-500/10",
+    },
+    {
+      title: "📚 Multi-Repository",
+      description:
+        "Organize documentation across multiple repositories with automatic discovery.",
+      bg: "bg-purple-500/10",
+    },
+    {
+      title: "🎨 Beautiful Interface",
+      description:
+        "Enjoy a GitBook-inspired reading experience with dark mode and smooth transitions.",
+      bg: "bg-amber-500/10",
+    },
+  ];
 
   useEffect(() => {
     async function loadStats() {
@@ -87,196 +161,136 @@ export default function HomePage() {
 
   return (
     <Layout>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="min-h-screen bg-slate-950 text-slate-100">
         {/* Hero Section */}
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-800 dark:to-gray-900 py-16">
-          <div className="max-w-4xl mx-auto px-6">
+        <section className="relative overflow-hidden py-20">
+          <div className="absolute left-1/2 top-[-20%] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-blue-600/40 blur-[180px]" aria-hidden />
+          <div className="absolute right-[8%] top-[10%] h-40 w-40 rounded-full bg-emerald-400/30 blur-3xl animate-pulse" aria-hidden />
+          <div className="absolute left-[10%] bottom-[12%] h-36 w-36 rounded-full bg-purple-500/30 blur-3xl animate-pulse" aria-hidden />
+
+          <div className="relative mx-auto flex max-w-6xl flex-col gap-16 px-6">
             <div className="text-center">
-              <div className="flex items-center justify-center space-x-3 mb-6">
-                <BookOpen className="w-12 h-12 text-blue-600 dark:text-blue-400" />
-                <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100">
-                  Pustak
-                </h1>
+              <div className="mx-auto flex w-fit items-center gap-3 rounded-full border border-blue-500/40 bg-blue-500/10 px-5 py-2 text-sm font-semibold uppercase tracking-[0.28em] text-blue-200">
+                <BookOpen className="h-5 w-5" /> Pustak
               </div>
-              <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 max-w-2xl mx-auto">
-                Beautiful, AI-powered documentation platform that automatically
-                generates and maintains documentation for your repositories.
+              <h1 className="mt-6 text-4xl font-semibold leading-snug sm:text-5xl">
+                Ship documentation with the same velocity as your code.
+              </h1>
+              <p className="mt-4 text-base text-slate-300 sm:text-lg">
+                Pustak turns GitHub activity into beautiful docbooks—architecture, workflows, and changelogs stay review-ready without manual toil.
               </p>
 
-              {/* Quick Search */}
-              <div className="max-w-xl mx-auto mb-8">
+              {/* Highlights */}
+              <div className="mt-10 grid gap-4 sm:grid-cols-3">
+                {heroHighlights.map((highlight) => {
+                  const HighlightIcon = highlight.icon;
+                  return (
+                    <div
+                      key={highlight.title}
+                      className="group relative overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-900/60 p-4 transition hover:border-blue-400/50 hover:bg-slate-900/80"
+                    >
+                      <div className="absolute inset-0 translate-y-10 bg-gradient-to-br from-blue-500/20 via-transparent to-transparent opacity-0 transition duration-500 group-hover:translate-y-0 group-hover:opacity-100" aria-hidden />
+                      <div className="relative flex items-start gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-500/10 text-blue-200">
+                          <HighlightIcon className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-100">{highlight.title}</p>
+                          <p className="mt-1 text-xs text-slate-400">{highlight.description}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Command Bar */}
+              <div className="mx-auto mt-12 max-w-xl">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    // Trigger search modal via keyboard shortcut
-                    const event = new KeyboardEvent('keydown', {
-                      key: 'k',
+                    const event = new KeyboardEvent("keydown", {
+                      key: "k",
                       metaKey: true,
                       bubbles: true,
-                      cancelable: true
+                      cancelable: true,
                     });
                     document.dispatchEvent(event);
                   }}
-                  className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-400 dark:hover:border-blue-600 transition-colors group cursor-pointer"
+                  className="group flex w-full items-center gap-3 rounded-2xl border border-slate-800/70 bg-slate-900/70 px-5 py-4 text-left text-sm transition hover:border-blue-500/60 hover:bg-slate-900/90"
                 >
-                  <Search className="w-5 h-5 text-gray-400 group-hover:text-blue-500 pointer-events-none" />
-                  <span className="flex-1 text-left text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300 pointer-events-none">
-                    Search documentation...
-                  </span>
-                  <kbd className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded pointer-events-none">
-                    ⌘K
-                  </kbd>
+                  <Search className="h-5 w-5 text-slate-500 transition group-hover:text-blue-400" />
+                  <span className="flex-1 text-slate-400 transition group-hover:text-slate-200">Search documentation…</span>
+                  <kbd className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-400">⌘K</kbd>
                 </button>
               </div>
+            </div>
 
-              {/* Stats */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-3xl mx-auto">
-                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
-                  <div className="flex items-center justify-center space-x-2 mb-2">
-                    <GitBranch className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                    <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      {loading ? "..." : stats.repositories}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Repositories
-                  </p>
-                </div>
+          </div>
+        </section>
 
-                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
-                  <div className="flex items-center justify-center space-x-2 mb-2">
-                    <FileText className="w-5 h-5 text-green-600 dark:text-green-400" />
-                    <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      {loading ? "..." : stats.documents}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Documents
-                  </p>
-                </div>
+        {/* Capability Section */}
+        <section className="border-t border-slate-900/60 bg-slate-950/95 py-20">
+          <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6">
+            <div className="flex flex-col gap-4 text-center">
+              <span className="text-xs uppercase tracking-[0.32em] text-slate-500">Why teams choose Pustak</span>
+              <h2 className="text-3xl font-semibold text-slate-100 sm:text-4xl">Everything you expect from modern documentation</h2>
+              <p className="text-sm text-slate-400 sm:text-base">
+                Automate docbook pipelines from webhook to review. Purpose-built for product squads that ship continuously.
+              </p>
+            </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
-                  <div className="flex items-center justify-center space-x-2 mb-2">
-                    <History className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                    <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      {loading ? "..." : stats.updates}
-                    </span>
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {capabilityTiles.map((tile) => {
+                const CapabilityIcon = tile.icon;
+                return (
+                  <div
+                    key={tile.title}
+                    className="group relative overflow-hidden rounded-3xl border border-slate-900/60 bg-slate-900/70 p-6 transition duration-300 hover:-translate-y-1 hover:border-blue-500/50 hover:bg-slate-900/85"
+                  >
+                    <div className={`absolute inset-0 bg-gradient-to-br ${tile.accent} via-transparent to-transparent opacity-0 transition duration-500 group-hover:opacity-90`} aria-hidden />
+                    <div className="relative flex items-center gap-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950/80 text-blue-100">
+                        <CapabilityIcon className="h-6 w-6" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-100">{tile.title}</h3>
+                    </div>
+                    <p className="relative mt-3 text-sm text-slate-300">{tile.description}</p>
                   </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Updates
-                  </p>
-                </div>
-
-                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
-                  <div className="flex items-center justify-center space-x-2 mb-2">
-                    <Clock className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-                    <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                      {loading ? "..." : stats.lastUpdate}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Last Update
-                  </p>
-                </div>
-              </div>
+                );
+              })}
             </div>
           </div>
-        </div>
-
-        {/* Features Section */}
-        <div className="py-16">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
-              <div className="text-center">
-                <div className="bg-blue-100 dark:bg-blue-900 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Zap className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                  AI-Powered
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  Automatically generates documentation from your code changes
-                  using advanced AI.
-                </p>
-              </div>
-
-              <div className="text-center">
-                <div className="bg-green-100 dark:bg-green-900 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <TrendingUp className="w-8 h-8 text-green-600 dark:text-green-400" />
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                  Always Updated
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  Documentation stays in sync with your codebase automatically.
-                </p>
-              </div>
-
-              <div className="text-center">
-                <div className="bg-purple-100 dark:bg-purple-900 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Users className="w-8 h-8 text-purple-600 dark:text-purple-400" />
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                  Team Ready
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  Designed for teams with collaborative features and
-                  organization-wide access.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        </section>
 
         {/* Welcome Section */}
-        <div className="max-w-4xl mx-auto px-6 pb-16">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-8">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
-              Welcome to Pustak
-            </h2>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              Pustak (पुस्तक) is an AI-powered documentation platform that automatically generates
-              and maintains documentation for your repositories. Select a repository from the sidebar
-              to explore its documentation.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
-                  🚀 AI-Powered
-                </h3>
-                <p className="text-sm text-blue-700 dark:text-blue-300">
-                  Automatically generates documentation from your code changes using advanced AI
+        <section className="border-t border-slate-900/60 bg-slate-950 py-20">
+          <div className="mx-auto max-w-5xl px-6">
+            <div className="rounded-3xl border border-slate-900/60 bg-slate-900/75 p-10 shadow-inner shadow-blue-950/40">
+              <div className="flex flex-col gap-4 text-center sm:text-left">
+                <span className="text-xs uppercase tracking-[0.32em] text-blue-300">Welcome aboard</span>
+                <h2 className="text-3xl font-semibold text-slate-100 sm:text-4xl">Your docbook co-pilot</h2>
+                <p className="text-sm text-slate-400 sm:text-base">
+                  Pustak (पुस्तक) connects to your GitHub workflow, drafts documentation automatically, and keeps every stakeholder in sync.
                 </p>
               </div>
-              <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                <h3 className="font-semibold text-green-900 dark:text-green-100 mb-2">
-                  🔄 Real-time Updates
-                </h3>
-                <p className="text-sm text-green-700 dark:text-green-300">
-                  Automatic synchronization with repository changes and live updates
-                </p>
-              </div>
-              <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                <h3 className="font-semibold text-purple-900 dark:text-purple-100 mb-2">
-                  📚 Multi-Repository
-                </h3>
-                <p className="text-sm text-purple-700 dark:text-purple-300">
-                  Organize documentation across multiple repositories with automatic discovery
-                </p>
-              </div>
-              <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
-                <h3 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">
-                  🎨 Beautiful Interface
-                </h3>
-                <p className="text-sm text-orange-700 dark:text-orange-300">
-                  Clean, GitBook-inspired design with dark mode and responsive layout
-                </p>
+
+              <div className="mt-8 grid gap-4 md:grid-cols-2">
+                {welcomeTiles.map((tile) => (
+                  <div
+                    key={tile.title}
+                    className={`rounded-2xl border border-slate-800/70 ${tile.bg} p-5 text-left transition hover:border-blue-400/40`}
+                  >
+                    <h3 className="text-base font-semibold text-slate-100">{tile.title}</h3>
+                    <p className="mt-2 text-sm text-slate-300">{tile.description}</p>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
-        </div>
+        </section>
       </div>
     </Layout>
   );
