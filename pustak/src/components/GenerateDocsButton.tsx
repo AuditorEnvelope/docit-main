@@ -152,7 +152,7 @@ export function GenerateDocsButton({
     <button
       onClick={handleGenerate}
       disabled={isGenerating}
-      className={`flex items-center space-x-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+      className={`flex cursor-pointer items-center space-x-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
         fullWidth ? "w-full justify-center" : ""
       } ${
         hasDocsFolder

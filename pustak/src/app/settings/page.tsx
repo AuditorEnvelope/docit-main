@@ -376,7 +376,7 @@ export default function SettingsPage() {
                 </button>
               </div>
             ) : (
-              <div className="grid gap-5 lg:grid-cols-2">
+              <div className="space-y-5">
                 {organizations.map((orgId) => {
                   const summary = orgSummaries[orgId];
                   const summaryLoading = !summary || summary.loading;
@@ -455,134 +455,170 @@ export default function SettingsPage() {
                   return (
                     <div
                       key={orgId}
-                      className="rounded-2xl border border-slate-800/70 bg-slate-900/50 p-6 shadow-xl space-y-5"
+                      className="group relative overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/60 p-8 shadow-[0_30px_70px_-45px_rgba(30,64,175,0.55)] transition hover:border-indigo-500/40"
                     >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="text-xl font-semibold text-white">{orgId}</h3>
-                          <p className="text-sm text-slate-400 mt-1">
-                            Manage GitHub app access, docbook linkage, and webhook health.
-                          </p>
-                        </div>
-                      </div>
+                      <div
+                        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(79,70,229,0.28),_transparent_58%)] opacity-70 blur-3xl"
+                        aria-hidden
+                      />
+                      <div
+                        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.18),_transparent_55%)] opacity-60 blur-3xl"
+                        aria-hidden
+                      />
 
-                      <div className="rounded-xl border border-slate-800/70 bg-slate-900/70 px-4 py-4 space-y-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-                            Connection checklist
-                          </span>
-                          <button
-                            onClick={loadSettingsData}
-                            className="inline-flex items-center gap-2 rounded-lg border border-slate-700/70 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800/60 transition"
-                          >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            Refresh status
-                          </button>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          {statusItems.map(({ key, label, status, tone, action }) => (
-                            <div
-                              key={key}
-                              className={`rounded-xl border px-4 py-3 ${STATUS_TONE_CLASSES[tone]} flex flex-col gap-2`}
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-sm font-semibold text-slate-100">
-                                  {label}
-                                </span>
-                                <span
-                                  className={`text-xs font-semibold uppercase tracking-widest ${STATUS_VALUE_CLASSES[tone]}`}
-                                >
-                                  {status}
-                                </span>
-                              </div>
-                              {action ? (
-                                action.type === "link" ? (
-                                  <a
-                                    href={action.href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                                      action.className || STATUS_ACTION_DEFAULT_CLASSES[tone]
-                                    }`}
-                                  >
-                                    {action.label}
-                                  </a>
-                                ) : (
-                                  <button
-                                    onClick={action.onClick}
-                                    className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                                      action.className || STATUS_ACTION_DEFAULT_CLASSES[tone]
-                                    }`}
-                                  >
-                                    {action.label}
-                                  </button>
-                                )
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="grid gap-4 text-sm">
-                        <div className="rounded-xl border border-slate-800/70 bg-slate-900/80 p-4">
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-slate-200">Docbook repository</span>
-                            {summary?.docbookRepo ? (
-                              <Link
-                                href={`https://github.com/${summary.docbookRepo}`}
-                                target="_blank"
-                                className="text-xs text-indigo-300 hover:text-indigo-200"
-                              >
-                                Open on GitHub
-                              </Link>
-                            ) : null}
-                          </div>
-                          <p className="mt-2 text-slate-400">
-                            {summary?.docbookRepo ? (
-                              summary.docbookRepo
-                            ) : (
-                              <span className="text-amber-200">
-                                No docbook linked yet. Link your docbook repository to publish docs.
+                      <div className="relative space-y-8">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                          <div>
+                            <h3 className="text-2xl font-semibold text-white">{orgId}</h3>
+                            <p className="mt-1 text-sm text-slate-400">
+                              Manage GitHub app access, docbook linkage, and webhook health.
+                            </p>
+                            {summaryLoading && (
+                              <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/70 px-3 py-1 text-xs font-semibold text-slate-300">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Syncing status…
                               </span>
                             )}
-                          </p>
+                          </div>
+                          <button
+                            onClick={loadSettingsData}
+                            className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/60 px-4 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-slate-200 transition hover:border-indigo-400 hover:text-white"
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                            Refresh
+                          </button>
                         </div>
-                        <div className="rounded-xl border border-slate-800/70 bg-slate-900/80 p-4">
-                          <span className="font-semibold text-slate-200">Automation status</span>
-                          <ul className="mt-3 space-y-2 text-slate-400 text-sm">
-                            <li className="flex items-center gap-2">
-                              <CheckCircle2 className={`w-4 h-4 ${summary?.readerInstalled ? "text-emerald-400" : "text-amber-400"}`} />
-                              GitHub Reader App {summary?.readerInstalled ? "installed" : "pending installation"}
-                            </li>
-                            <li className="flex items-center gap-2">
-                              <CheckCircle2 className={`w-4 h-4 ${summary?.writerInstalled ? "text-emerald-400" : "text-amber-400"}`} />
-                              Writer App {summary?.writerInstalled ? "installed" : "pending installation"}
-                            </li>
-                            <li className="flex items-center gap-2">
-                              <CheckCircle2 className={`w-4 h-4 ${summary?.docbookLinked ? "text-emerald-400" : "text-amber-400"}`} />
-                              Docbook {summary?.docbookLinked ? "linked" : "not linked"}
-                            </li>
-                          </ul>
-                        </div>
-                      </div>
 
-                      <div className="flex flex-wrap gap-3">
-                        <button
-                          onClick={() => setDocbookOrg(orgId)}
-                          className="inline-flex items-center gap-2 rounded-xl bg-blue-500 hover:bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow"
-                        >
-                          <GitBranch className="w-4 h-4" />
-                          {summary?.docbookLinked ? "Manage docbook" : "Link docbook"}
-                        </button>
-                        <a
-                          href="https://github.com/apps/pustak-analyser-ai"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800/60"
-                        >
-                          <ShieldCheck className="w-4 h-4" />
-                          Manage GitHub App
-                        </a>
+                        <div className="flex flex-col gap-8 xl:flex-row xl:items-start">
+                          <div className="flex flex-col gap-6 xl:w-80">
+                            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
+                              <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+                                Docbook repository
+                              </span>
+                              <div className="mt-3 space-y-2">
+                                {summary?.docbookRepo ? (
+                                  <>
+                                    <p className="break-words text-sm text-slate-200">
+                                      {summary.docbookRepo}
+                                    </p>
+                                    <Link
+                                      href={`https://github.com/${summary.docbookRepo}`}
+                                      target="_blank"
+                                      className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-300 hover:text-indigo-200"
+                                    >
+                                      Open on GitHub
+                                    </Link>
+                                  </>
+                                ) : (
+                                  <p className="text-sm text-amber-200">
+                                    No docbook linked yet. Link your docbook repository to publish docs.
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-3">
+                              <button
+                                onClick={() => setDocbookOrg(orgId)}
+                                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-500/90 px-4 py-2 text-sm font-semibold text-white shadow-lg transition hover:bg-blue-500"
+                              >
+                                <GitBranch className="h-4 w-4" />
+                                {summary?.docbookLinked ? "Manage docbook" : "Link docbook"}
+                              </button>
+                              <a
+                                href="https://github.com/apps/pustak-analyser-ai"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700/70 bg-slate-900/60 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-indigo-400 hover:text-white"
+                              >
+                                <ShieldCheck className="h-4 w-4" />
+                                Manage GitHub App
+                              </a>
+                            </div>
+                          </div>
+
+                          <div className="flex-1 flex flex-col gap-6 lg:flex-row lg:items-start">
+                            <div className="flex-1 rounded-2xl border border-slate-800 bg-slate-900/80 p-6">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+                                  Connection checklist
+                                </span>
+                                <div className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-200">
+                                  <Plug className="h-3.5 w-3.5" />
+                                  Status
+                                </div>
+                              </div>
+                              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-2">
+                                {statusItems.map(({ key, label, status, tone, action }) => (
+                                  <div
+                                    key={key}
+                                    className={`rounded-2xl border px-4 py-3 ${STATUS_TONE_CLASSES[tone]} flex flex-col gap-3`}
+                                  >
+                                    <div className="space-y-1">
+                                      <span className="block text-sm font-semibold text-slate-100">
+                                        {label}
+                                      </span>
+                                      <span
+                                        className={`block text-[11px] font-semibold uppercase tracking-[0.35em] ${STATUS_VALUE_CLASSES[tone]}`}
+                                      >
+                                        {status}
+                                      </span>
+                                    </div>
+                                    {action ? (
+                                      action.type === "link" ? (
+                                        <a
+                                          href={action.href}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                                            action.className || STATUS_ACTION_DEFAULT_CLASSES[tone]
+                                          }`}
+                                        >
+                                          {action.label}
+                                        </a>
+                                      ) : (
+                                        <button
+                                          onClick={action.onClick}
+                                          className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                                            action.className || STATUS_ACTION_DEFAULT_CLASSES[tone]
+                                          }`}
+                                        >
+                                          {action.label}
+                                        </button>
+                                      )
+                                    ) : null}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 lg:w-72">
+                              <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+                                Automation status
+                              </span>
+                              <ul className="mt-4 space-y-3 text-sm text-slate-300">
+                                <li className="flex items-center gap-2">
+                                  <CheckCircle2
+                                    className={`h-4 w-4 ${summary?.readerInstalled ? "text-emerald-400" : "text-amber-400"}`}
+                                  />
+                                  GitHub Reader App {summary?.readerInstalled ? "installed" : "pending installation"}
+                                </li>
+                                <li className="flex items-center gap-2">
+                                  <CheckCircle2
+                                    className={`h-4 w-4 ${summary?.writerInstalled ? "text-emerald-400" : "text-amber-400"}`}
+                                  />
+                                  Writer App {summary?.writerInstalled ? "installed" : "pending installation"}
+                                </li>
+                                <li className="flex items-center gap-2">
+                                  <CheckCircle2
+                                    className={`h-4 w-4 ${summary?.docbookLinked ? "text-emerald-400" : "text-amber-400"}`}
+                                  />
+                                  Docbook {summary?.docbookLinked ? "linked" : "not linked"}
+                                </li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   );

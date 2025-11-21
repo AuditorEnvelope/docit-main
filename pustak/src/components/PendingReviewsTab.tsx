@@ -1,120 +1,146 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle, AlertCircle, ExternalLink, Loader2 } from "lucide-react";
 
-interface PendingReview {
-  id: number;
-  source_repo_name: string;
-  docbook_full_name: string;
-  status: string;
-  commit_message: string;
-  created_at: string;
-}
+import {
+  usePendingReviews,
+  PendingReviewItem,
+} from "@/hooks/usePendingReviews";
 
 interface PendingReviewsTabProps {
   orgId: string;
   token: string;
   backendUrl: string;
+  onCountChange?: (count: number) => void;
+  onReload?: () => Promise<void> | void;
+  reviewsOverride?: PendingReviewItem[];
+  isLoadingOverride?: boolean;
+  errorOverride?: string | null;
 }
 
 export default function PendingReviewsTab({
   orgId,
   token,
   backendUrl,
+  onCountChange,
+  onReload,
+  reviewsOverride,
+  isLoadingOverride,
+  errorOverride,
 }: PendingReviewsTabProps) {
-  const [reviews, setReviews] = useState<PendingReview[]>([]);
-  const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState<string | null>(null);
 
+  const overrideProvided =
+    reviewsOverride !== undefined ||
+    isLoadingOverride !== undefined ||
+    errorOverride !== undefined;
+
+  const normalizedBase = useMemo(() => {
+    const trimmed = backendUrl.replace(/\/$/, "");
+    const hasApiSuffix = /\/api(\/v\d+)?$/i.test(trimmed);
+    return hasApiSuffix ? trimmed : `${trimmed}/api/v1`;
+  }, [backendUrl]);
+
+  const {
+    reviews,
+    isLoading,
+    error,
+    reload,
+    count,
+  } = usePendingReviews({ orgId, token, backendUrl, disabled: overrideProvided });
+
+  const effectiveReviews = overrideProvided ? reviewsOverride ?? [] : reviews;
+  const effectiveLoading = overrideProvided ? isLoadingOverride ?? false : isLoading;
+  const effectiveError = overrideProvided ? errorOverride ?? null : error;
+  const effectiveCount = overrideProvided
+    ? (reviewsOverride ? reviewsOverride.length : 0)
+    : count;
+
   useEffect(() => {
-    fetchPendingReviews();
-  }, [orgId, token]);
-
-  const fetchPendingReviews = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(
-        `${backendUrl}/docbook/pending-reviews?org_id=${orgId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setReviews(data.reviews || []);
-      } else {
-        console.error("Failed to fetch pending reviews");
-      }
-    } catch (error) {
-      console.error("Error fetching pending reviews:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    onCountChange?.(effectiveCount);
+  }, [effectiveCount, onCountChange]);
 
   const handleApprove = async (sourceRepoName: string) => {
     setApproving(sourceRepoName);
     try {
-      const response = await fetch(
-        `${backendUrl}/docbook/approve-and-merge`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            org_id: orgId,
-            repo_name: sourceRepoName,
-            message: "docs: Approve and merge documentation",
-          }),
-        }
-      );
+      const response = await fetch(`${normalizedBase}/docbook/approve-and-merge`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          org_id: orgId,
+          repo_name: sourceRepoName,
+          message: "docs: Approve and merge documentation",
+        }),
+      });
 
       if (response.ok) {
         alert(`✅ Documentation approved and merged for ${sourceRepoName}`);
-        fetchPendingReviews();
+        if (!overrideProvided) {
+          await reload();
+        }
+        if (onReload) {
+          await onReload();
+        }
       } else {
-        const error = await response.json();
-        alert(`Failed to approve: ${error.detail}`);
+        const errorPayload = await response.json();
+        alert(`Failed to approve: ${errorPayload.detail ?? "Unknown error"}`);
       }
-    } catch (error) {
-      console.error("Error approving documentation:", error);
+    } catch (approveError) {
+      console.error("Error approving documentation:", approveError);
       alert("Failed to approve documentation");
     } finally {
       setApproving(null);
     }
   };
 
-  if (loading) {
+  const formatDate = (timestamp: string | null) => {
+    if (!timestamp) return "Unknown";
+    try {
+      return new Date(timestamp).toLocaleString();
+    } catch (error) {
+      console.error("Failed to format timestamp", error);
+      return timestamp;
+    }
+  };
+
+  if (effectiveLoading) {
     return (
-      <div className="flex items-center justify-center py-12 text-slate-300">
-        <Loader2 className="w-7 h-7 animate-spin text-indigo-400" />
+      <div className="flex items-center gap-3 rounded-2xl border border-purple-500/30 bg-purple-500/10 px-6 py-5 text-purple-200">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        <span>Loading pending reviews…</span>
       </div>
     );
   }
 
-  if (reviews.length === 0) {
+  if (effectiveError) {
     return (
-      <div className="rounded-3xl border border-slate-800/50 bg-gradient-to-br from-slate-900/70 via-indigo-950/60 to-slate-900/80 px-10 py-12 text-center shadow-inner">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10">
-          <CheckCircle className="h-8 w-8 text-emerald-300" />
+      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-6 py-5 text-red-200">
+        <div className="flex items-center gap-3">
+          <AlertCircle className="h-5 w-5" />
+          <span>{effectiveError}</span>
         </div>
-        <h3 className="text-2xl font-semibold text-white mb-2">All caught up!</h3>
-        <p className="text-sm text-slate-300 max-w-md mx-auto">
-          There are no pending documentation reviews right now. Generate docs from your repositories to send fresh updates for review.
-        </p>
+      </div>
+    );
+  }
+
+  if (!effectiveReviews.length) {
+    return (
+      <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 px-6 py-5 text-purple-100">
+        <div className="flex items-center gap-3">
+          <AlertCircle className="h-5 w-5" />
+          <span>No pending documentation reviews at the moment.</span>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-5">
-      {reviews.map((review) => (
+      {effectiveReviews.map((review: PendingReviewItem) => (
         <div
           key={review.id}
           className="relative overflow-hidden rounded-3xl border border-slate-800/60 bg-slate-950/60 px-6 py-6 shadow-[0_30px_60px_-40px_rgba(30,64,175,0.45)] backdrop-blur"
@@ -127,7 +153,7 @@ export default function PendingReviewsTab({
                   Pending review
                 </span>
                 <span className="text-xs font-mono text-slate-400">
-                  {new Date(review.created_at).toLocaleDateString()} · {new Date(review.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {formatDate(review.created_at)}
                 </span>
               </div>
               <div>

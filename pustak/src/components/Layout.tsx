@@ -2,7 +2,7 @@
 
 import { useState, useEffect, memo } from "react";
 import { useTheme } from "next-themes";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   BookOpen,
   Search,
@@ -40,7 +40,10 @@ export function Layout({ children }: LayoutProps) {
   const { theme, setTheme } = useTheme();
   const { user, logout, isAuthenticated } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+
+  const hideNavigation = pathname?.startsWith("/pending-reviews");
 
   useEffect(() => {
     setMounted(true);
@@ -53,7 +56,7 @@ export function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors">
       {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
+      {!hideNavigation && sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
           onClick={() => setSidebarOpen(false)}
@@ -61,28 +64,32 @@ export function Layout({ children }: LayoutProps) {
       )}
 
       {/* Sidebar */}
-      <div
-        className={`
-        fixed inset-y-0 left-0 z-50 w-80 transform transition-transform duration-300 ease-in-out
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-        lg:translate-x-0
-      `}
-      >
-        <EnhancedSidebar key="sidebar" onClose={() => setSidebarOpen(false)} />
-      </div>
+      {!hideNavigation && (
+        <div
+          className={`
+          fixed inset-y-0 left-0 z-50 w-80 transform transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+          lg:translate-x-0
+        `}
+        >
+          <EnhancedSidebar key="sidebar" onClose={() => setSidebarOpen(false)} />
+        </div>
+      )}
 
       {/* Main content */}
-      <div className="lg:pl-80">
+      <div className={hideNavigation ? "" : "lg:pl-80"}>
         {/* Header */}
         <header className="sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
+              {!hideNavigation && (
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                >
+                  <Menu className="w-5 h-5" />
+                </button>
+              )}
 
               <div className="flex items-center space-x-2">
                 <BookOpen className="w-6 h-6 text-blue-600 dark:text-blue-400" />
