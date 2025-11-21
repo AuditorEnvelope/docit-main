@@ -14,6 +14,7 @@ from . import organizations
 from . import repos
 from . import docbook
 from . import docs
+from . import webhooks
 
 __all__ = [
     "auth",
@@ -26,4 +27,5 @@ __all__ = [
     "repos",
     "docbook",
     "docs",
+    "webhooks",
 ]

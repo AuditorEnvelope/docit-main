@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   X,
   Loader2,
@@ -36,6 +36,7 @@ export default function ConnectOrganizationModal({
   const [orgStatus, setOrgStatus] = useState<OrgStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [checkingApp, setCheckingApp] = useState(false);
+  const [pollingAppInstall, setPollingAppInstall] = useState(false);
   const [error, setError] = useState<string>("");
   const [success, setSuccess] = useState(false);
 
@@ -55,7 +56,7 @@ export default function ConnectOrganizationModal({
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`${backendUrl}/auth/user-organizations`, {
+      const response = await fetch(`/api/user/organizations`, {
         headers: {
           Authorization: `Bearer ${userToken}`,
         },
@@ -75,43 +76,51 @@ export default function ConnectOrganizationModal({
     }
   };
 
-  const checkAppInstallation = async (orgId: string) => {
-    setCheckingApp(true);
-    try {
-      const response = await fetch(
-        `${backendUrl}/webhook/check-app-installation?org_id=${orgId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${userToken}`,
-          },
-        }
-      );
+  const checkAppInstallation = useCallback(
+    async (orgId: string) => {
+      setCheckingApp(true);
+      try {
+        const response = await fetch(
+          `${backendUrl}/org/${orgId}/verify-apps`,
+          {
+            headers: {
+              Authorization: `Bearer ${userToken}`,
+            },
+          }
+        );
 
-      if (response.ok) {
-        const data = await response.json();
-        setOrgStatus({
-          org: orgId,
-          appInstalled: data.app_installed || false,
-          connected: data.connected || false,
-        });
-      } else {
+        if (response.ok) {
+          const data = await response.json();
+          const readerInstalled = data?.reader_app?.installed === true;
+          const writerInstalled = data?.writer_app?.installed === true;
+          setOrgStatus({
+            org: orgId,
+            appInstalled: readerInstalled,
+            connected: readerInstalled && writerInstalled,
+          });
+          if (readerInstalled) {
+            setPollingAppInstall(false);
+          }
+        } else {
+          setOrgStatus({
+            org: orgId,
+            appInstalled: false,
+            connected: false,
+          });
+        }
+      } catch (err) {
+        console.error("Error checking app installation:", err);
         setOrgStatus({
           org: orgId,
           appInstalled: false,
           connected: false,
         });
+      } finally {
+        setCheckingApp(false);
       }
-    } catch (err) {
-      console.error("Error checking app installation:", err);
-      setOrgStatus({
-        org: orgId,
-        appInstalled: false,
-        connected: false,
-      });
-    } finally {
-      setCheckingApp(false);
-    }
-  };
+    },
+    [backendUrl, userToken]
+  );
 
   const handleConnect = async () => {
     if (!selectedOrg) {
@@ -127,7 +136,11 @@ export default function ConnectOrganizationModal({
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`${backendUrl}/webhook/register`, {
+      const normalizedApiBase = backendUrl.endsWith("/api/v1")
+        ? backendUrl
+        : `${backendUrl.replace(/\/$/, "")}/api/v1`;
+
+      const response = await fetch(`${normalizedApiBase}/webhook/register`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${userToken}`,
@@ -253,14 +266,21 @@ export default function ConnectOrganizationModal({
                   </div>
 
                   {checkingApp ? (
-                    <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 flex items-center gap-3">
-                      <Loader2
-                        size={20}
-                        className="text-blue-400 animate-spin"
-                      />
-                      <span className="text-slate-300">
-                        Checking app installation...
-                      </span>
+                    <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <Loader2
+                          size={20}
+                          className="text-blue-400 animate-spin"
+                        />
+                        <span className="text-slate-300">
+                          Checking app installation...
+                        </span>
+                      </div>
+                      {pollingAppInstall && (
+                        <span className="text-xs text-slate-400">
+                          Auto-refreshing
+                        </span>
+                      )}
                     </div>
                   ) : orgStatus?.appInstalled ? (
                     <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 flex items-start gap-3">
@@ -273,7 +293,7 @@ export default function ConnectOrganizationModal({
                           ✓ App Installed
                         </p>
                         <p className="text-sm text-green-200/80 mt-1">
-                          The lekhak-ai app is installed in this organization.
+                          Pustak Analyser AI is installed in this organization.
                           You can now proceed to connect.
                         </p>
                       </div>
@@ -290,22 +310,40 @@ export default function ConnectOrganizationModal({
                             App Not Installed
                           </p>
                           <p className="text-sm text-amber-200/80 mt-1">
-                            The lekhak-ai GitHub App needs to be installed in{" "}
+                            Install the <strong>Pustak Analyser AI</strong> GitHub App in{" "}
                             <strong>{selectedOrg}</strong> to enable automatic
-                            webhook registration.
+                            webhook registration for repository reads.
                           </p>
                         </div>
                       </div>
-                      <a
-                        href="https://github.com/apps/lekhak-ai"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition-colors mt-2"
-                      >
-                        <Download size={16} />
-                        Install App on GitHub
-                        <ExternalLink size={14} />
-                      </a>
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <a
+                          href="https://github.com/apps/pustak-analyser-ai"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setPollingAppInstall(true)}
+                          className="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                        >
+                          <Download size={16} />
+                          Install Pustak Analyser AI
+                          <ExternalLink size={14} />
+                        </a>
+                        <button
+                          onClick={() => {
+                            if (selectedOrg) {
+                              setPollingAppInstall(true);
+                              checkAppInstallation(selectedOrg);
+                            }
+                          }}
+                          className="inline-flex items-center gap-2 px-4 py-2.5 border border-amber-500/50 text-amber-200 rounded-lg text-sm font-semibold transition-colors hover:bg-amber-500/20"
+                        >
+                          <Loader2
+                            size={14}
+                            className={`$${'{'}pollingAppInstall ? "animate-spin" : ""${'}'}`}
+                          />
+                          Refresh status
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

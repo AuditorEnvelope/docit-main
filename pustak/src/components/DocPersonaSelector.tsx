@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { BookOpen, Users, Save, Loader2 } from "lucide-react";
 
 interface DocPersonaSelectorProps {
@@ -22,6 +22,12 @@ export default function DocPersonaSelector({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  const apiBase = useMemo(() => {
+    const normalized = backendUrl.replace(/\/$/, "");
+    const hasApiSuffix = /\/api(\/v\d+)?$/i.test(normalized);
+    return hasApiSuffix ? normalized : `${normalized}/api/v1`;
+  }, [backendUrl]);
+
   // Fetch current doc_persona
   useEffect(() => {
     const fetchPersona = async () => {
@@ -30,7 +36,7 @@ export default function DocPersonaSelector({
       setLoading(true);
       try {
         const response = await fetch(
-          `${backendUrl}/api/repositories/${encodeURIComponent(repoId)}/doc-persona`,
+          `${apiBase}/repositories/${encodeURIComponent(repoId)}/doc-persona`,
           {
             headers: {
               Authorization: `Bearer ${userToken}`,
@@ -50,7 +56,7 @@ export default function DocPersonaSelector({
     };
 
     fetchPersona();
-  }, [repoId, userToken, backendUrl]);
+  }, [repoId, userToken, apiBase]);
 
   const handleSave = async () => {
     if (!userToken) {
@@ -64,7 +70,7 @@ export default function DocPersonaSelector({
 
     try {
       const response = await fetch(
-        `${backendUrl}/api/repositories/${encodeURIComponent(repoId)}/doc-persona`,
+        `${apiBase}/repositories/${encodeURIComponent(repoId)}/doc-persona`,
         {
           method: "POST",
           headers: {

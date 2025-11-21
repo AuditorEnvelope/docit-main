@@ -4,8 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
-import { GenerateDocsButton } from "@/components/GenerateDocsButton";
-import PendingReviewsTab from "@/components/PendingReviewsTab";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   BookOpen,
@@ -16,8 +14,6 @@ import {
   Loader2,
   LogOut,
   Settings,
-  Sparkles,
-  X,
 } from "lucide-react";
 
 const BACKEND_URL =
@@ -48,7 +44,6 @@ export default function DashboardPage() {
   const [loadingOrgs, setLoadingOrgs] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [showReviewPanel, setShowReviewPanel] = useState(false);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -81,9 +76,7 @@ export default function DashboardPage() {
           (org: { login: string }) => org.login
         );
         setConnectedOrgs(orgs);
-        setSelectedOrg((current) =>
-          current && orgs.includes(current) ? current : orgs[0] || ""
-        );
+        setSelectedOrg((current) => (current && orgs.includes(current) ? current : orgs[0] || ""));
       } catch (error) {
         console.error("Error fetching organizations", error);
         setConnectedOrgs([]);
@@ -162,18 +155,6 @@ export default function DashboardPage() {
     [repositories]
   );
 
-  const reviewApiBase = useMemo(() => {
-    const normalized = BACKEND_URL.replace(/\/$/, "");
-    const hasApiSuffix = /\/api(\/v\d+)?$/i.test(normalized);
-    return hasApiSuffix ? normalized : `${normalized}/api/v1`;
-  }, []);
-
-  useEffect(() => {
-    if (totalPendingReviews > 0) {
-      setShowReviewPanel(true);
-    }
-  }, [totalPendingReviews]);
-
   const documentedCount = useMemo(
     () =>
       repositories.filter((repo) => Boolean(repo.last_documented_at)).length,
@@ -182,9 +163,7 @@ export default function DashboardPage() {
 
   const formatPersona = (persona?: string | null) => {
     if (!persona) return "internal";
-    return persona
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (char) => char.toUpperCase());
+    return persona.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
   };
 
   const formatDateTime = (value?: string | null) => {
@@ -252,22 +231,22 @@ export default function DashboardPage() {
                     )}
                   </div>
                 </div>
+              </div>
 
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={() => router.push("/settings")}
-                    className="px-4 py-2 text-sm font-semibold text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/40 transition"
-                  >
-                    Settings
-                  </button>
-                  <button
-                    onClick={logout}
-                    className="px-4 py-2 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400 transition flex items-center gap-2"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Logout
-                  </button>
-                </div>
+              <div className="flex items-center gap-3 self-start lg:self-auto">
+                <button
+                  onClick={() => router.push("/onboarding")}
+                  className="px-4 py-2 text-sm font-semibold text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/40 transition"
+                >
+                  Review onboarding
+                </button>
+                <button
+                  onClick={logout}
+                  className="px-4 py-2 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400 transition flex items-center gap-2"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Logout
+                </button>
               </div>
             </div>
           </section>
@@ -326,59 +305,8 @@ export default function DashboardPage() {
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                 Awaiting approval across docs
               </p>
-              <button
-                onClick={() => setShowReviewPanel(true)}
-                className="mt-4 inline-flex items-center gap-2 rounded-full border border-purple-500/40 bg-purple-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-purple-500 dark:text-purple-200 hover:bg-purple-500/20 transition"
-              >
-                <Sparkles className="w-3 h-3" />
-                Review docs
-              </button>
             </div>
           </section>
-
-          {showReviewPanel && (
-            <section className="rounded-3xl border border-purple-500/30 bg-gradient-to-br from-purple-950/70 via-slate-950/70 to-slate-950/50 shadow-[0_40px_90px_-60px_rgba(109,40,217,0.65)] px-8 py-8 space-y-6">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <div className="inline-flex items-center gap-2 rounded-full bg-purple-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-purple-200">
-                    <Sparkles className="w-3 h-3" />
-                    Documentation Review Queue
-                  </div>
-                  <h2 className="mt-3 text-2xl font-semibold text-white">
-                    Pending approvals for {selectedOrg || "your organizations"}
-                  </h2>
-                  <p className="text-sm text-slate-300 max-w-2xl">
-                    Review the generated documentation diff, approve merges, and keep your docbook main branch up to date.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={() => setShowReviewPanel(false)}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-700/60 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-slate-300 hover:bg-slate-900/60 transition"
-                  >
-                    <X className="w-3 h-3" />
-                    Hide panel
-                  </button>
-                </div>
-              </div>
-
-              {!selectedOrg ? (
-                <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 px-6 py-8 text-center text-slate-300">
-                  Connect an organization to view documentation reviews.
-                </div>
-              ) : !token ? (
-                <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 px-6 py-8 text-center text-slate-300">
-                  Sign in again to refresh your session before reviewing documentation.
-                </div>
-              ) : (
-                <PendingReviewsTab
-                  orgId={selectedOrg}
-                  token={token}
-                  backendUrl={reviewApiBase}
-                />
-              )}
-            </section>
-          )}
 
           <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700">
             <div className="border-b border-gray-200 dark:border-gray-700 px-8 py-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -433,9 +361,7 @@ export default function DashboardPage() {
                     You haven&apos;t connected any organizations yet.
                   </p>
                   <p className="text-sm max-w-2xl mx-auto">
-                    Head over to the onboarding flow to install the GitHub apps,
-                    link your docbook repository, and start documenting your
-                    codebase.
+                    Head over to the onboarding flow to install the GitHub apps, link your docbook repository, and start documenting your codebase.
                   </p>
                   <button
                     onClick={() => router.push("/onboarding")}
@@ -457,28 +383,20 @@ export default function DashboardPage() {
                 <div className="text-center py-12 text-gray-600 dark:text-gray-300">
                   <p className="text-lg font-semibold">No repositories found</p>
                   <p className="text-sm">
-                    Adjust your search or update permissions in GitHub to
-                    include more repositories.
+                    Adjust your search or update permissions in GitHub to include more repositories.
                   </p>
                 </div>
               ) : (
                 <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
                   {filteredRepositories.map((repo) => {
                     const fullName = repo.full_name || repo.name || "";
-                    const displayName =
-                      repo.name || fullName.split("/").pop() || fullName;
+                    const displayName = repo.name || fullName.split("/").pop() || fullName;
                     const trackedBranch =
                       repo.tracked_branch ||
                       repo.docbook_tracked_branch ||
                       repo.default_branch ||
                       "main";
                     const pendingReviews = repo.pending_reviews || 0;
-                    const hasDocs = Boolean(repo.last_documented_at);
-                    const isDocbookRepo = fullName
-                      .toLowerCase()
-                      .includes("/pustak-docbook-");
-                    const docbookNotice =
-                      "This is your docbook repository where generated documentation lives. Docs are already stored here.";
 
                     return (
                       <div
@@ -531,54 +449,34 @@ export default function DashboardPage() {
                               {pendingReviews}
                             </span>
                           </div>
-                          {isDocbookRepo && (
-                            <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 px-3 py-2 text-xs text-blue-700 dark:text-blue-200">
-                              {docbookNotice}
-                            </div>
-                          )}
                         </div>
 
-                        {!isDocbookRepo && (
-                          <div className="flex flex-wrap gap-3">
-                            <Link
-                              href={`/repo/${fullName}`}
-                              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition"
-                            >
-                              <BookOpen className="w-4 h-4" />
-                              View docs
-                            </Link>
-                            <button
-                              onClick={() =>
-                                router.push(`/repo/settings/${fullName}`)
-                              }
+                        <div className="flex flex-wrap gap-3">
+                          <Link
+                            href={`/repo/${fullName}`}
+                            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition"
+                          >
+                            <BookOpen className="w-4 h-4" />
+                            View docs
+                          </Link>
+                          <button
+                            onClick={() => router.push(`/repo/settings/${fullName}`)}
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                          >
+                            <Settings className="w-4 h-4" />
+                            Settings
+                          </button>
+                          {repo.html_url && (
+                            <a
+                              href={repo.html_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
                               className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
                             >
-                              <Settings className="w-4 h-4" />
-                              Settings
-                            </button>
-                            {repo.html_url && (
-                              <a
-                                href={repo.html_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
-                              >
-                                <Github className="w-4 h-4" />
-                                Code
-                              </a>
-                            )}
-                          </div>
-                        )}
-                        <div className="mt-4">
-                          <GenerateDocsButton
-                            repoName={displayName}
-                            repoFullName={fullName}
-                            hasDocsFolder={hasDocs}
-                            onGenerationComplete={loadRepositories}
-                            disabled={isDocbookRepo}
-                            disabledReason={isDocbookRepo ? "" : undefined}
-                            fullWidth
-                          />
+                              <Github className="w-4 h-4" />
+                              Code
+                            </a>
+                          )}
                         </div>
                       </div>
                     );

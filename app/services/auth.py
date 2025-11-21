@@ -204,7 +204,7 @@ class AuthService:
             return result.scalar_one_or_none()
         except jwt.ExpiredSignatureError:
             return None
-        except jwt.JWTError:
+        except jwt.InvalidTokenError:
             return None
 
 

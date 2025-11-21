@@ -92,84 +92,88 @@ export default function PendingReviewsTab({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      <div className="flex items-center justify-center py-12 text-slate-300">
+        <Loader2 className="w-7 h-7 animate-spin text-indigo-400" />
       </div>
     );
   }
 
   if (reviews.length === 0) {
     return (
-      <div className="bg-gray-50 dark:bg-gray-700/20 rounded-lg p-8 text-center">
-        <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-          All caught up!
-        </h3>
-        <p className="text-gray-600 dark:text-gray-400">
-          No pending documentation reviews. Generate docs to see them here.
+      <div className="rounded-3xl border border-slate-800/50 bg-gradient-to-br from-slate-900/70 via-indigo-950/60 to-slate-900/80 px-10 py-12 text-center shadow-inner">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10">
+          <CheckCircle className="h-8 w-8 text-emerald-300" />
+        </div>
+        <h3 className="text-2xl font-semibold text-white mb-2">All caught up!</h3>
+        <p className="text-sm text-slate-300 max-w-md mx-auto">
+          There are no pending documentation reviews right now. Generate docs from your repositories to send fresh updates for review.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {reviews.map((review) => (
         <div
           key={review.id}
-          className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4"
+          className="relative overflow-hidden rounded-3xl border border-slate-800/60 bg-slate-950/60 px-6 py-6 shadow-[0_30px_60px_-40px_rgba(30,64,175,0.45)] backdrop-blur"
         >
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white">
-                {review.source_repo_name}
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                {review.commit_message}
-              </p>
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/60 to-transparent" aria-hidden />
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center gap-2 rounded-full bg-indigo-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-indigo-200">
+                  Pending review
+                </span>
+                <span className="text-xs font-mono text-slate-400">
+                  {new Date(review.created_at).toLocaleDateString()} · {new Date(review.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold text-white tracking-tight">
+                  {review.source_repo_name}
+                </h3>
+                <p className="mt-2 text-sm text-slate-300 leading-relaxed">
+                  {review.commit_message || "Documentation update pending approval."}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-800/60 bg-slate-900/60 px-4 py-3">
+                <p className="text-xs uppercase tracking-widest text-slate-400">Docbook repository</p>
+                <p className="mt-1 font-mono text-sm text-slate-100">
+                  {review.docbook_full_name}
+                </p>
+              </div>
             </div>
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
-              <AlertCircle className="w-3 h-3" />
-              Pending Review
-            </span>
-          </div>
 
-          <div className="bg-gray-50 dark:bg-gray-700/30 rounded p-3 mb-3">
-            <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
-              Docbook Repository:
-            </p>
-            <p className="text-sm font-mono text-gray-900 dark:text-white">
-              {review.docbook_full_name}
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-500 dark:text-gray-500">
-              {new Date(review.created_at).toLocaleDateString()} at{" "}
-              {new Date(review.created_at).toLocaleTimeString()}
-            </p>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-3 lg:w-60">
               <a
                 href={`https://github.com/${review.docbook_full_name}/compare/main...staging`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-3 text-sm font-semibold text-indigo-200 hover:bg-indigo-500/20 transition"
               >
-                <ExternalLink className="w-3 h-3" />
-                Review on GitHub
+                <ExternalLink className="w-4 h-4" />
+                Review diff on GitHub
               </a>
               <button
                 onClick={() => handleApprove(review.source_repo_name)}
                 disabled={approving === review.source_repo_name}
-                className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-500/90 px-4 py-3 text-sm font-semibold text-emerald-950 shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {approving === review.source_repo_name && (
-                  <Loader2 className="w-3 h-3 animate-spin" />
+                {approving === review.source_repo_name ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Approving…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" /> Approve & merge
+                  </>
                 )}
-                {approving === review.source_repo_name
-                  ? "Approving..."
-                  : "Approve & Merge"}
               </button>
+              <p className="text-xs text-slate-400 text-center">
+                Approves and merges <code className="font-mono">staging</code> into <code className="font-mono">main</code> for this docbook.
+              </p>
             </div>
           </div>
         </div>

@@ -13,6 +13,7 @@ interface User {
   plan: "free" | "pro" | "team" | "enterprise";
   is_active: boolean;
   created_at: string;
+  is_onboarding_complete?: boolean;
 }
 
 interface AuthContextType {
@@ -22,6 +23,7 @@ interface AuthContextType {
   login: (accessToken: string, refreshToken: string, user: User) => void;
   logout: () => void;
   isAuthenticated: boolean;
+  markOnboardingComplete: () => void;
 }
 
 // Create context
@@ -58,7 +60,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           if (response.ok) {
             const userData = await response.json();
-            setUser(userData);
+            const normalizedUser: User = {
+              ...userData,
+              is_onboarding_complete: userData?.is_onboarding_complete ?? false,
+            };
+            localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser));
+            setUser(normalizedUser);
             setToken(accessToken);
           } else {
             // Token invalid, clear storage
@@ -80,8 +87,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Store tokens and user data
     localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
     localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-    localStorage.setItem(USER_KEY, JSON.stringify(userData));
-    setUser(userData);
+    const normalizedUser: User = {
+      ...userData,
+      is_onboarding_complete: userData?.is_onboarding_complete ?? false,
+    };
+    localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser));
+    setUser(normalizedUser);
     setToken(accessToken);
   };
 
@@ -99,6 +110,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(USER_KEY);
   };
 
+  const markOnboardingComplete = () => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updatedUser = { ...prev, is_onboarding_complete: true };
+      localStorage.setItem(USER_KEY, JSON.stringify(updatedUser));
+      return updatedUser;
+    });
+  };
+
   const value: AuthContextType = {
     user,
     loading,
@@ -106,6 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     login,
     logout,
     isAuthenticated: !!user,
+    markOnboardingComplete,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

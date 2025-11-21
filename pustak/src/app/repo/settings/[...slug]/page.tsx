@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
 import DocPersonaSelector from "@/components/DocPersonaSelector";
+import TrackedBranchSelector from "@/components/TrackedBranchSelector";
 import { ArrowLeft, Settings, Loader2 } from "lucide-react";
 import Link from "next/link";
 
@@ -108,6 +109,17 @@ export default function RepositorySettingsPage({ params }: SettingsPageProps) {
                   userToken={userToken}
                   onSave={(persona) => {
                     console.log(`✅ Saved doc_persona: ${persona}`);
+                  }}
+                />
+              </div>
+
+              <div className="mb-8">
+                <TrackedBranchSelector
+                  repoId={repoName}
+                  backendUrl={BACKEND_URL}
+                  userToken={userToken}
+                  onSave={(branch) => {
+                    console.log(`✅ Saved tracked_branch: ${branch}`);
                   }}
                 />
               </div>
