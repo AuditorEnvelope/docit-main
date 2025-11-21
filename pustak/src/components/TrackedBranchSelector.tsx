@@ -170,11 +170,15 @@ export function TrackedBranchSelector({
 
   if (!userToken) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Tracked Branch</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          Sign in again to manage tracked branches.
-        </p>
+      <div className="relative overflow-hidden rounded-3xl border border-slate-900/60 bg-slate-950/70 p-8">
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/10 opacity-40" aria-hidden />
+        <div className="relative space-y-3">
+          <div className="flex items-center gap-3 text-purple-200">
+            <GitBranch className="h-5 w-5" />
+            <h3 className="text-lg font-semibold">Tracked branch</h3>
+          </div>
+          <p className="text-sm text-slate-400">Sign in again to manage tracked branches.</p>
+        </div>
       </div>
     );
   }
@@ -184,135 +188,144 @@ export function TrackedBranchSelector({
   const branchInList = selectedBranch && branches.includes(selectedBranch);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <GitBranch className="w-5 h-5 text-purple-500" />
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Tracked Branch</h3>
-      </div>
-
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-        Choose which branch DocAI should monitor for documentation updates.
-      </p>
-
-      {loadingInfo ? (
-        <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          <span>Loading current branch…</span>
+    <div className="relative overflow-hidden rounded-3xl border border-slate-900/60 bg-slate-950/70 p-8 shadow-lg shadow-purple-950/30">
+      <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/10 opacity-40" aria-hidden />
+      <div className="relative space-y-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.32em] text-purple-200">
+              Branch flow
+            </div>
+            <h3 className="mt-3 text-xl font-semibold text-slate-100">Tracked branch</h3>
+            <p className="mt-2 text-sm text-slate-400">
+              Choose which branch DocAI should monitor for documentation updates.
+            </p>
+          </div>
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-purple-500/40 bg-purple-500/10 text-purple-200">
+            <GitBranch className="h-5 w-5" />
+          </span>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {hasFetchedBranches && (
-            <div>
-              <label className="block text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                Select tracked branch
-              </label>
-              <div className="relative">
-                <select
-                  value={!useCustomBranch && branchInList ? selectedBranch : CUSTOM_OPTION_VALUE}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if (value === CUSTOM_OPTION_VALUE) {
-                      setUseCustomBranch(true);
-                      if (!branchInList) {
-                        setSelectedBranch("");
+
+        {loadingInfo ? (
+          <div className="flex items-center gap-2 rounded-2xl border border-slate-800/80 bg-slate-950/70 px-4 py-3 text-sm text-slate-300">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading current branch…
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {hasFetchedBranches && (
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                  Select tracked branch
+                </label>
+                <div className="relative">
+                  <select
+                    value={!useCustomBranch && branchInList ? selectedBranch : CUSTOM_OPTION_VALUE}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value === CUSTOM_OPTION_VALUE) {
+                        setUseCustomBranch(true);
+                        if (!branchInList) {
+                          setSelectedBranch("");
+                        }
+                      } else {
+                        setUseCustomBranch(false);
+                        setSelectedBranch(value);
                       }
-                    } else {
-                      setUseCustomBranch(false);
-                      setSelectedBranch(value);
-                    }
-                  }}
-                  className="w-full appearance-none px-3 py-2 pr-10 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  {branches.map((branch) => (
-                    <option key={branch} value={branch}>
-                      {branch}
-                    </option>
-                  ))}
-                  <option value={CUSTOM_OPTION_VALUE}>Custom branch…</option>
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              </div>
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                <RefreshCw className="w-3 h-3" />
-                {loadingBranches ? "Fetching branches from GitHub…" : `${branches.length} branches fetched from GitHub.`}
-              </p>
-            </div>
-          )}
-
-          {(useCustomBranch || !hasFetchedBranches) && (
-            <div>
-              <label className="block text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                {hasFetchedBranches ? "Custom branch" : "Tracked branch"}
-              </label>
-              <input
-                type="text"
-                value={selectedBranch}
-                onChange={(event) => setSelectedBranch(event.target.value)}
-                placeholder="e.g. main"
-                className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-              {hasFetchedBranches && (
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  Can't find the branch above? Enter it manually here.
+                    }}
+                    className="w-full appearance-none rounded-2xl border border-slate-800/70 bg-slate-950/80 px-4 py-3 pr-12 text-sm text-slate-100 outline-none transition focus:border-purple-400/70 focus:ring-2 focus:ring-purple-400/40"
+                  >
+                    {branches.map((branch) => (
+                      <option key={branch} value={branch}>
+                        {branch}
+                      </option>
+                    ))}
+                    <option value={CUSTOM_OPTION_VALUE}>Custom branch…</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                </div>
+                <p className="flex items-center gap-2 text-xs text-slate-500">
+                  <RefreshCw className="h-3 w-3" />
+                  {loadingBranches ? "Fetching branches from GitHub…" : `${branches.length} branches fetched from GitHub.`}
                 </p>
-              )}
-            </div>
-          )}
-
-          {trackedInfo && (
-            <div className="rounded-md bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 p-3 text-xs text-purple-800 dark:text-purple-200 space-y-1">
-              <div className="flex items-center gap-2">
-                <GitBranch className="w-3 h-3" />
-                <span>
-                  Current source: <strong>{trackedInfo.source}</strong>
-                </span>
               </div>
-              {trackedInfo.fallback_branch && (
-                <div>
-                  Fallback (docbook): <code>{trackedInfo.fallback_branch}</code>
-                </div>
-              )}
-              {trackedInfo.default_branch && (
-                <div>
-                  Default branch: <code>{trackedInfo.default_branch}</code>
-                </div>
-              )}
-            </div>
-          )}
-
-          {error && (
-            <div className="flex items-start gap-2 rounded-md border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-300 p-3">
-              <AlertCircle className="w-4 h-4 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {success && (
-            <div className="flex items-center gap-2 rounded-md border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-900/20 text-sm text-green-700 dark:text-green-300 p-3">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Tracked branch updated</span>
-            </div>
-          )}
-
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Saving…
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                Save Tracked Branch
-              </>
             )}
-          </button>
-        </div>
-      )}
+
+            {(useCustomBranch || !hasFetchedBranches) && (
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                  {hasFetchedBranches ? "Custom branch" : "Tracked branch"}
+                </label>
+                <input
+                  type="text"
+                  value={selectedBranch}
+                  onChange={(event) => setSelectedBranch(event.target.value)}
+                  placeholder="e.g. main"
+                  className="w-full rounded-2xl border border-slate-800/70 bg-slate-950/80 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-purple-400/70 focus:ring-2 focus:ring-purple-400/40"
+                />
+                {hasFetchedBranches && (
+                  <p className="text-xs text-slate-500">
+                    Can't find the branch above? Enter it manually here.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {trackedInfo && (
+              <div className="rounded-2xl border border-purple-500/40 bg-purple-500/10 p-4 text-xs text-purple-100">
+                <div className="flex items-center gap-2">
+                  <GitBranch className="h-3.5 w-3.5" />
+                  <span>
+                    Current source: <span className="font-semibold text-purple-50">{trackedInfo.source}</span>
+                  </span>
+                </div>
+                {trackedInfo.fallback_branch && (
+                  <div className="mt-1">
+                    Fallback (docbook): <code>{trackedInfo.fallback_branch}</code>
+                  </div>
+                )}
+                {trackedInfo.default_branch && (
+                  <div className="mt-1">
+                    Default branch: <code>{trackedInfo.default_branch}</code>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {error && (
+              <div className="flex items-start gap-2 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                <AlertCircle className="mt-0.5 h-4 w-4" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {success && (
+              <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+                <CheckCircle2 className="h-4 w-4" />
+                <span>Tracked branch updated</span>
+              </div>
+            )}
+
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="group inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-purple-500/50 bg-purple-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-purple-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" />
+                  Save tracked branch
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
