@@ -6,9 +6,12 @@ updated to reference app.services equivalents only.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, Tuple
 
+from app.services.llm.key_provider import get_llm_api_key
+from app.services.llm.rotator import get_rotator
 from app.services.documentation.quality_checker import (
     DocumentationQuality,
     DocumentationQualityChecker,
@@ -20,7 +23,8 @@ class QualityValidationWrapper:
     """Validate generated documentation with optional regeneration hooks."""
 
     def __init__(self, threshold: float = 8.0, max_regenerations: int = 2) -> None:
-        self.checker = DocumentationQualityChecker()
+        api_key = get_llm_api_key()
+        self.checker = DocumentationQualityChecker(api_key=api_key)
         self.threshold = threshold
         self.max_regenerations = max_regenerations
 
@@ -192,3 +196,151 @@ async def validate_documentation_quality(repo_dir: str, repo_name: str) -> bool:
     passed, quality = await wrapper.validate_and_improve(repo_dir, repo_name, docs)
     wrapper.save_quality_report(repo_dir, quality)
     return passed
+
+
+async def run_quality_checks(repo_dir: str, analysis: Dict[str, Any]) -> Dict[str, bool]:
+    """Check documentation quality and return a dictionary of what needs to be updated."""
+    report = await check_documentation_quality(Path(repo_dir))
+    needs_update = {doc_type: False for doc_type in ["summary", "architecture", "workflow", "api"]}
+    for doc_type in report.get("needs_generation", []):
+        needs_update[doc_type] = True
+    return needs_update
+
+
+async def check_documentation_quality(repo_dir: Path) -> Dict[str, object]:
+    """
+    Check if existing documentation is comprehensive and worthy
+    Returns dict with quality scores and what needs to be generated (like old codebase)
+    """
+    docs_dir = Path(repo_dir) / "docs"
+    
+    quality_report = {
+        "summary_exists": False,
+        "summary_quality": 0,  # 0-10 scale
+        "architecture_exists": False,
+        "architecture_quality": 0,
+        "workflow_exists": False,
+        "workflow_quality": 0,
+        "api_exists": False,
+        "api_quality": 0,
+        "needs_generation": []
+    }
+    
+    # Check SUMMARY.md or README.md
+    summary_files = [
+        docs_dir / "SUMMARY.md",
+        docs_dir / "README.md",
+        Path(repo_dir) / "README.md"
+    ]
+    
+    for summary_file in summary_files:
+        if summary_file.exists():
+            content = summary_file.read_text()
+            quality_report["summary_exists"] = True
+            quality_report["summary_quality"] = await assess_content_quality(content, "summary")
+            break
+    
+    # Check architecture documentation
+    arch_files = [
+        docs_dir / "architecture.md",
+        docs_dir / "ARCHITECTURE.md",
+        docs_dir / "architecture" / "current.md"
+    ]
+    
+    for arch_file in arch_files:
+        if arch_file.exists():
+            content = arch_file.read_text()
+            quality_report["architecture_exists"] = True
+            quality_report["architecture_quality"] = await assess_content_quality(content, "architecture")
+            break
+    
+    # Check workflow documentation
+    workflow_files = [
+        docs_dir / "workflow.md",
+        docs_dir / "WORKFLOW.md",
+        docs_dir / "workflow" / "current.md"
+    ]
+    
+    for workflow_file in workflow_files:
+        if workflow_file.exists():
+            content = workflow_file.read_text()
+            quality_report["workflow_exists"] = True
+            quality_report["workflow_quality"] = await assess_content_quality(content, "workflow")
+            break
+    
+    # Check API documentation
+    api_files = [
+        docs_dir / "api.md",
+        docs_dir / "API.md",
+        docs_dir / "api" / "README.md"
+    ]
+    
+    for api_file in api_files:
+        if api_file.exists():
+            content = api_file.read_text()
+            quality_report["api_exists"] = True
+            quality_report["api_quality"] = await assess_content_quality(content, "api")
+            break
+    
+    # Determine what needs generation (quality < 8 for regeneration)
+    if not quality_report["summary_exists"] or quality_report["summary_quality"] < 8:
+        quality_report["needs_generation"].append("summary")
+
+    if not quality_report["architecture_exists"] or quality_report["architecture_quality"] < 8:
+        quality_report["needs_generation"].append("architecture")
+
+    if not quality_report["workflow_exists"] or quality_report["workflow_quality"] < 8:
+        quality_report["needs_generation"].append("workflow")
+
+    if not quality_report["api_exists"] or quality_report["api_quality"] < 8:
+        quality_report["needs_generation"].append("api")
+    
+    return quality_report
+
+
+async def assess_content_quality(content: str, doc_type: str) -> float:
+    """
+    Use LLM to assess documentation quality (like old codebase)
+    Returns score 0-10
+    """
+    if len(content.strip()) < 100:
+        return 2.0  # Too short
+    
+    # Quick heuristic checks
+    score = 5.0  # Base score
+    
+    # Check for headings
+    if "##" in content or "# " in content:
+        score += 1.0
+    
+    # Check for code blocks
+    if "```" in content:
+        score += 1.0
+    
+    # Check for lists
+    if "- " in content or "* " in content or "1. " in content:
+        score += 1.0
+    
+    # Check length (comprehensive docs are longer)
+    if len(content) > 1000:
+        score += 1.0
+    if len(content) > 3000:
+        score += 1.0
+    
+    # Only use LLM if heuristic score is low
+    if score >= 6.0:
+        return score
+
+    try:
+        rotator = await get_rotator()
+        quality_prompt = f'Assess the quality of this {doc_type} documentation on a scale of 0-10. Content: "{content[:1500]}". Respond with ONLY a number 0-10.'
+        response = await rotator.generate_with_rotation(quality_prompt)
+        if response:
+            try:
+                llm_score = float(response.strip())
+                return (score + llm_score) / 2
+            except ValueError:
+                return score
+    except Exception as e:
+        logger.warning(f"LLM quality assessment failed: {e}")
+    return score

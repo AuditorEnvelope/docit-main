@@ -9,14 +9,15 @@ from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
 from app.services.docbook.publisher import DocbookPublisher
-from app.services.documentation.comprehensive import ComprehensiveDocBuilder
-from app.services.documentation.comprehensive import generate_smart_documentation
+from app.services.documentation.comprehensive import ComprehensiveDocBuilder, generate_smart_documentation
+from app.services.documentation.doc_selector import determine_docs_to_update
 from app.services.documentation.quality_integration import (
     read_generated_docs,
     validate_documentation_quality,
 )
 from app.services.github.change_analysis import smart_analyze_change
 from app.utils.github_dual_app import GitHubDualAppHelper
+from app.services.commit_bus import CommitBusService
 async def handle_push_event(
     payload: Dict[str, object],
     *,
@@ -24,6 +25,17 @@ async def handle_push_event(
     doc_persona: str = "internal",
 ) -> None:
     """Clone the repo at the pushed commit, analyse, generate docs, and publish."""
+
+    # ---------------------------------------------------
+    # 1. Store event in bus (idempotent)
+    # ---------------------------------------------------
+    # This was the missing step - without storing the event, no processing can happen.
+    # The old codebase did this, and it needs to be restored.
+    db_session = payload.get("_db_session")
+    if not db_session:
+        raise ValueError("Database session not found in payload for commit bus")
+    commit_bus = CommitBusService(db_session)
+    await commit_bus.store_event(payload)
 
     repository = payload.get("repository") or {}
     repo_full = repository.get("full_name") if isinstance(repository, dict) else None
@@ -54,7 +66,7 @@ async def handle_push_event(
         _clone_repository(repo_full, token, repo_path)
         _checkout_commit(repo_path, commit_sha)
 
-        analysis = smart_analyze_change(
+        analysis = await smart_analyze_change(
             payload,
             str(repo_path),
             sorted(changed_files),
@@ -72,12 +84,18 @@ async def handle_push_event(
 
 
         ref = payload.get("ref", "unknown")
+        docs_to_update = await determine_docs_to_update(
+            str(repo_path),
+            sorted(changed_files),
+            analysis
+        )
         await generate_smart_documentation(
             repo_path,
             analysis,
             commit_sha,
             ref,
-            doc_persona
+            doc_persona,
+            docs_to_update=docs_to_update
         )
 
         docs = read_generated_docs(str(repo_path))

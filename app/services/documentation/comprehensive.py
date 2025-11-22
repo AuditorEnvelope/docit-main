@@ -1,180 +1,13 @@
 import json
 import logging
-import os
-import shutil
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from app.services.documentation.fallback_generation import create_fallback_doc
-from app.services.llm.rotator import generate_doc_for_file, get_rotator
+from app.services.llm.rotator import get_rotator
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# QUALITY CHECKING SYSTEM (ported from old codebase)
-# ============================================================================
-
-def check_documentation_quality(repo_dir: Path) -> Dict[str, object]:
-    """
-    Check if existing documentation is comprehensive and worthy
-    Returns dict with quality scores and what needs to be generated (like old codebase)
-    """
-    docs_dir = Path(repo_dir) / "docs"
-    
-    quality_report = {
-        "summary_exists": False,
-        "summary_quality": 0,  # 0-10 scale
-        "architecture_exists": False,
-        "architecture_quality": 0,
-        "workflow_exists": False,
-        "workflow_quality": 0,
-        "api_exists": False,
-        "api_quality": 0,
-        "needs_generation": []
-    }
-    
-    # Check SUMMARY.md or README.md
-    summary_files = [
-        docs_dir / "SUMMARY.md",
-        docs_dir / "README.md",
-        Path(repo_dir) / "README.md"
-    ]
-    
-    for summary_file in summary_files:
-        if summary_file.exists():
-            content = summary_file.read_text()
-            quality_report["summary_exists"] = True
-            quality_report["summary_quality"] = assess_content_quality(content, "summary")
-            break
-    
-    # Check architecture documentation
-    arch_files = [
-        docs_dir / "architecture.md",
-        docs_dir / "ARCHITECTURE.md",
-        docs_dir / "architecture" / "current.md"
-    ]
-    
-    for arch_file in arch_files:
-        if arch_file.exists():
-            content = arch_file.read_text()
-            quality_report["architecture_exists"] = True
-            quality_report["architecture_quality"] = assess_content_quality(content, "architecture")
-            break
-    
-    # Check workflow documentation
-    workflow_files = [
-        docs_dir / "workflow.md",
-        docs_dir / "WORKFLOW.md",
-        docs_dir / "workflow" / "current.md"
-    ]
-    
-    for workflow_file in workflow_files:
-        if workflow_file.exists():
-            content = workflow_file.read_text()
-            quality_report["workflow_exists"] = True
-            quality_report["workflow_quality"] = assess_content_quality(content, "workflow")
-            break
-    
-    # Check API documentation
-    api_files = [
-        docs_dir / "api.md",
-        docs_dir / "API.md",
-        docs_dir / "api" / "README.md"
-    ]
-    
-    for api_file in api_files:
-        if api_file.exists():
-            content = api_file.read_text()
-            quality_report["api_exists"] = True
-            quality_report["api_quality"] = assess_content_quality(content, "api")
-            break
-    
-    # Determine what needs generation (quality < 8 for regeneration)
-    if not quality_report["summary_exists"] or quality_report["summary_quality"] < 8:
-        quality_report["needs_generation"].append("summary")
-
-    if not quality_report["architecture_exists"] or quality_report["architecture_quality"] < 8:
-        quality_report["needs_generation"].append("architecture")
-
-    if not quality_report["workflow_exists"] or quality_report["workflow_quality"] < 8:
-        quality_report["needs_generation"].append("workflow")
-
-    if not quality_report["api_exists"] or quality_report["api_quality"] < 8:
-        quality_report["needs_generation"].append("api")
-    
-    return quality_report
-
-
-def assess_content_quality(content: str, doc_type: str) -> float:
-    """
-    Use LLM to assess documentation quality (like old codebase)
-    Returns score 0-10
-    """
-    if len(content.strip()) < 100:
-        return 2.0  # Too short
-    
-    # Quick heuristic checks
-    score = 5.0  # Base score
-    
-    # Check for headings
-    if "##" in content or "# " in content:
-        score += 1.0
-    
-    # Check for code blocks
-    if "```" in content:
-        score += 1.0
-    
-    # Check for lists
-    if "- " in content or "* " in content or "1. " in content:
-        score += 1.0
-    
-    # Check length (comprehensive docs are longer)
-    if len(content) > 1000:
-        score += 1.0
-    if len(content) > 3000:
-        score += 1.0
-    
-    # Use LLM for deeper quality assessment
-    try:
-        rotator = get_rotator()
-        
-        quality_prompt = f"""
-Assess the quality of this {doc_type} documentation on a scale of 0-10.
-
-DOCUMENTATION CONTENT:
-{content[:2000]}
-
-QUALITY CRITERIA:
-- Clarity and completeness
-- Technical depth
-- Proper structure
-- Useful examples
-- Up-to-date information
-
-Respond with ONLY a number 0-10, nothing else.
-"""
-        
-        response = rotator.generate_with_rotation(quality_prompt)
-        if response:
-            try:
-                llm_score = float(response.strip())
-                # Average heuristic and LLM scores
-                final_score = (score + llm_score) / 2
-                return min(10.0, max(0.0, final_score))
-            except ValueError:
-                logger.warning(f"Could not parse LLM score: {response}")
-                return score
-        else:
-            logger.warning("LLM returned no response for quality assessment")
-            return score
-        
-    except Exception as e:
-        logger.warning(f"LLM quality assessment failed: {e}")
-        return score
 
 SUPPORTED_EXTENSIONS: Dict[str, str] = {
     ".py": "python",
@@ -218,63 +51,43 @@ class DocumentedFile:
 
 
 class ComprehensiveDocBuilder:
-    """High-fidelity documentation generator (legacy comprehensive flow)."""
+    """Builds a comprehensive set of documentation for a repository."""
 
-    def __init__(self, repository_root: Path, doc_persona: str = "internal") -> None:
-        self.repository_root = repository_root
+    def __init__(self, repo_dir: Path, doc_persona: str = "internal") -> None:
+        self.repo_dir = repo_dir
+        self.repository_root = repo_dir  # FIX: Add missing instance variable
         self.doc_persona = doc_persona
+        self.recent_changes: List[Dict[str, Any]] = []  # FIX: Add missing instance variable
 
-    async def build(self) -> Dict[str, str]:
-        print("================================================================================")
-        print(f"📦 Starting comprehensive documentation build for {self.repository_root.name}")
+    async def build(self, analysis: Dict[str, Any], docs_to_update: Dict[str, bool]) -> Dict[str, str]:
+        print("=" * 80)
+        print(f"📦 Starting comprehensive documentation build for {self.repo_dir.name}")
         print(f"👤 Persona: {self.doc_persona}")
-        print("================================================================================")
+        print(f"📋 Smart generation plan: {', '.join(k for k, v in docs_to_update.items() if v)}")
+        print("=" * 80)
 
-        quality = check_documentation_quality(self.repository_root)
-        print(f"📋 Quality Report: {json.dumps(quality, indent=2)}")
-
-        analysis = analyze_full_codebase(self.repository_root)
-        recent_changes = {"generated_at": datetime.utcnow().isoformat()}
-
-        docs_dir = self.repository_root / "docs"
+        docs_dir = self.repo_dir / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
         
-        # Always generate ALL docs (like old codebase) - don't rely on quality check for temp directories
-        # Quality check might say docs exist, but in temp dirs they won't exist initially
         docs: Dict[str, str] = {}
-        
-        # Always generate SUMMARY.md (like old codebase)
-        print("📝 Generating comprehensive SUMMARY/README...")
-        docs["summary"] = await generate_comprehensive_summary(
-            self.repository_root, analysis, recent_changes, self.doc_persona
-        )
-        # Write SUMMARY.md to disk (like old codebase)
-        (docs_dir / "SUMMARY.md").write_text(docs["summary"], encoding="utf-8")
-        print(f"✅ Written SUMMARY.md")
 
-        # Always generate architecture docs (like old codebase)
-        print("🏗️  Generating architecture documentation...")
-        docs["architecture"] = await generate_versioned_architecture(
-            self.repository_root, analysis, recent_changes, self.doc_persona
-        )
-        # generate_versioned_architecture already writes to disk
+        if docs_to_update.get("summary"):
+            docs["summary"] = await self._generate_summary(analysis)
+            (docs_dir / "SUMMARY.md").write_text(docs["summary"], encoding="utf-8")
 
-        # Always generate workflow docs (like old codebase)
-        print("🔄 Generating workflow documentation...")
-        docs["workflow"] = await generate_versioned_workflow(
-            self.repository_root, analysis, recent_changes, self.doc_persona
-        )
-        # generate_versioned_workflow already writes to disk
+        if docs_to_update.get("architecture"):
+            docs["architecture"] = await self._generate_architecture(analysis)
 
-        # Always generate API docs (like old codebase)
-        print("📡 Generating API documentation...")
-        docs["api"] = await generate_api_documentation(
-            self.repository_root, analysis, recent_changes, self.doc_persona
-        )
-        # generate_api_documentation already writes to disk
+        if docs_to_update.get("workflow"):
+            docs["workflow"] = await self._generate_workflow(analysis)
 
-        # Always update SUMMARY.md navigation (like old codebase)
-        update_summary_navigation(docs_dir)
+        if docs_to_update.get("api"):
+            docs["api"] = await self._generate_api_documentation(analysis)
+            (docs_dir / "api.md").write_text(docs["api"], encoding="utf-8")
+            
+        if docs:
+            update_summary_navigation(docs_dir)
+            
         print("✅ Comprehensive documentation build complete!")
         return docs
 
@@ -307,42 +120,31 @@ class ComprehensiveDocBuilder:
         except Exception:
             return ""
 
+    async def _generate_summary(self, analysis: Dict[str, Any]) -> str:
+        prompt = (
+            "You are DocAI, an expert technical writer analyzing THIS SPECIFIC REPOSITORY.\n\n"
+            f"Persona: {self.doc_persona}\n"
+            f"Repository: {self.repo_dir.name}\n\n"
+            f"ACTUAL CODEBASE ANALYSIS:\n{json.dumps(analysis, indent=2)}\n\n"
+            f"RECENT CHANGES:\n{json.dumps(self.recent_changes, indent=2)}\n\n"
+            "Generate a comprehensive README that includes overview, architecture, getting started, usage, project structure,"
+            " API overview, development workflow, and key dependencies."
+        )
+        rotator = await get_rotator()
+        return await rotator.generate_with_rotation(prompt) or ""
 
-# Removed duplicate - using the one above with LLM assessment
+    async def _generate_architecture(self, analysis: Dict[str, Any]) -> str:
+        """Generate versioned architecture documentation"""
+        docs_dir = self.repo_dir / "docs"
+        arch_dir = docs_dir / "architecture"
+        arch_dir.mkdir(parents=True, exist_ok=True)
+        version = get_current_version(docs_dir, "architecture")
 
-
-async def generate_comprehensive_summary(
-    repo_dir: Path, analysis: Dict[str, object], recent_changes: Dict[str, object], doc_persona: str
-) -> str:
-    prompt = (
-        "You are DocAI, an expert technical writer analyzing THIS SPECIFIC REPOSITORY.\n\n"
-        f"Persona: {doc_persona}\n"
-        f"Repository: {Path(repo_dir).name}\n\n"
-        f"ACTUAL CODEBASE ANALYSIS:\n{json.dumps(analysis, indent=2)}\n\n"
-        f"RECENT CHANGES:\n{json.dumps(recent_changes, indent=2)}\n\n"
-        "Generate a comprehensive README that includes overview, architecture, getting started, usage, project structure,"
-        " API overview, development workflow, and key dependencies."
-    )
-    return generate_doc_for_file("SUMMARY.md", prompt)
-
-
-async def generate_versioned_architecture(
-    repo_dir: Path, analysis: Dict[str, object], recent_changes: Dict[str, object], doc_persona: str
-) -> str:
-    """Generate versioned architecture documentation (like old codebase)"""
-    docs_dir = Path(repo_dir) / "docs"
-    arch_dir = docs_dir / "architecture"
-    arch_dir.mkdir(parents=True, exist_ok=True)
-    version = get_current_version(docs_dir, "architecture")
-
-    # Analyze architecture components (like old codebase)
-    arch_analysis = analyze_architecture(repo_dir)
-    
-    # Get LLM rotator (like old codebase - call directly, not through generate_doc_for_file)
-    rotator = get_rotator()
-    
-    # Build detailed architecture prompt (like old codebase)
-    arch_prompt = f"""
+        # Analyze architecture components
+        arch_analysis = analyze_architecture(self.repo_dir)
+        
+        # Build detailed architecture prompt
+        arch_prompt = f"""
 You are DocAI, an expert system architect analyzing THIS SPECIFIC CODEBASE.
 
 VERSION: v{version}
@@ -352,7 +154,7 @@ ACTUAL CODEBASE ANALYSIS (USE THIS DATA ONLY):
 {json.dumps(arch_analysis, indent=2)}
 
 RECENT CHANGES:
-{json.dumps(recent_changes, indent=2)}
+{json.dumps(self.recent_changes, indent=2)}
 
 CRITICAL INSTRUCTIONS:
 1. ONLY document what EXISTS in the codebase analysis above
@@ -413,109 +215,88 @@ Create documentation based ONLY on the actual codebase:
 
 BE SPECIFIC. USE ONLY THE DATA FROM THE ANALYSIS. NO GENERIC TEMPLATES.
 """
-    
-    try:
-        print(f"🔄 Generating architecture v{version} with LLM...")
-        arch_content = rotator.generate_with_rotation(arch_prompt)
         
+        print(f"🔄 Generating architecture v{version} with LLM...")
+        rotator = await get_rotator()
+        arch_content = await rotator.generate_with_rotation(arch_prompt)
+
         if not arch_content or len(arch_content.strip()) < 100:
             print("❌ LLM returned insufficient content for architecture")
-            # Fallback to basic documentation
             arch_content = f"# Architecture v{version}\n\nArchitecture documentation generation failed. Please review the codebase manually."
-        
+
         # Save versioned file
         arch_file = arch_dir / f"v{version}-architecture.md"
-        arch_file.write_text(arch_content)
+        arch_file.write_text(arch_content, encoding="utf-8")
         print(f"✅ Created {arch_file}")
-        
+
         # Also create/update current.md
         current_file = arch_dir / "current.md"
-        current_file.write_text(arch_content)
+        current_file.write_text(arch_content, encoding="utf-8")
         print(f"✅ Updated {current_file}")
-        
+
         return arch_content
-        
-    except Exception as e:
-        print(f"❌ Failed to generate architecture: {e}")
-        import traceback
-        traceback.print_exc()
-        # Return fallback content
-        fallback = f"# Architecture v{version}\n\nArchitecture documentation generation failed: {str(e)}"
-        (arch_dir / f"v{version}-architecture.md").write_text(fallback)
-        (arch_dir / "current.md").write_text(fallback)
-        return fallback
 
+    async def _generate_workflow(self, analysis: Dict[str, Any]) -> str:
+        docs_dir = self.repo_dir / "docs"
+        workflow_dir = docs_dir / "workflow"
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+        version = get_current_version(docs_dir, "workflow")
 
-async def generate_versioned_workflow(
-    repo_dir: Path, analysis: Dict[str, object], recent_changes: Dict[str, object], doc_persona: str
-) -> str:
-    docs_dir = Path(repo_dir) / "docs"
-    workflow_dir = docs_dir / "workflow"
-    workflow_dir.mkdir(parents=True, exist_ok=True)
-    version = get_current_version(docs_dir, "workflow")
+        prompt = (
+            "You are DocAI, an expert process analyst documenting ACTUAL workflows.\n\n"
+            f"Persona: {self.doc_persona}\n"
+            f"Repository: {self.repo_dir.name}\n"
+            f"VERSION: v{version}\n"
+            f"CODE ANALYSIS:\n{json.dumps(analysis, indent=2)}\n"
+            f"RECENT CHANGES:\n{json.dumps(self.recent_changes, indent=2)}\n"
+            "Cover development workflow, CI/CD, deployments, release process, and monitoring."
+        )
+        rotator = await get_rotator()
+        content = await rotator.generate_with_rotation(prompt)
+        if content:
+            (workflow_dir / f"v{version}-workflow.md").write_text(content, encoding="utf-8")
+            (workflow_dir / "current.md").write_text(content, encoding="utf-8")
+        return content or ""
 
-    prompt = (
-        "You are DocAI, an expert process analyst documenting ACTUAL workflows.\n\n"
-        f"Persona: {doc_persona}\n"
-        f"Repository: {Path(repo_dir).name}\n"
-        f"VERSION: v{version}\n"
-        f"CODE ANALYSIS:\n{json.dumps(analysis, indent=2)}\n"
-        f"RECENT CHANGES:\n{json.dumps(recent_changes, indent=2)}\n"
-        "Cover development workflow, CI/CD, deployments, release process, and monitoring."
-    )
-    content = generate_doc_for_file("workflow.md", prompt)
-    (workflow_dir / f"v{version}-workflow.md").write_text(content)
-    (workflow_dir / "current.md").write_text(content)
-    return content
-
-
-async def generate_api_documentation(
-    repo_dir: Path, analysis: Dict[str, object], recent_changes: Dict[str, object], doc_persona: str
-) -> str:
-    docs_dir = Path(repo_dir) / "docs"
-    prompt = (
-        "You are DocAI, an expert API writer documenting REAL endpoints from this repository.\n\n"
-        f"Persona: {doc_persona}\n"
-        f"Repository: {Path(repo_dir).name}\n"
-        f"CODE ANALYSIS:\n{json.dumps(analysis, indent=2)}\n"
-        f"RECENT CHANGES:\n{json.dumps(recent_changes, indent=2)}\n"
-        "Provide endpoint summaries, request/response examples, authentication, rate limits, and SDK guidance."
-    )
-    content = generate_doc_for_file("api.md", prompt)
-    (docs_dir / "api.md").write_text(content)
-    return content
+    async def _generate_api_documentation(self, analysis: Dict[str, Any]) -> str:
+        docs_dir = self.repo_dir / "docs"
+        prompt = (
+            "You are DocAI, an expert API writer documenting REAL endpoints from this repository.\n\n"
+            f"Persona: {self.doc_persona}\n"
+            f"Repository: {self.repo_dir.name}\n"
+            f"CODE ANALYSIS:\n{json.dumps(analysis, indent=2)}\n"
+            f"RECENT CHANGES:\n{json.dumps(self.recent_changes, indent=2)}\n"
+            "Provide endpoint summaries, request/response examples, authentication, rate limits, and SDK guidance."
+        )
+        rotator = await get_rotator()
+        content = await rotator.generate_with_rotation(prompt)
+        if content:
+            (docs_dir / "api.md").write_text(content, encoding="utf-8")
+        return content or ""
 
 
 def get_current_version(docs_dir: Path, doc_type: str) -> str:
     """
     Get the current version number using semantic versioning (v1.0, v1.1, v2.0)
-    Returns the next version number to create (like old codebase)
-    
-    This prevents excessive versioning by using proper semantic versioning
+    Returns the next version number to create
     """
     version_dir = docs_dir / doc_type
 
     if not version_dir.exists():
-        return "1.0"  # Start with v1.0
+        return "1.0"
 
-    # Find existing version files
     version_files = list(version_dir.glob("v*-*.md"))
-
     if not version_files:
         return "1.0"
 
-    # Extract version numbers and find the highest
     versions = []
     for vf in version_files:
         try:
-            # Extract version from v1.0-architecture.md format
-            version_str = vf.stem.split("-")[0][1:]  # Remove 'v' prefix
+            version_str = vf.stem.split("-")[0][1:]
             if "." in version_str:
-                # Semantic version (1.0, 1.1, 2.0)
                 major, minor = version_str.split(".")
                 versions.append((int(major), int(minor)))
             else:
-                # Legacy version (1, 2, 3) - treat as major version
                 versions.append((int(version_str), 0))
         except Exception:
             continue
@@ -523,20 +304,17 @@ def get_current_version(docs_dir: Path, doc_type: str) -> str:
     if not versions:
         return "1.0"
 
-    # Get the highest version
     max_major, max_minor = max(versions)
-
-    # Return next minor version (v1.0 → v1.1, v1.9 → v2.0)
     if max_minor >= 9:
         return f"{max_major + 1}.0"
     else:
         return f"{max_major}.{max_minor + 1}"
 
 
-def analyze_full_codebase(repo_dir: Path) -> Dict[str, object]:
-    """Analyze the entire codebase structure with detailed insights (like old codebase)"""
-    analysis: Dict[str, object] = {
-        "project_name": Path(repo_dir).name,
+def analyze_full_codebase(repo_dir: Path) -> Dict[str, Any]:
+    """Analyze the entire codebase structure with detailed insights"""
+    analysis: Dict[str, Any] = {
+        "project_name": repo_dir.name,
         "file_count": 0,
         "languages": [],
         "main_directories": [],
@@ -546,45 +324,42 @@ def analyze_full_codebase(repo_dir: Path) -> Dict[str, object]:
         "database_tech": [],
         "deployment_tech": [],
     }
+    
     try:
-        analysis["file_count"] = int(
-            subprocess.run("find . -type f | wc -l", shell=True, cwd=repo_dir, capture_output=True, text=True).stdout.strip()
-        )
-        for ext in [".py", ".ts", ".js", ".go", ".java", ".rs", ".cpp", ".c", ".php", ".rb"]:
-            count = int(
-                subprocess.run(
-                    f"find . -name '*{ext}' | wc -l",
-                    shell=True,
-                    cwd=repo_dir,
-                    capture_output=True,
-                    text=True,
-                ).stdout.strip()
-            )
-            if count:
-                analysis["languages"].append(ext[1:])
-        dirs = subprocess.run(
-            "find . -maxdepth 2 -type d | head -20",
-            shell=True,
-            cwd=repo_dir,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        analysis["main_directories"] = dirs.split("\n")
+        file_count = 0
+        lang_counts = {ext: 0 for ext in [".py", ".ts", ".js", ".go", ".java", ".rs", ".cpp", ".c", ".php", ".rb"]}
+        main_dirs = set()
+
+        for p in repo_dir.rglob("*"):
+            if p.is_dir():
+                if any(parent.name in IGNORED_DIRECTORIES for parent in p.parents) or p.name in IGNORED_DIRECTORIES:
+                    continue
+                if len(p.relative_to(repo_dir).parts) <= 2:
+                    main_dirs.add(str(p.relative_to(repo_dir)))
+            elif p.is_file():
+                file_count += 1
+                if p.suffix in lang_counts:
+                    lang_counts[p.suffix] += 1
+
+        analysis["file_count"] = file_count
+        analysis["languages"] = [ext[1:] for ext, count in lang_counts.items() if count > 0]
+        analysis["main_directories"] = sorted(list(main_dirs))[:20]
         
-        # Analyze Python dependencies and imports (like old codebase)
+        # Analyze Python dependencies and imports
         if "py" in analysis["languages"]:
             _analyze_python_dependencies(repo_dir, analysis)
         
-        # Detect technologies (like old codebase)
+        # Detect technologies
         _detect_technologies(repo_dir, analysis)
         
     except Exception as exc:
         logger.warning("Codebase scan failed: %s", exc)
+    
     return analysis
 
 
-def _analyze_python_dependencies(repo_dir: Path, analysis: Dict[str, object]) -> None:
-    """Analyze Python imports and dependencies (like old codebase)"""
+def _analyze_python_dependencies(repo_dir: Path, analysis: Dict[str, Any]) -> None:
+    """Analyze Python imports and dependencies"""
     imports: Dict[str, int] = {}
     frameworks: List[str] = []
     
@@ -593,11 +368,9 @@ def _analyze_python_dependencies(repo_dir: Path, analysis: Dict[str, object]) ->
             try:
                 content = py_file.read_text()
                 
-                # Extract import statements
                 for line in content.split('\n'):
                     line = line.strip()
                     if line.startswith(('import ', 'from ')):
-                        # Extract main module
                         if line.startswith('import '):
                             module = line.split(' ')[1].split('.')[0]
                         elif line.startswith('from '):
@@ -610,7 +383,6 @@ def _analyze_python_dependencies(repo_dir: Path, analysis: Dict[str, object]) ->
             except Exception:
                 continue
         
-        # Detect frameworks
         framework_indicators = {
             "FastAPI": ["fastapi", "FastAPI"],
             "Django": ["django", "DJANGO"],
@@ -633,8 +405,8 @@ def _analyze_python_dependencies(repo_dir: Path, analysis: Dict[str, object]) ->
         logger.warning("Python analysis failed: %s", e)
 
 
-def _detect_technologies(repo_dir: Path, analysis: Dict[str, object]) -> None:
-    """Detect technologies and deployment methods (like old codebase)"""
+def _detect_technologies(repo_dir: Path, analysis: Dict[str, Any]) -> None:
+    """Detect technologies and deployment methods"""
     content = ""
     for file_path in repo_dir.rglob("*"):
         try:
@@ -643,7 +415,6 @@ def _detect_technologies(repo_dir: Path, analysis: Dict[str, object]) -> None:
         except Exception:
             continue
     
-    # Database technologies
     db_indicators = {
         "PostgreSQL": ["postgresql", "postgres", "psycopg"],
         "MySQL": ["mysql", "pymysql"],
@@ -655,9 +426,9 @@ def _detect_technologies(repo_dir: Path, analysis: Dict[str, object]) -> None:
     
     for db, indicators in db_indicators.items():
         if any(indicator in content for indicator in indicators):
-            analysis["database_tech"].append(db)
+            if db not in analysis["database_tech"]:
+                analysis["database_tech"].append(db)
     
-    # Deployment technologies
     deploy_indicators = {
         "Docker": ["docker", "dockerfile", "docker-compose"],
         "Kubernetes": ["kubernetes", "k8s", "kubectl"],
@@ -671,12 +442,13 @@ def _detect_technologies(repo_dir: Path, analysis: Dict[str, object]) -> None:
     
     for deploy, indicators in deploy_indicators.items():
         if any(indicator in content for indicator in indicators):
-            analysis["deployment_tech"].append(deploy)
+            if deploy not in analysis["deployment_tech"]:
+                analysis["deployment_tech"].append(deploy)
 
 
-def analyze_components(repo_dir: Path) -> Dict[str, object]:
-    """Analyze system components based on actual codebase structure (like old codebase)"""
-    components = {
+def analyze_components(repo_dir: Path) -> Dict[str, Any]:
+    """Analyze system components based on actual codebase structure"""
+    components: Dict[str, Any] = {
         "detected": [],
         "services": [],
         "utilities": [],
@@ -685,7 +457,6 @@ def analyze_components(repo_dir: Path) -> Dict[str, object]:
     }
     
     try:
-        # Look for actual component structure
         src_dir = repo_dir / "src"
         app_dir = repo_dir / "app"
         search_dirs = [src_dir, app_dir] if app_dir.exists() else [src_dir] if src_dir.exists() else [repo_dir]
@@ -694,7 +465,6 @@ def analyze_components(repo_dir: Path) -> Dict[str, object]:
             if not search_dir.exists():
                 continue
                 
-            # Detect services
             for py_file in search_dir.rglob("*.py"):
                 try:
                     filename = py_file.stem.lower()
@@ -730,7 +500,6 @@ def analyze_components(repo_dir: Path) -> Dict[str, object]:
                 except Exception:
                     continue
         
-        # Detect main application structure
         main_patterns = {
             "api": ["fastapi", "flask", "app.py", "main.py"],
             "database": ["database", "db", "postgres", "sqlite", "model"],
@@ -739,12 +508,10 @@ def analyze_components(repo_dir: Path) -> Dict[str, object]:
         }
         
         for component_type, patterns in main_patterns.items():
-            for pattern in patterns:
-                if any(pattern in str(f) for f in repo_dir.rglob("*") if f.is_file()):
-                    if component_type not in components["detected"]:
-                        components["detected"].append(component_type)
+            if any(pattern in str(f) for f in repo_dir.rglob("*") if f.is_file()):
+                if component_type not in components["detected"]:
+                    components["detected"].append(component_type)
         
-        # If no specific components found, fall back to basic detection
         if not components["detected"]:
             components["detected"] = ["core", "api", "database"]
         
@@ -756,11 +523,10 @@ def analyze_components(repo_dir: Path) -> Dict[str, object]:
 
 
 def detect_design_patterns(repo_dir: Path) -> List[str]:
-    """Detect actual design patterns in the codebase (like old codebase)"""
+    """Detect actual design patterns in the codebase"""
     patterns: List[str] = []
     
     try:
-        # Look for actual patterns in the code
         pattern_indicators = {
             "Factory Pattern": ["factory", "create", "builder"],
             "Observer Pattern": ["observer", "listener", "event", "callback", "subscribe"],
@@ -777,30 +543,21 @@ def detect_design_patterns(repo_dir: Path) -> List[str]:
             "Chain of Responsibility": ["chain", "handler", "next"],
             "Template Method": ["template", "hook", "abstract"],
             "State Pattern": ["state", "context", "transition"],
-            "Composite Pattern": ["composite", "component", "leaf", "container"],
-            "Iterator Pattern": ["iterator", "next", "hasnext", "iterable"],
-            "Mediator Pattern": ["mediator", "communicate", "central"],
-            "Memento Pattern": ["memento", "snapshot", "state"],
-            "Flyweight Pattern": ["flyweight", "cache", "pool", "reuse"]
         }
         
-        # Search through Python files for pattern indicators
         for py_file in repo_dir.rglob("*.py"):
             try:
                 content = py_file.read_text().lower()
                 
                 for pattern_name, indicators in pattern_indicators.items():
                     if any(indicator in content for indicator in indicators):
-                        # Check for actual implementation, not just mentions
                         if pattern_name.lower() in content or any(f"class.*{ind}" in content for ind in indicators):
                             if pattern_name not in patterns:
                                 patterns.append(pattern_name)
             except Exception:
                 continue
         
-        # If no patterns found, return basic ones that are commonly used
         if not patterns:
-            # Check for common patterns in our specific codebase
             content = ""
             for py_file in repo_dir.rglob("*.py"):
                 try:
@@ -824,8 +581,8 @@ def detect_design_patterns(repo_dir: Path) -> List[str]:
         return ["Object-Oriented Design", "Async/Await Pattern"]
 
 
-def analyze_architecture(repo_dir: Path) -> Dict[str, object]:
-    """Analyze system architecture (like old codebase)"""
+def analyze_architecture(repo_dir: Path) -> Dict[str, Any]:
+    """Analyze system architecture"""
     return {
         "components": analyze_components(repo_dir),
         "structure": analyze_full_codebase(repo_dir),
@@ -837,28 +594,29 @@ def update_summary_navigation(docs_dir: Path) -> None:
     summary = ["# Summary", ""]
     if (docs_dir / "SUMMARY.md").exists():
         summary.append("* [Home](SUMMARY.md)")
+    
     arch_dir = docs_dir / "architecture"
     if arch_dir.exists():
         summary.append("\n## Architecture")
         for path in sorted(arch_dir.glob("v*-architecture.md"), reverse=True)[:5]:
             summary.append(f"* [{path.stem.upper()}](architecture/{path.name})")
+    
     workflow_dir = docs_dir / "workflow"
     if workflow_dir.exists():
         summary.append("\n## Workflow")
         for path in sorted(workflow_dir.glob("v*-workflow.md"), reverse=True)[:5]:
             summary.append(f"* [{path.stem.upper()}](workflow/{path.name})")
+    
     if (docs_dir / "api.md").exists():
         summary.append("\n## API")
         summary.append("* [API Documentation](api.md)")
     
-    # Add changes (show only last 10 changes to avoid clutter)
     changes_dir = docs_dir / "changes"
     if changes_dir.exists():
         change_files = sorted(changes_dir.glob("*.md"), reverse=True)
         if change_files:
             summary.append("\n## Recent Changes")
-            for change_file in change_files[:10]:  # Latest 10 only
-                # Extract title from filename (remove commit hash prefix)
+            for change_file in change_files[:10]:
                 title = change_file.stem.split("-", 1)[-1].replace("-", " ").title()
                 summary.append(f"* [{title}](changes/{change_file.name})")
     
@@ -866,22 +624,50 @@ def update_summary_navigation(docs_dir: Path) -> None:
     print(f"✅ Updated SUMMARY.md (showing only recent versions)")
 
 
-# ============================================================================
-# VERSIONING LOGIC (ported from old codebase)
-# ============================================================================
-
-def analyze_architectural_impact(repo_dir: Path, changed_files: List[str], analysis: Dict[str, object]) -> Dict[str, object]:
+def determine_docs_to_update(repo_dir: str, changed_files: List[str], analysis: Dict[str, Any]) -> Dict[str, bool]:
     """
-    Determine if changes warrant a new architecture/workflow version (like old codebase)
-    Uses semantic versioning (v1.0, v1.1, v2.0) instead of incremental numbers
+    FIX: Added missing function to determine which docs need updating
+    """
+    docs_to_update = {
+        "summary": False,
+        "architecture": False,
+        "workflow": False,
+        "api": False
+    }
     
-    Only create new versions for TRULY significant architectural changes:
-    - Major feature additions that change system architecture
-    - Breaking changes that affect core components
-    - Major refactoring of system structure
-    - NOT for: bug fixes, minor features, documentation updates
+    # Check if major files changed
+    major_files = ["README.md", "setup.py", "requirements.txt", "package.json", "Dockerfile"]
+    if any(f in str(changed_files) for f in major_files):
+        docs_to_update["summary"] = True
+    
+    # Check for architecture changes
+    arch_indicators = ["refactor", "migrate", "schema", "model", "service"]
+    if any(indicator in str(changed_files).lower() for indicator in arch_indicators):
+        docs_to_update["architecture"] = True
+    
+    # Check for workflow changes
+    workflow_indicators = [".github", ".gitlab", "jenkins", "ci", "cd", "deploy"]
+    if any(indicator in str(changed_files).lower() for indicator in workflow_indicators):
+        docs_to_update["workflow"] = True
+    
+    # Check for API changes
+    api_indicators = ["api", "endpoint", "route", "handler", "controller"]
+    if any(indicator in str(changed_files).lower() for indicator in api_indicators):
+        docs_to_update["api"] = True
+    
+    # If significance is high, update everything
+    if analysis.get("significance", 0) >= 8:
+        docs_to_update = {k: True for k in docs_to_update.keys()}
+    
+    return docs_to_update
+
+
+def analyze_architectural_impact(repo_dir: Path, changed_files: List[str], analysis: Dict[str, Any]) -> Dict[str, Any]:
     """
-    versioning_decision = {
+    Determine if changes warrant a new architecture/workflow version
+    Uses semantic versioning (v1.0, v1.1, v2.0) instead of incremental numbers
+    """
+    versioning_decision: Dict[str, Any] = {
         "needs_new_architecture_version": False,
         "needs_new_workflow_version": False,
         "architecture_change_reason": "",
@@ -890,17 +676,12 @@ def analyze_architectural_impact(repo_dir: Path, changed_files: List[str], analy
 
     # STRICT criteria for architectural changes (only truly major changes)
     major_arch_indicators = [
-        # Major system restructuring
-        len(changed_files) > 50,  # Only very large changes
-        # Core infrastructure changes
+        len(changed_files) > 50,
         any("migrate" in f.lower() for f in changed_files),
         any("refactor" in f.lower() for f in changed_files),
         any("restructure" in f.lower() for f in changed_files),
-        # Major new features that change architecture
         analysis.get("type") == "breaking_change" and analysis.get("significance", 0) >= 9,
-        # Database schema changes (but not migrations)
         any("schema" in f.lower() and "migration" not in f.lower() for f in changed_files),
-        # Major technology stack changes
         any("docker" in f.lower() and "compose" in f.lower() for f in changed_files),
         any("kubernetes" in f.lower() for f in changed_files),
         any("terraform" in f.lower() for f in changed_files),
@@ -908,18 +689,14 @@ def analyze_architectural_impact(repo_dir: Path, changed_files: List[str], analy
 
     # STRICT criteria for workflow changes (only major process changes)
     major_workflow_indicators = [
-        # CI/CD pipeline changes
         any("github" in f.lower() and "workflow" in f.lower() for f in changed_files),
         any("gitlab" in f.lower() and "ci" in f.lower() for f in changed_files),
         any("jenkins" in f.lower() for f in changed_files),
-        # Deployment process changes
         any("deploy" in f.lower() and ("script" in f.lower() or "config" in f.lower()) for f in changed_files),
-        # Major development process changes
         analysis.get("type") == "breaking_change" and "deployment" in analysis.get("impact_scope", []),
-        len(changed_files) > 40,  # Large changes to development files
+        len(changed_files) > 40,
     ]
 
-    # Only create new version for TRULY major changes
     if any(major_arch_indicators) and analysis.get("significance", 0) >= 8:
         versioning_decision["needs_new_architecture_version"] = True
         versioning_decision["architecture_change_reason"] = (
@@ -935,114 +712,69 @@ def analyze_architectural_impact(repo_dir: Path, changed_files: List[str], analy
     return versioning_decision
 
 
-# ============================================================================
-# MAIN ORCHESTRATOR (ported from old codebase)
-# ============================================================================
-
 async def generate_comprehensive_documentation(
-    repo_dir: Path, 
-    analysis: Dict[str, object], 
-    changed_files: List[str], 
-    doc_persona: str = "internal"
-) -> None:
+    repo_dir: Path,
+    analysis: Dict[str, Any],
+    changed_files: List[str],
+    doc_persona: str = "internal",
+    docs_to_update: Optional[Dict[str, bool]] = None
+) -> Dict[str, str]:
     """
-    Generate comprehensive documentation for the repository (like old codebase)
-    This is the main orchestrator function
-    
-    Args:
-        repo_dir: Path to repository
-        analysis: Change analysis dict
-        changed_files: List of changed files
-        doc_persona: Documentation persona (internal|developer)
+    Orchestrates the generation of comprehensive documentation by using the ComprehensiveDocBuilder.
     """
-    docs_dir = Path(repo_dir) / "docs"
-    docs_dir.mkdir(parents=True, exist_ok=True)
+    if docs_to_update is None:
+        docs_to_update = determine_docs_to_update(str(repo_dir), changed_files, analysis)
+
+    if not any(docs_to_update.values()):
+        print("✅ No documentation updates needed based on file changes.")
+        return {}
+
+    builder = ComprehensiveDocBuilder(
+        repo_dir=repo_dir,
+        doc_persona=doc_persona
+    )
     
-    # ⭐ NEW: Log doc_persona being used
-    print(f"📚 Generating docs with persona: {doc_persona}")
-    
-    quality_report = check_documentation_quality(repo_dir)
-    
-    print(f"📋 Quality Report: {json.dumps(quality_report, indent=2)}")
-    
-    # Generate missing or low-quality documentation
-    if "summary" in quality_report["needs_generation"]:
-        print("📝 Generating comprehensive README/Summary...")
-        summary_content = await generate_comprehensive_summary(
-            repo_dir, analysis, {"generated_at": datetime.utcnow().isoformat()}, doc_persona
-        )
-        (docs_dir / "SUMMARY.md").write_text(summary_content, encoding="utf-8")
-    
-    # Check if we need new versions for architecture/workflow
-    versioning = analyze_architectural_impact(repo_dir, changed_files, analysis)
-    
-    if "architecture" in quality_report["needs_generation"] or versioning["needs_new_architecture_version"]:
-        print("🏗️  Generating architecture documentation...")
-        await generate_versioned_architecture(
-            repo_dir, analysis, {"generated_at": datetime.utcnow().isoformat()}, doc_persona
-        )
-    
-    if "workflow" in quality_report["needs_generation"] or versioning["needs_new_workflow_version"]:
-        print("🔄 Generating workflow documentation...")
-        await generate_versioned_workflow(
-            repo_dir, analysis, {"generated_at": datetime.utcnow().isoformat()}, doc_persona
-        )
-    
-    if "api" in quality_report["needs_generation"]:
-        print("📡 Generating API documentation...")
-        await generate_api_documentation(
-            repo_dir, analysis, {"generated_at": datetime.utcnow().isoformat()}, doc_persona
-        )
-    
-    # Always update SUMMARY.md for navigation
-    update_summary_navigation(docs_dir)
+    generated_docs = await builder.build(analysis, docs_to_update)
     
     print("✅ Comprehensive documentation generation complete!")
+    return generated_docs
 
 
-# ============================================================================
-# WORKFLOW AND API ANALYSIS (ported from old codebase)
-# ============================================================================
-
-def analyze_workflows(repo_dir: Path) -> Dict[str, object]:
-    """Analyze development workflows (like old codebase)"""
-    workflows = {
+def analyze_workflows(repo_dir: Path) -> Dict[str, Any]:
+    """Analyze development workflows"""
+    workflows: Dict[str, Any] = {
         "has_ci_cd": False,
         "ci_files": [],
         "scripts": []
     }
     
-    # Check for CI/CD files
     ci_files = [".github/workflows", ".gitlab-ci.yml", "Jenkinsfile", ".circleci"]
     for ci_file in ci_files:
-        if (Path(repo_dir) / ci_file).exists():
+        if (repo_dir / ci_file).exists():
             workflows["has_ci_cd"] = True
             workflows["ci_files"].append(ci_file)
     
-    # Check for scripts
-    scripts_dir = Path(repo_dir) / "scripts"
+    scripts_dir = repo_dir / "scripts"
     if scripts_dir.exists():
         workflows["scripts"] = [f.name for f in scripts_dir.iterdir() if f.is_file()]
     
     return workflows
 
 
-def analyze_api_structure(repo_dir: Path) -> Dict[str, object]:
-    """Analyze API structure (like old codebase)"""
-    api_info = {
+def analyze_api_structure(repo_dir: Path) -> Dict[str, Any]:
+    """Analyze API structure"""
+    api_info: Dict[str, Any] = {
         "has_api": False,
         "api_files": [],
         "framework": None
     }
     
-    # Detect API framework
     frameworks = {
         "FastAPI": ["from fastapi", "FastAPI()"],
         "Flask": ["from flask", "Flask(__name__)"],
-        "Express": ["express()", "require('express')"],
-        "Django": ["django", "urls.py"]
+        "Express": ["express()", "require('express')"]
     }
-    
+
     try:
         for framework, patterns in frameworks.items():
             for pattern in patterns:
@@ -1065,27 +797,22 @@ def analyze_api_structure(repo_dir: Path) -> Dict[str, object]:
     return api_info
 
 
-# ============================================================================
-# SMART DOCUMENTATION GENERATOR (ported from old codebase)
-# ============================================================================
+def get_changed_files_from_analysis(analysis: Dict[str, Any]) -> List[str]:
+    """Extract changed files list from analysis"""
+    return analysis.get("affected_components", [])
+
 
 async def generate_smart_documentation(
     repo_dir: Path,
     analysis: Dict[str, Any],
     commit_sha: str,
     ref: str,
-    doc_persona: str = "internal"
+    doc_persona: str = "internal",
+    docs_to_update: Optional[Dict[str, bool]] = None
 ) -> None:
     """
-    Generate comprehensive documentation based on analysis (like old codebase)
+    Generate comprehensive documentation based on analysis
     This is the main entry point that orchestrates everything
-    
-    Args:
-        repo_dir: Path to repository
-        analysis: Change analysis dict
-        commit_sha: Commit SHA
-        ref: Git ref (branch)
-        doc_persona: Documentation persona (internal|developer)
     """
     from app.services.documentation.change_docs import (
         create_change_documentation,
@@ -1095,16 +822,14 @@ async def generate_smart_documentation(
         update_summary_md,
     )
     
-    # Create docs directory structure - everything goes in docs/
-    docs_dir = Path(repo_dir) / "docs"
-    changes_dir = docs_dir / "changes"  # Move changes inside docs
+    docs_dir = repo_dir / "docs"
+    changes_dir = docs_dir / "changes"
     docs_dir.mkdir(parents=True, exist_ok=True)
     changes_dir.mkdir(parents=True, exist_ok=True)
     
-    # NEW: Check documentation quality and generate comprehensive docs if needed
     print("🔍 Checking documentation quality...")
     changed_files = get_changed_files_from_analysis(analysis)
-    await generate_comprehensive_documentation(repo_dir, analysis, changed_files, doc_persona)
+    await generate_comprehensive_documentation(repo_dir, analysis, changed_files, doc_persona, docs_to_update=docs_to_update)
     
     # 1. Create detailed change documentation
     create_change_documentation(changes_dir, analysis, commit_sha, ref)
@@ -1117,19 +842,9 @@ async def generate_smart_documentation(
     if analysis.get("documentation_needs", {}).get("create_changelog", False):
         update_changelog(repo_dir, analysis, commit_sha)
     
-    # 4. Create API documentation if needed
-    if analysis.get("documentation_needs", {}).get("update_api_docs", False):
-        # This is handled by generate_comprehensive_documentation, but we can add additional API docs here if needed
-        pass
-    
-    # 5. Create migration guide for breaking changes
+    # 4. Create migration guide for breaking changes
     if analysis.get("documentation_needs", {}).get("create_migration_guide", False):
         create_migration_guide(docs_dir, analysis)
     
-    # 6. Update SUMMARY.md for GitBook navigation
-    update_summary_md(docs_dir, analysis, commit_sha)
-
-
-def get_changed_files_from_analysis(analysis: Dict[str, Any]) -> List[str]:
-    """Extract changed files list from analysis (like old codebase)"""
-    return analysis.get("affected_components", [])
+    # 5. Update SUMMARY.md for GitBook navigation
+    await update_summary_md(docs_dir, analysis, commit_sha)

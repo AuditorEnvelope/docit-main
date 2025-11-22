@@ -12,10 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.services.docbook.publisher import DocbookPublisher
-from app.services.documentation.comprehensive import (
-    ComprehensiveDocBuilder,
-    check_documentation_quality,
-)
+from app.services.documentation.comprehensive import ComprehensiveDocBuilder
+from app.services.documentation.quality_integration import check_documentation_quality
 from app.services.documentation.quality_checker import DocumentationQualityChecker
 from app.services.github.app_installation_service import AppInstallationService
 from app.services.github.change_analysis import smart_analyze_change
@@ -161,7 +159,7 @@ class GitHubService:
         self._log_build_start(repo_full_name, persona)
 
         # Initial quality report (pre-generation)
-        initial_quality = check_documentation_quality(repo_path_obj)
+        initial_quality = await check_documentation_quality(repo_path_obj)
         self._log_quality_report(initial_quality)
 
         # Generate documentation via the comprehensive builder

@@ -505,7 +505,7 @@ class DocbookPublisher:
         """Get writer app identity (name, email)"""
         # Default values
         app_id = "2229202"  # Default writer app ID
-        app_slug = "pustak-publisher-ai"
+        app_slug = "pustak-publisher-ai-test"
         
         # Try to get from dual app helper if available
         if hasattr(self, 'dual_app_helper') and self.dual_app_helper:

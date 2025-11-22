@@ -3,7 +3,6 @@
 import json
 import os
 import re
-import subprocess
 from pathlib import Path
 from typing import Iterable, Set, Dict, Any
 
@@ -93,7 +92,7 @@ def _build_default_analysis(
         "reason": "Heuristic fallback analysis based on file patterns and change magnitude."
     }
 
-def _parse_llm_json(response: str) -> Dict[str, Any] | None:
+async def _parse_llm_json(response: str) -> Dict[str, Any] | None:
     """Extract and parse JSON from LLM output with sanitization."""
     if not response:
         return None
@@ -121,7 +120,7 @@ def _parse_llm_json(response: str) -> Dict[str, Any] | None:
         except json.JSONDecodeError:
             return None
 
-def _coerce_analysis_result(
+async def _coerce_analysis_result(
     result: Dict[str, Any],
     payload: Dict[str, Any],
     file_analysis: Dict[str, Any],
@@ -130,7 +129,7 @@ def _coerce_analysis_result(
 ) -> Dict[str, Any]:
     """Ensure required fields, fix types, clamp values, and fill defaults."""
     if not isinstance(result, dict):
-        return _build_default_analysis(payload, file_analysis, changed_files, removed_files)
+        return await _build_default_analysis(payload, file_analysis, changed_files, removed_files)
 
     # Type normalization
     type_val = str(result.get("type", "feature")).strip().lower()
@@ -138,9 +137,9 @@ def _coerce_analysis_result(
         type_val = "feature"
 
     try:
-        significance = int(result.get("significance", _compute_significance(file_analysis)))
+        significance = int(result.get("significance", await _compute_significance(file_analysis)))
     except Exception:
-        significance = _compute_significance(file_analysis)
+        significance = await _compute_significance(file_analysis)
     significance = max(1, min(10, significance))
 
     is_significant = bool(result.get("is_significant", significance >= 7))
@@ -179,7 +178,7 @@ def _coerce_analysis_result(
 
     # Fill minimal defaults if missing
     if not title or not summary:
-        ts = _default_title_summary(set(file_analysis.get("detected_patterns") or []), changed_files)
+        ts = await _default_title_summary(set(file_analysis.get("detected_patterns") or []), changed_files)
         title = title or ts["title"]
         summary = summary or ts["summary"]
 
@@ -199,7 +198,7 @@ def _coerce_analysis_result(
     }
 # --- End helpers ---
 
-def smart_analyze_change(
+async def smart_analyze_change(
     payload: Dict[str, Any],
     repo_dir: str,
     changed_files: Iterable[str],
@@ -280,9 +279,9 @@ Respond in JSON format:
 }}
 """
 
-    rotator = get_rotator()
+    rotator = await get_rotator()
     try:
-        response = rotator.generate_with_rotation(analysis_prompt)
+        response = await rotator.generate_with_rotation(analysis_prompt)
     except Exception:
         # Fallback if provider errors
         return _build_default_analysis(payload, file_analysis, changed_files, removed_files)
@@ -333,40 +332,29 @@ def analyze_file_patterns(changed_files: Set[str], removed_files: Set[str]) -> D
 
 
 def get_git_diff_context(repo_dir: str, changed_files: Set[str]) -> str:
-    try:
-        files = [f for f in changed_files if not f.startswith("docs/")]
-        if not files:
-            return ""
-        result = subprocess.run(
-            ["git", "diff", "HEAD^", "--", *files],
-            cwd=repo_dir,
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout[:5000]
-    except Exception:
-        return ""
+    repo_path = Path(repo_dir)
+    diff_context = []
+    for file in changed_files:
+        try:
+            file_path = repo_path / file
+            if file_path.exists() and file_path.is_file():
+                content = file_path.read_text(errors="ignore")[:2000]
+                diff_context.append(f"--- {file}\n{content}")
+        except Exception:
+            continue  # Ignore files that can't be read
+    return "\n".join(diff_context)
 
 
 def get_codebase_context(repo_dir: str, changed_files: Set[str]) -> str:
+    repo_path = Path(repo_dir)
+    all_files = []
     try:
-        structure = subprocess.run(
-            [
-                "bash",
-                "-lc",
-                "find . -type f -name '*.py' -o -name '*.js' -o -name '*.ts' | head -20",
-            ],
-            cwd=repo_dir,
-            capture_output=True,
-            text=True,
-        ).stdout
-
-        package_info = ""
-        for file_name in ("package.json", "requirements.txt", "pyproject.toml"):
-            file_path = Path(repo_dir) / file_name
-            if file_path.exists():
-                package_info += f"\n{file_name}:\n{file_path.read_text()[:1000]}\n"
-
-        return f"Project structure:\n{structure}\n\nPackage info:\n{package_info}"
+        for p in repo_path.rglob("*"):
+            if p.is_file():
+                parts = p.parts
+                if any(part in {".git", "docs", "node_modules", "__pycache__"} for part in parts):
+                    continue
+                all_files.append(str(p.relative_to(repo_path)))
     except Exception:
-        return ""
+        pass # Ignore errors during file traversal
+    return "\n".join(all_files[:50])

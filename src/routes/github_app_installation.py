@@ -22,7 +22,7 @@ async def install_reader_app(redirect_uri: str = None):
         
         # GitHub App installation URL
         # After user installs, GitHub redirects to: redirect_uri?installation_id=XXX&setup_action=install
-        github_install_url = f"https://github.com/apps/pustak-analyser-ai/installations/new"
+        github_install_url = f"https://github.com/apps/pustak-analyser-ai-test/installations/new"
         
         return {
             "status": "redirect",
@@ -48,7 +48,7 @@ async def install_writer_app(redirect_uri: str = None):
         
         # GitHub App installation URL
         # After user installs, GitHub redirects to: redirect_uri?installation_id=XXX&setup_action=install
-        github_install_url = f"https://github.com/apps/pustak-publisher-ai/installations/new"
+        github_install_url = f"https://github.com/apps/pustak-publisher-ai-test/installations/new"
         
         return {
             "status": "redirect",

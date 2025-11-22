@@ -11,7 +11,7 @@ from typing import Dict, Any
 from app.services.llm.rotator import get_rotator
 
 
-def create_change_documentation(
+async def create_change_documentation(
     changes_dir: Path,
     analysis: Dict[str, Any],
     commit_sha: str,
@@ -40,8 +40,8 @@ Make it professional, detailed, and useful for developers.
 """
 
     try:
-        rotator = get_rotator()
-        detailed_doc = rotator.generate_with_rotation(change_prompt)
+        rotator = await get_rotator()
+        detailed_doc = await rotator.generate_with_rotation(change_prompt)
         
         if detailed_doc:
             # Save detailed documentation
@@ -73,24 +73,39 @@ def create_fallback_change_doc(
 ) -> None:
     """Create fallback change documentation (like old codebase)"""
     change_file = changes_dir / f"{commit_sha}-{analysis['type']}.md"
-    with open(change_file, "w", encoding="utf-8") as f:
-        f.write(f"# {analysis['title']}\n\n")
-        f.write(f"**Type:** {analysis['type']}  \n")
-        f.write(f"**Significance:** {analysis['significance']}/10  \n")
-        f.write(f"**Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}  \n")
-        f.write(f"**Commit:** {commit_sha}  \n")
-        f.write(f"**Branch:** {ref}  \n\n")
-        f.write(f"## Summary\n{analysis['summary']}\n\n")
-        f.write(f"## Impact Scope\n{', '.join(analysis.get('impact_scope', []))}\n\n")
-        f.write(f"## Affected Components\n{', '.join(analysis.get('affected_components', []))}\n\n")
-        f.write(f"## Technical Details\n{analysis.get('technical_details', 'N/A')}\n")
+    
+    try:
+        with open(change_file, "w", encoding="utf-8") as f:
+            f.write(f"# {analysis.get('title', 'Untitled Change')}\n\n")
+            f.write(f"**Type:** {analysis.get('type', 'unknown')}  \n")
+            f.write(f"**Significance:** {analysis.get('significance', 0)}/10  \n")
+            f.write(f"**Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}  \n")
+            f.write(f"**Commit:** {commit_sha}  \n")
+            f.write(f"**Branch:** {ref}  \n\n")
+            f.write(f"## Summary\n{analysis.get('summary', 'No summary available')}\n\n")
+            
+            impact_scope = analysis.get('impact_scope', [])
+            if impact_scope:
+                f.write(f"## Impact Scope\n{', '.join(impact_scope)}\n\n")
+            
+            affected_components = analysis.get('affected_components', [])
+            if affected_components:
+                f.write(f"## Affected Components\n{', '.join(affected_components)}\n\n")
+            
+            f.write(f"## Technical Details\n{analysis.get('technical_details', 'N/A')}\n")
+        
+        print(f"📝 Created fallback change documentation: {change_file}")
+        
+    except Exception as e:
+        print(f"❌ Failed to create fallback documentation: {e}")
 
 
-def update_main_readme(repo_dir: Path, analysis: Dict[str, Any]) -> None:
+async def update_main_readme(repo_dir: Path, analysis: Dict[str, Any]) -> None:
     """Update main README with new features (like old codebase)"""
-    readme_path = Path(repo_dir) / "README.md"
+    readme_path = repo_dir / "README.md"
     
     if not readme_path.exists():
+        print("ℹ️ README.md not found, skipping update")
         return
     
     try:
@@ -98,47 +113,67 @@ def update_main_readme(repo_dir: Path, analysis: Dict[str, Any]) -> None:
             content = f.read()
         
         # Add new features section if it's a major feature
-        if analysis["type"] == "feature" and analysis["significance"] >= 8:
+        if analysis.get("type") == "feature" and analysis.get("significance", 0) >= 8:
+            new_features = analysis.get('new_features', [])
+            if not new_features:
+                print("ℹ️ No new features to add to README")
+                return
+            
             new_section = f"""
 ## 🆕 Recent Updates
 
-### {analysis['title']}
-{analysis['summary']}
+### {analysis.get('title', 'Untitled Update')}
+{analysis.get('summary', 'No summary available')}
 
 **New Features:**
-{chr(10).join(f"- {feature}" for feature in analysis.get('new_features', []))}
+{chr(10).join(f"- {feature}" for feature in new_features)}
 
 *Added on {datetime.utcnow().strftime('%Y-%m-%d')}*
+
+---
+
 """
             
-            # Insert after the main title/description
-            if "# " in content:
-                lines = content.split('\n')
-                insert_index = 0
-                for i, line in enumerate(lines):
-                    if line.startswith("# ") and i > 0:
-                        insert_index = i + 1
-                        break
-                lines.insert(insert_index, new_section)
-                content = '\n'.join(lines)
+            # Insert after the first header and its description
+            lines = content.split('\n')
+            insert_index = 0
+            
+            # Find the end of the main title section
+            found_title = False
+            for i, line in enumerate(lines):
+                if line.startswith("# "):
+                    found_title = True
+                elif found_title and (line.startswith("## ") or (i > 0 and lines[i-1].strip() == "" and line.strip() != "")):
+                    insert_index = i
+                    break
+            
+            # If no good insertion point found, insert after first few lines
+            if insert_index == 0:
+                insert_index = min(3, len(lines))
+            
+            lines.insert(insert_index, new_section)
+            content = '\n'.join(lines)
             
             with open(readme_path, "w", encoding="utf-8") as f:
                 f.write(content)
             
             print("📝 Updated main README with new features")
+        else:
+            print(f"ℹ️ Change significance ({analysis.get('significance', 0)}) or type ({analysis.get('type')}) doesn't warrant README update")
             
     except Exception as e:
         print(f"❌ Failed to update README: {e}")
 
 
-def update_changelog(repo_dir: Path, analysis: Dict[str, Any], commit_sha: str) -> None:
+async def update_changelog(repo_dir: Path, analysis: Dict[str, Any], commit_sha: str) -> None:
     """Update CHANGELOG.md (like old codebase)"""
-    changelog_path = Path(repo_dir) / "CHANGELOG.md"
+    changelog_path = repo_dir / "CHANGELOG.md"
     
     # Create changelog if it doesn't exist
     if not changelog_path.exists():
         with open(changelog_path, "w", encoding="utf-8") as f:
-            f.write("# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n")
+            f.write("# Changelog\n\n")
+            f.write("All notable changes to this project will be documented in this file.\n\n")
     
     try:
         with open(changelog_path, "r", encoding="utf-8") as f:
@@ -146,22 +181,34 @@ def update_changelog(repo_dir: Path, analysis: Dict[str, Any], commit_sha: str) 
         
         # Add new entry
         today = datetime.utcnow().strftime('%Y-%m-%d')
-        entry = f"""
-## [{today}] - {analysis['title']}
+        change_type = analysis.get('type', 'unknown').title()
+        
+        entry = f"""## [{today}] - {analysis.get('title', 'Untitled Change')}
 
-### {analysis['type'].title()}
-- {analysis['summary']}
+### {change_type}
+- {analysis.get('summary', 'No summary available')}
 
 ### Details
-- **Significance:** {analysis['significance']}/10
+- **Significance:** {analysis.get('significance', 0)}/10
 - **Commit:** {commit_sha}
-- **Impact:** {', '.join(analysis.get('impact_scope', []))}
+- **Impact:** {', '.join(analysis.get('impact_scope', ['N/A']))}
 
 """
         
-        # Insert after the header
+        # Insert after the header section
         lines = content.split('\n')
-        insert_index = 2  # After "# Changelog" and empty line
+        insert_index = 0
+        
+        # Find the first line after the main header and description
+        for i, line in enumerate(lines):
+            if i > 0 and (line.startswith("## ") or (lines[i-1].strip() == "" and i > 2)):
+                insert_index = i
+                break
+        
+        # If no good insertion point found, insert after header (line 3)
+        if insert_index == 0:
+            insert_index = min(3, len(lines))
+        
         lines.insert(insert_index, entry)
         
         with open(changelog_path, "w", encoding="utf-8") as f:
@@ -173,9 +220,10 @@ def update_changelog(repo_dir: Path, analysis: Dict[str, Any], commit_sha: str) 
         print(f"❌ Failed to update CHANGELOG: {e}")
 
 
-def create_migration_guide(docs_dir: Path, analysis: Dict[str, Any]) -> None:
+async def create_migration_guide(docs_dir: Path, analysis: Dict[str, Any]) -> None:
     """Create migration guide for breaking changes (like old codebase)"""
     if not analysis.get("breaking_changes", False):
+        print("ℹ️ No breaking changes, skipping migration guide")
         return
     
     migration_path = docs_dir / "migration-guide.md"
@@ -193,11 +241,11 @@ Include:
 4. Common issues and solutions
 5. Rollback instructions
 
-Create a comprehensive migration guide.
+Create a comprehensive migration guide in markdown format.
 """
         
-        rotator = get_rotator()
-        migration_doc = rotator.generate_with_rotation(migration_prompt)
+        rotator = await get_rotator()
+        migration_doc = await rotator.generate_with_rotation(migration_prompt)
         
         if migration_doc:
             with open(migration_path, "w", encoding="utf-8") as f:
@@ -205,13 +253,27 @@ Create a comprehensive migration guide.
                 f.write(f"*Updated: {datetime.utcnow().strftime('%Y-%m-%d')}*\n\n")
                 f.write(migration_doc)
             
-            print("📝 Created migration guide")
+            print(f"📝 Created migration guide: {migration_path}")
+        else:
+            # Create fallback migration guide
+            with open(migration_path, "w", encoding="utf-8") as f:
+                f.write(f"# Migration Guide\n\n")
+                f.write(f"*Updated: {datetime.utcnow().strftime('%Y-%m-%d')}*\n\n")
+                f.write(f"## Breaking Change: {analysis.get('title', 'Untitled')}\n\n")
+                f.write(f"{analysis.get('summary', 'No summary available')}\n\n")
+                f.write(f"### Affected Components\n")
+                for component in analysis.get('affected_components', []):
+                    f.write(f"- {component}\n")
+                f.write(f"\n### Migration Steps\n")
+                f.write(f"Please review the changes and update your code accordingly.\n")
+            
+            print(f"📝 Created fallback migration guide: {migration_path}")
             
     except Exception as e:
         print(f"❌ Failed to create migration guide: {e}")
 
 
-def update_summary_md(docs_dir: Path, analysis: Dict[str, Any], commit_sha: str) -> None:
+async def update_summary_md(docs_dir: Path, analysis: Dict[str, Any], commit_sha: str) -> None:
     """Update SUMMARY.md for GitBook navigation (like old codebase)"""
     summary_path = docs_dir / "SUMMARY.md"
     
@@ -224,21 +286,38 @@ def update_summary_md(docs_dir: Path, analysis: Dict[str, Any], commit_sha: str)
             content = "# Table of Contents\n\n"
         
         # Add new change entry if it's significant
-        if analysis["significance"] >= 7:
-            change_entry = f"* [{analysis['title']}](changes/{commit_sha}-{analysis['type']}.md)\n"
+        if analysis.get("significance", 0) >= 7:
+            change_type = analysis.get('type', 'unknown')
+            change_title = analysis.get('title', 'Untitled Change')
+            change_entry = f"* [{change_title}](changes/{commit_sha}-{change_type}.md)\n"
             
             # Find the Changes section or create it
             if "## Changes" in content:
                 # Insert after the Changes header
                 lines = content.split('\n')
+                inserted = False
                 for i, line in enumerate(lines):
                     if line.strip() == "## Changes":
-                        lines.insert(i + 1, change_entry)
+                        # Check if this entry already exists
+                        if change_entry.strip() not in content:
+                            lines.insert(i + 1, change_entry)
+                            inserted = True
                         break
-                content = '\n'.join(lines)
+                
+                if inserted:
+                    content = '\n'.join(lines)
+                    print("📝 Added change to existing Changes section in SUMMARY.md")
+                else:
+                    print("ℹ️ Change entry already exists or couldn't insert")
             else:
-                # Add Changes section
-                content += f"\n## Changes\n\n{change_entry}\n"
+                # Add Changes section at the end
+                if not content.endswith('\n\n'):
+                    content += '\n\n'
+                content += f"## Changes\n\n{change_entry}"
+                print("📝 Created new Changes section in SUMMARY.md")
+        else:
+            print(f"ℹ️ Change significance ({analysis.get('significance', 0)}) doesn't warrant SUMMARY.md update")
+            return
         
         # Write updated SUMMARY.md
         with open(summary_path, "w", encoding="utf-8") as f:
@@ -248,4 +327,3 @@ def update_summary_md(docs_dir: Path, analysis: Dict[str, Any], commit_sha: str)
         
     except Exception as e:
         print(f"❌ Failed to update SUMMARY.md: {e}")
-

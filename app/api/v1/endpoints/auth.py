@@ -136,7 +136,7 @@ async def install_reader_app() -> dict[str, str]:
 
     return {
         "status": "redirect",
-        "url": "https://github.com/apps/pustak-analyser-ai/installations/new",
+        "url": "https://github.com/apps/pustak-analyser-ai-test/installations/new",
         "app_name": "Pustak Analyser AI",
         "app_id": reader_app_id,
         "message": "Redirecting to GitHub App installation page"
@@ -155,7 +155,7 @@ async def install_writer_app() -> dict[str, str]:
 
     return {
         "status": "redirect",
-        "url": "https://github.com/apps/pustak-publisher-ai/installations/new",
+        "url": "https://github.com/apps/pustak-publisher-ai-test/installations/new",
         "app_name": "Pustak Publisher AI",
         "app_id": writer_app_id,
         "message": "Redirecting to GitHub App installation page"
