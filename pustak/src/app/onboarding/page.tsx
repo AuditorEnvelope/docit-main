@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -43,6 +44,10 @@ export default function OnboardingPage() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [pollingWriterApp, setPollingWriterApp] = useState(false);
+  const writerPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const writerPollAttempts = useRef(0);
+
+  const MAX_WRITER_POLL_ATTEMPTS = 12; // roughly 1 minute at 5s interval
 
   const primaryOrg = useMemo(() => orgs[0] || "", [orgs]);
 
@@ -58,16 +63,19 @@ export default function OnboardingPage() {
     }
   }, [isAuthenticated, loading, router, user?.is_onboarding_complete]);
 
-  const loadState = useCallback(async () => {
-    if (!token) return;
+  const loadState = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!token) return;
 
-    try {
-      setRefreshing(true);
-      const orgsRes = await fetch(`${API_BASE}/user/organizations`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      try {
+        if (!options?.silent) {
+          setRefreshing(true);
+        }
+        const orgsRes = await fetch(`${API_BASE}/user/organizations`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
       if (orgsRes.ok) {
         const data = await orgsRes.json();
@@ -138,12 +146,46 @@ export default function OnboardingPage() {
 
         setOrgSummaries(summaries);
       }
-    } catch (error) {
-      console.error("Error loading onboarding state", error);
-    } finally {
-      setRefreshing(false);
+      } catch (error) {
+        console.error("Error loading onboarding state", error);
+      } finally {
+        if (!options?.silent) {
+          setRefreshing(false);
+        }
+      }
+    },
+    [token]
+  );
+
+  const stopWriterPolling = useCallback(() => {
+    if (writerPollRef.current) {
+      clearInterval(writerPollRef.current);
+      writerPollRef.current = null;
     }
-  }, [token]);
+    writerPollAttempts.current = 0;
+    setPollingWriterApp(false);
+  }, []);
+
+  const startWriterPolling = useCallback(() => {
+    if (writerPollRef.current) return;
+
+    setPollingWriterApp(true);
+    writerPollAttempts.current = 0;
+
+    const poll = async () => {
+      writerPollAttempts.current += 1;
+      await loadState({ silent: true });
+
+      if (writerPollAttempts.current >= MAX_WRITER_POLL_ATTEMPTS) {
+        stopWriterPolling();
+      }
+    };
+
+    void poll();
+    writerPollRef.current = setInterval(() => {
+      void poll();
+    }, 5000);
+  }, [loadState, stopWriterPolling]);
 
   useEffect(() => {
     loadState();
@@ -192,15 +234,21 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (writerAppReady) {
-      setPollingWriterApp(false);
+      stopWriterPolling();
     }
-  }, [writerAppReady]);
+  }, [writerAppReady, stopWriterPolling]);
 
   useEffect(() => {
     if (!hasLinkedDocbook) {
-      setPollingWriterApp(false);
+      stopWriterPolling();
     }
-  }, [hasLinkedDocbook]);
+  }, [hasLinkedDocbook, stopWriterPolling]);
+
+  useEffect(() => {
+    return () => {
+      stopWriterPolling();
+    };
+  }, [stopWriterPolling]);
 
   const handleOrgConnected = async () => {
     setShowOrgModal(false);
@@ -501,7 +549,7 @@ export default function OnboardingPage() {
                         <button
                           onClick={async () => {
                             try {
-                              setPollingWriterApp(true);
+                              startWriterPolling();
                               const backendUrl =
                                 process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
                               const response = await fetch(`${backendUrl}/auth/install-writer-app`);
@@ -512,7 +560,7 @@ export default function OnboardingPage() {
                               window.open(data.url, "_blank");
                             } catch (error) {
                               console.error("Failed to install Writer App:", error);
-                              setPollingWriterApp(false);
+                              stopWriterPolling();
                               alert("Failed to install Writer App. Please try again.");
                             }
                           }}
@@ -524,7 +572,7 @@ export default function OnboardingPage() {
                         <button
                           onClick={async () => {
                             await loadState();
-                            setPollingWriterApp(false);
+                            stopWriterPolling();
                           }}
                           className="inline-flex items-center gap-2 rounded-full border border-slate-600/60 bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:border-emerald-400/70 hover:bg-slate-900/80"
                         >
