@@ -43,13 +43,16 @@ export function OnboardingSplash({
         <div className="card-shell">
           <div className="book-orbit">
             <div className="book-stack">
-              <span className="book-page" />
-              <span className="book-page delay" />
+              <span className="book-shadow" />
+              <span className="book-page base" />
+              <span className="book-page base offset" />
+              <span className="book-page flip" />
               <span className="book-cover">
                 <BookOpen className="h-14 w-14 text-indigo-100" />
               </span>
             </div>
             <div className="scan-lens">
+              <span className="scan-highlight" />
               <Search className="h-7 w-7 text-blue-100" />
             </div>
           </div>
@@ -83,7 +86,7 @@ export function OnboardingSplash({
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .card-shell {
           position: relative;
           z-index: 10;
@@ -122,18 +125,57 @@ export function OnboardingSplash({
           align-items: center;
           justify-content: center;
           overflow: hidden;
+          perspective: 900px;
+          transform-style: preserve-3d;
+        }
+
+        .book-shadow {
+          position: absolute;
+          inset: auto 28px 18px 28px;
+          height: 20px;
+          border-radius: 999px;
+          background: radial-gradient(circle at 50% 50%, rgba(12, 18, 44, 0.7), transparent 65%);
+          opacity: 0.55;
+          filter: blur(6px);
+          transform: translateZ(-60px);
         }
 
         .book-page {
           position: absolute;
           inset: 18px;
           border-radius: 20px;
-          background: rgba(148, 163, 184, 0.14);
-          animation: pageFlip 2.6s ease-in-out infinite;
+          background: linear-gradient(120deg, rgba(226, 232, 240, 0.22), rgba(148, 163, 184, 0.1));
+          box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.18), 0 8px 18px -12px rgba(148, 163, 184, 0.45);
+          transform-style: preserve-3d;
+          backface-visibility: hidden;
         }
 
-        .book-page.delay {
-          animation-delay: 1.3s;
+        .book-page.base {
+          animation: pageShimmer 4s ease-in-out infinite;
+        }
+
+        .book-page.base.offset {
+          transform: translateX(6px) translateY(4px) rotateY(-6deg);
+          opacity: 0.65;
+          animation-delay: -1.2s;
+        }
+
+        .book-page.flip {
+          background: linear-gradient(135deg, rgba(241, 245, 249, 0.8), rgba(148, 163, 184, 0.25));
+          box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.35), 0 18px 36px -24px rgba(99, 102, 241, 0.75);
+          transform-origin: left center;
+          animation: bookLeaf 3.2s cubic-bezier(0.46, 0.03, 0.52, 0.96) infinite;
+        }
+
+        .book-page.flip::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          background: linear-gradient(120deg, rgba(30, 64, 175, 0.18), rgba(59, 130, 246, 0.08));
+          opacity: 0.7;
+          transform: rotateY(180deg);
+          backface-visibility: hidden;
         }
 
         .book-cover {
@@ -154,13 +196,33 @@ export function OnboardingSplash({
           width: 74px;
           height: 74px;
           border-radius: 999px;
-          border: 1px solid rgba(129, 140, 248, 0.35);
+          border: 1px solid rgba(129, 140, 248, 0.45);
           display: flex;
           align-items: center;
           justify-content: center;
           background: radial-gradient(circle at 35% 35%, rgba(79, 70, 229, 0.33), rgba(15, 23, 42, 0.92));
           animation: orbit 7.2s linear infinite;
           box-shadow: 0 26px 45px -30px rgba(59, 130, 246, 0.65);
+          overflow: hidden;
+        }
+
+        .scan-lens::before {
+          content: "";
+          position: absolute;
+          inset: 8px;
+          border-radius: inherit;
+          background: radial-gradient(circle at 35% 35%, rgba(165, 180, 252, 0.25), rgba(30, 64, 175, 0.08));
+          opacity: 0.85;
+        }
+
+        .scan-highlight {
+          position: absolute;
+          width: 110%;
+          height: 40%;
+          background: linear-gradient(90deg, transparent, rgba(191, 219, 254, 0.5), transparent);
+          transform: rotate(22deg) translateY(-120%);
+          filter: blur(2px);
+          animation: lensSweep 2.8s ease-in-out infinite;
         }
 
         .progress-track {
@@ -252,27 +314,71 @@ export function OnboardingSplash({
           }
         }
 
-        @keyframes pageFlip {
+        @keyframes bookLeaf {
+          0% {
+            transform: rotateY(0deg) translateZ(0);
+            opacity: 0;
+          }
+          12% {
+            opacity: 1;
+          }
+          40% {
+            transform: rotateY(-150deg) translateZ(0);
+            box-shadow: 0 20px 30px -26px rgba(59, 130, 246, 0.8);
+          }
+          68% {
+            transform: rotateY(-180deg) translateZ(0);
+            opacity: 0.85;
+          }
+          100% {
+            transform: rotateY(-210deg) translateZ(0);
+            opacity: 0;
+          }
+        }
+
+        @keyframes pageShimmer {
           0%,
           100% {
-            transform: rotateY(0deg);
-            opacity: 0.55;
+            filter: brightness(0.96);
           }
-          50% {
-            transform: rotateY(-32deg) translateX(-8px);
-            opacity: 1;
+          45% {
+            filter: brightness(1.05);
+          }
+          60% {
+            filter: brightness(0.98);
           }
         }
 
         @keyframes orbit {
           0% {
-            transform: rotate(0deg) translateX(94px) rotate(0deg);
+            transform: rotate(0deg) translateX(94px) translateY(-12px) rotate(0deg);
+          }
+          25% {
+            transform: rotate(90deg) translateX(84px) translateY(6px) rotate(-90deg);
           }
           50% {
-            transform: rotate(180deg) translateX(94px) rotate(-180deg);
+            transform: rotate(180deg) translateX(96px) translateY(10px) rotate(-180deg);
+          }
+          75% {
+            transform: rotate(270deg) translateX(86px) translateY(-2px) rotate(-270deg);
           }
           100% {
-            transform: rotate(360deg) translateX(94px) rotate(-360deg);
+            transform: rotate(360deg) translateX(94px) translateY(-12px) rotate(-360deg);
+          }
+        }
+
+        @keyframes lensSweep {
+          0%,
+          100% {
+            transform: rotate(22deg) translateY(-120%);
+            opacity: 0;
+          }
+          40% {
+            opacity: 0.85;
+          }
+          52% {
+            transform: rotate(22deg) translateY(120%);
+            opacity: 0.4;
           }
         }
 
