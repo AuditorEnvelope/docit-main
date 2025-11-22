@@ -13,6 +13,10 @@ import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import ConnectOrganizationModal from "@/components/ConnectOrganizationModal";
 import DocbookSetupModal from "@/components/DocbookSetupModal";
+import {
+  OnboardingSplash,
+  ONBOARDING_PROGRESS_MESSAGES,
+} from "@/components/OnboardingSplash";
 import { ArrowRight, CheckCircle, Loader2, ShieldCheck } from "lucide-react";
 
 const RAW_BACKEND_URL =
@@ -44,12 +48,15 @@ export default function OnboardingPage() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [pollingWriterApp, setPollingWriterApp] = useState(false);
+  const [progressIndex, setProgressIndex] = useState(0);
   const writerPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const writerPollAttempts = useRef(0);
+  const autoCompletionTriggered = useRef(false);
 
   const MAX_WRITER_POLL_ATTEMPTS = 12; // roughly 1 minute at 5s interval
 
   const primaryOrg = useMemo(() => orgs[0] || "", [orgs]);
+  const shouldBypassOnboarding = Boolean(user?.is_onboarding_complete);
 
   useEffect(() => {
     if (loading) return;
@@ -58,10 +65,26 @@ export default function OnboardingPage() {
       return;
     }
 
-    if (user?.is_onboarding_complete) {
+    if (shouldBypassOnboarding) {
       router.replace("/dashboard");
     }
-  }, [isAuthenticated, loading, router, user?.is_onboarding_complete]);
+  }, [isAuthenticated, loading, router, shouldBypassOnboarding]);
+
+  useEffect(() => {
+    if (!(loading || refreshing)) {
+      setProgressIndex(0);
+      return;
+    }
+
+    setProgressIndex(0);
+    const interval = setInterval(() => {
+      setProgressIndex((prev) => (prev + 1) % ONBOARDING_PROGRESS_MESSAGES.length);
+    }, 1800);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [loading, refreshing]);
 
   const loadState = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -187,9 +210,48 @@ export default function OnboardingPage() {
     }, 5000);
   }, [loadState, stopWriterPolling]);
 
+  const completeOnboarding = useCallback(
+    async (mode: "auto" | "manual" = "manual") => {
+      if (!token) return;
+
+      if (mode === "manual") {
+        setSaving(true);
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/auth/onboarding-complete`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (response.ok) {
+          markOnboardingComplete();
+          router.replace("/dashboard");
+        } else if (mode === "auto") {
+          autoCompletionTriggered.current = false;
+        }
+      } catch (error) {
+        console.error("Failed to complete onboarding", error);
+        if (mode === "auto") {
+          autoCompletionTriggered.current = false;
+        }
+      } finally {
+        if (mode === "manual") {
+          setSaving(false);
+        }
+      }
+    },
+    [markOnboardingComplete, router, token]
+  );
+
   useEffect(() => {
+    if (shouldBypassOnboarding) {
+      return;
+    }
     loadState();
-  }, [loadState]);
+  }, [loadState, shouldBypassOnboarding]);
 
   useEffect(() => {
     if (!orgs.length) {
@@ -233,6 +295,25 @@ export default function OnboardingPage() {
   const canFinish = hasConnectedOrg && hasLinkedDocbook && writerAppReady;
 
   useEffect(() => {
+    if (!canFinish) {
+      autoCompletionTriggered.current = false;
+    }
+  }, [canFinish]);
+
+  useEffect(() => {
+    if (
+      !user?.is_onboarding_complete &&
+      canFinish &&
+      !refreshing &&
+      !saving &&
+      !autoCompletionTriggered.current
+    ) {
+      autoCompletionTriggered.current = true;
+      void completeOnboarding("auto");
+    }
+  }, [canFinish, completeOnboarding, refreshing, saving, user?.is_onboarding_complete]);
+
+  useEffect(() => {
     if (writerAppReady) {
       stopWriterPolling();
     }
@@ -271,33 +352,22 @@ export default function OnboardingPage() {
     await loadState();
   };
 
-  const handleFinish = async () => {
-    setSaving(true);
-    try {
-      const response = await fetch(`${API_BASE}/auth/onboarding-complete`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+  const handleFinish = useCallback(async () => {
+    await completeOnboarding("manual");
+  }, [completeOnboarding]);
 
-      if (response.ok) {
-        markOnboardingComplete();
-        router.replace("/dashboard");
-      }
-    } catch (error) {
-      console.error("Failed to complete onboarding", error);
-    } finally {
-      setSaving(false);
-    }
-  };
+  if (shouldBypassOnboarding) {
+    return null;
+  }
 
-  if (loading || refreshing) {
+  if ((loading || refreshing) && !shouldBypassOnboarding) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 text-slate-200 bg-slate-950">
-        <Loader2 className="h-10 w-10 animate-spin" />
-        <p className="text-lg">Preparing your onboarding experience...</p>
-      </div>
+      <Layout>
+        <OnboardingSplash
+          messages={ONBOARDING_PROGRESS_MESSAGES}
+          activeIndex={progressIndex}
+        />
+      </Layout>
     );
   }
 

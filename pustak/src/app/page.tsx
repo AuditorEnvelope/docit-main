@@ -2,7 +2,9 @@
 
 import { Layout } from "@/components/Layout";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
+  ArrowRight,
   BookOpen,
   GitBranch,
   Clock,
@@ -13,19 +15,26 @@ import {
   TrendingUp,
   Users,
   Zap,
-  Search,
   Sparkles,
   ShieldCheck,
   Globe2,
 } from "lucide-react";
 
 export default function HomePage() {
+  const router = useRouter();
   const [stats, setStats] = useState({
     repositories: 0,
     documents: 0,
     updates: 0,
     lastUpdate: "Loading...",
   });
+
+  const ctaGradientStyle = {
+    backgroundImage:
+      "linear-gradient(135deg, rgba(37, 99, 235, 0.22), rgba(139, 92, 246, 0.18), rgba(16, 185, 129, 0.18))",
+    backgroundSize: "200% 200%",
+  } as const;
+
   const [loading, setLoading] = useState(true);
 
   const heroHighlights = [
@@ -103,46 +112,54 @@ export default function HomePage() {
     async function loadStats() {
       try {
         // Get JWT token from localStorage
-        const userToken = localStorage.getItem('pustak_access_token');
-        
+        const userToken = localStorage.getItem("pustak_access_token");
+
         if (!userToken) {
-          console.log('No user token available - skipping stats');
+          console.log("No user token available - skipping stats");
           setLoading(false);
           return;
         }
 
-        const response = await fetch('/api/repositories', {
+        const response = await fetch("/api/repositories", {
           headers: {
-            'Authorization': `Bearer ${userToken}`,
+            Authorization: `Bearer ${userToken}`,
           },
         });
         if (!response.ok) {
-          throw new Error('Failed to fetch repositories');
+          console.warn("Repository fetch returned", response.status);
+          setStats({
+            repositories: 0,
+            documents: 0,
+            updates: 0,
+            lastUpdate: "N/A",
+          });
+          setLoading(false);
+          return;
         }
         const repos = await response.json();
         const repoCount = repos.length;
-        
+
         // Calculate total documents (6 doc types per repo)
         const docCount = repoCount * 6;
-        
+
         // Get the most recent update time
         const mostRecent = repos.reduce((latest: Date, repo: any) => {
           const repoDate = new Date(repo.lastUpdated);
           return repoDate > latest ? repoDate : latest;
         }, new Date(0));
-        
+
         const now = new Date();
         const diffMs = now.getTime() - mostRecent.getTime();
         const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
         const diffDays = Math.floor(diffHours / 24);
-        
+
         let lastUpdateStr = "Just now";
         if (diffDays > 0) {
           lastUpdateStr = `${diffDays}d ago`;
         } else if (diffHours > 0) {
           lastUpdateStr = `${diffHours}h ago`;
         }
-        
+
         setStats({
           repositories: repoCount,
           documents: docCount,
@@ -152,15 +169,22 @@ export default function HomePage() {
         setLoading(false);
       } catch (error) {
         console.error("Failed to load stats:", error);
+        setStats({
+          repositories: 0,
+          documents: 0,
+          updates: 0,
+          lastUpdate: "N/A",
+        });
         setLoading(false);
       }
     }
-    
+
     loadStats();
   }, []);
 
   return (
-    <Layout>
+    <>
+      <Layout>
       <div className="min-h-screen bg-slate-950 text-slate-100">
         {/* Hero Section */}
         <section className="relative overflow-hidden py-20">
@@ -204,26 +228,20 @@ export default function HomePage() {
                 })}
               </div>
 
-              {/* Command Bar */}
-              <div className="mx-auto mt-12 max-w-xl">
+              {/* Primary CTA */}
+              <div className="mx-auto mt-12 max-w-sm">
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const event = new KeyboardEvent("keydown", {
-                      key: "k",
-                      metaKey: true,
-                      bubbles: true,
-                      cancelable: true,
-                    });
-                    document.dispatchEvent(event);
+                  onClick={() => {
+                    const token = localStorage.getItem("pustak_access_token");
+                    router.push(token ? "/dashboard" : "/login");
                   }}
-                  className="group flex w-full items-center gap-3 rounded-2xl border border-slate-800/70 bg-slate-900/70 px-5 py-4 text-left text-sm transition hover:border-blue-500/60 hover:bg-slate-900/90"
+                  style={ctaGradientStyle}
+                  className="cta-gradient inline-flex w-full cursor-pointer items-center justify-center gap-3 rounded-full border border-slate-700/70 bg-slate-900/70 px-6 py-3 text-sm font-semibold text-slate-200 shadow-[0_18px_45px_-28px_rgba(59,130,246,0.55)] transition hover:border-blue-400/60 hover:text-white hover:shadow-[0_24px_60px_-32px_rgba(59,130,246,0.65)]"
                 >
-                  <Search className="h-5 w-5 text-slate-500 transition group-hover:text-blue-400" />
-                  <span className="flex-1 text-slate-400 transition group-hover:text-slate-200">Search documentation…</span>
-                  <kbd className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-400">⌘K</kbd>
+                  <Sparkles className="h-4 w-4" />
+                  <span className="relative z-10">Get started with Pustak</span>
+                  <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -292,6 +310,34 @@ export default function HomePage() {
           </div>
         </section>
       </div>
-    </Layout>
+      </Layout>
+      <style jsx>{`
+        .cta-gradient {
+          animation: ctaGradientShift 6s ease-in-out infinite;
+          background-position: 0% 50%;
+        }
+
+        .cta-gradient:hover {
+          background-image: linear-gradient(
+            135deg,
+            rgba(59, 130, 246, 0.3),
+            rgba(139, 92, 246, 0.28),
+            rgba(16, 185, 129, 0.25)
+          );
+        }
+
+        @keyframes ctaGradientShift {
+          0% {
+            background-position: 0% 50%;
+          }
+          50% {
+            background-position: 100% 50%;
+          }
+          100% {
+            background-position: 0% 50%;
+          }
+        }
+      `}</style>
+    </>
   );
 }
