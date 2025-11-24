@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, ExternalLink, CheckCircle, AlertCircle } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { X, ExternalLink, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 
 interface DocbookSetupModalProps {
   isOpen: boolean;
@@ -32,11 +32,95 @@ export default function DocbookSetupModal({
   const [linking, setLinking] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [polling, setPolling] = useState(false);
+  const [pollingMessage, setPollingMessage] = useState("");
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollAttemptsRef = useRef(0);
+  const MAX_POLL_ATTEMPTS = 24; // 2 minutes at 5s interval
 
   const BACKEND_URL =
     process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
+  const apiBase = BACKEND_URL.endsWith("/api/v1")
+    ? BACKEND_URL
+    : `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
+
   const githubCreateRepoUrl = `https://github.com/new?name=${docbookRepoName}&private=true&description=Pustak%20Docbook%20Repository`;
+
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    pollAttemptsRef.current = 0;
+    setPolling(false);
+    setPollingMessage("");
+  }, []);
+
+  const checkRepoExists = useCallback(async (): Promise<boolean> => {
+    try {
+      const token = localStorage.getItem("pustak_access_token");
+      if (!token) return false;
+
+      const response = await fetch(
+        `https://api.github.com/repos/${orgId}/${docbookRepoName}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+          },
+        }
+      );
+
+      return response.ok;
+    } catch (err) {
+      console.error("Error checking repo existence:", err);
+      return false;
+    }
+  }, [orgId, docbookRepoName]);
+
+  const startPolling = useCallback(() => {
+    if (pollIntervalRef.current) return;
+
+    setPolling(true);
+    setError("");
+    pollAttemptsRef.current = 0;
+
+    const poll = async () => {
+      pollAttemptsRef.current += 1;
+      const attempt = pollAttemptsRef.current;
+      setPollingMessage(
+        `Checking if repository exists... (attempt ${attempt}/${MAX_POLL_ATTEMPTS})`
+      );
+
+      const exists = await checkRepoExists();
+
+      if (exists) {
+        stopPolling();
+        setPollingMessage("Repository detected! Linking now...");
+        await handleLinkRepo();
+        return;
+      }
+
+      if (attempt >= MAX_POLL_ATTEMPTS) {
+        stopPolling();
+        setError(
+          "Repository not detected after 2 minutes. Please verify it was created and try linking manually."
+        );
+      }
+    };
+
+    void poll();
+    pollIntervalRef.current = setInterval(() => {
+      void poll();
+    }, 5000);
+  }, [checkRepoExists, stopPolling, MAX_POLL_ATTEMPTS]);
+
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, [stopPolling]);
 
   const handleLinkRepo = async () => {
     if (!docbookRepoName.trim()) {
@@ -53,7 +137,7 @@ export default function DocbookSetupModal({
         setError("Authentication token not found. Please log in again.");
         return;
       }
-      const response = await fetch(`${BACKEND_URL}/documentation/link-repo`, {
+      const response = await fetch(`${apiBase}/docbook/link-repo`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -190,16 +274,51 @@ export default function DocbookSetupModal({
                   </div>
 
                   <button
-                    onClick={() => window.open(githubCreateRepoUrl, "_blank")}
-                    className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    onClick={() => {
+                      window.open(githubCreateRepoUrl, "_blank");
+                      startPolling();
+                    }}
+                    disabled={polling}
+                    className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    Create Repository on GitHub
+                    {polling ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Waiting for repository...
+                      </>
+                    ) : (
+                      <>
+                        <ExternalLink className="w-4 h-4" />
+                        Create Repository on GitHub
+                      </>
+                    )}
                   </button>
 
+                  {polling && pollingMessage && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-center gap-3">
+                      <Loader2 className="w-5 h-5 animate-spin text-blue-600 dark:text-blue-400" />
+                      <p className="text-sm text-blue-600 dark:text-blue-400">
+                        {pollingMessage}
+                      </p>
+                    </div>
+                  )}
+
+                  {polling && (
+                    <button
+                      onClick={stopPolling}
+                      className="w-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                    >
+                      Cancel polling
+                    </button>
+                  )}
+
                   <button
-                    onClick={() => setStep("link")}
-                    className="w-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                    onClick={() => {
+                      stopPolling();
+                      setStep("link");
+                    }}
+                    disabled={polling}
+                    className="w-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:bg-gray-400 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors"
                   >
                     Next: Link Repository
                   </button>

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     
     # CORS
-    BACKEND_CORS_ORIGINS: List[str] = []
+    BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000","https://lekhak-ai.onrender.com","https://cd17ff078a8e.ngrok-free.app", "http://localhost:8000"]
     
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
