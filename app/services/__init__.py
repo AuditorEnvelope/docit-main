@@ -2,9 +2,11 @@
 from .documentation.service import DocumentationService
 from .github.service import GitHubService
 from .docbook.publisher import DocbookPublisher
+from .repositories.service import RepositoryService
 
 __all__ = [
     'DocumentationService',
     'GitHubService',
-    'DocbookPublisher'
+    'DocbookPublisher',
+    'RepositoryService',
 ]

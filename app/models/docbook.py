@@ -33,6 +33,7 @@ class DocbookRepo(Base):
 
     staging_branch = Column(String(100), default="staging", nullable=False)
     main_branch = Column(String(100), default="main", nullable=False)
+    tracked_branch = Column(String(100), default="main", nullable=True)
     auto_merge = Column(Boolean, default=False, nullable=False)
 
     is_active = Column(Boolean, default=True, nullable=False)

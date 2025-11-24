@@ -620,29 +620,22 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/webhook/github")
-async def github_webhook(request: Request):
-    """GitHub webhook for automatic documentation generation on push"""
-    from webhooks.webhook_handler import verify_github_signature, handle_push_webhook
+# @app.post("/webhook/github")
+# async def github_webhook(request: Request):
+#     """GitHub webhook for automatic documentation generation on push"""
+#     from webhooks.webhook_handler import verify_github_signature, handle_push_webhook
     
-    # Verify signature
-    body = await request.body()
-    signature = request.headers.get("X-Hub-Signature-256", "")
+#     # Verify signature
+#     body = await request.body()
+#     signature = request.headers.get("X-Hub-Signature-256", "")
     
-    if not verify_github_signature(body, signature):
-        raise HTTPException(status_code=401, detail="Invalid signature")
+#     if not verify_github_signature(body, signature):
+#         raise HTTPException(status_code=401, detail="Invalid signature")
     
-    payload = await request.json()
-    event_type = request.headers.get("X-GitHub-Event", "")
+#     payload = await request.json()
+#     event_type = request.headers.get("X-GitHub-Event", "")
     
-    if event_type == "push":
-        # Get the repository's GitHub token from database
-        # For now, use the environment token as fallback
-        github_token = os.getenv("GITHUB_TOKEN")
-        if github_token:
-            await handle_push_webhook(payload, github_token)
-    
-    return {"status": "received"}
+#     return {"status": "received"}
 
 
 # ============================================
@@ -915,15 +908,32 @@ async def link_docbook_repo(
         
         # Store in database
         async with commit_bus.pool.acquire() as conn:
-            await conn.execute("""
+            # Ensure the org is registered for background workers
+            await conn.execute(
+                """
+                INSERT INTO org_registrations (user_id, org_id, registered_at)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (user_id, org_id) DO UPDATE
+                SET registered_at = NOW()
+                """,
+                user_id,
+                org_id,
+            )
+
+            await conn.execute(
+                """
                 INSERT INTO docbook_repos 
                 (user_id, org_id, docbook_repo_name, docbook_full_name, docbook_url, is_active)
                 VALUES ($1, $2, $3, $4, $5, TRUE)
                 ON CONFLICT (user_id, org_id) DO UPDATE
                 SET docbook_repo_name = $3, docbook_full_name = $4, docbook_url = $5, 
                     is_active = TRUE, updated_at = NOW()
-            """,
-            user_id, org_id, docbook_repo_name, docbook_full_name, docbook_url
+                """,
+                user_id,
+                org_id,
+                docbook_repo_name,
+                docbook_full_name,
+                docbook_url,
             )
         
         print(f"✅ Linked docbook repo: {docbook_full_name}")
@@ -2327,6 +2337,18 @@ async def setup_docbook(org_id: str, docbook_repo: str, user = Depends(get_curre
                     # Store docbook repo in database
                     if commit_bus and commit_bus.pool:
                         async with commit_bus.pool.acquire() as conn:
+                            # Ensure org is registered for background workers
+                            await conn.execute(
+                                """
+                                INSERT INTO org_registrations (user_id, org_id, registered_at)
+                                VALUES ($1, $2, NOW())
+                                ON CONFLICT (user_id, org_id) DO UPDATE
+                                SET registered_at = NOW()
+                                """,
+                                user_id,
+                                org_id,
+                            )
+
                             await conn.execute("""
                                 INSERT INTO docbook_repos (org_id, repo_name, repo_full_name, user_id, created_at)
                                 VALUES ($1, $2, $3, $4, NOW())

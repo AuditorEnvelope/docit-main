@@ -18,14 +18,14 @@ export default function DocbookSetupModal({
 }: DocbookSetupModalProps) {
   const [step, setStep] = useState<"create" | "link">("create");
   const [docbookRepoName, setDocbookRepoName] = useState(
-    `lekhak-docbook-org-${orgId ? orgId.toLowerCase().replace(/[^a-z0-9-]/g, "") : ""}`
+    `pustak-docbook-${orgId ? orgId.toLowerCase().replace(/[^a-z0-9-]/g, "") : ""}`
   );
 
   // Update repo name when orgId changes
   useEffect(() => {
     if (orgId) {
       setDocbookRepoName(
-        `lekhak-docbook-org-${orgId.toLowerCase().replace(/[^a-z0-9-]/g, "")}`
+        `pustak-docbook-${orgId.toLowerCase().replace(/[^a-z0-9-]/g, "")}`
       );
     }
   }, [orgId, isOpen]);
@@ -36,7 +36,7 @@ export default function DocbookSetupModal({
   const BACKEND_URL =
     process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-  const githubCreateRepoUrl = `https://github.com/new?name=${docbookRepoName}&private=true&description=Lekhak%20AI%20Documentation%20Repository`;
+  const githubCreateRepoUrl = `https://github.com/new?name=${docbookRepoName}&private=true&description=Pustak%20Docbook%20Repository`;
 
   const handleLinkRepo = async () => {
     if (!docbookRepoName.trim()) {
@@ -175,7 +175,7 @@ export default function DocbookSetupModal({
                       Your docbook will be organized like this:
                     </p>
                     <pre className="bg-gray-100 dark:bg-gray-700 p-3 rounded text-xs text-gray-900 dark:text-white overflow-x-auto">
-{`lekhak-docbook-org-{ID}/
+{`pustak-docbook-{org}/
 ├── repo-a/
 │   ├── internal/
 │   │   ├── README.md
@@ -229,7 +229,7 @@ export default function DocbookSetupModal({
                       type="text"
                       value={docbookRepoName}
                       onChange={(e) => setDocbookRepoName(e.target.value)}
-                      placeholder="lekhak-docbook-org-xxxxx"
+                      placeholder="pustak-docbook-your-org"
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">

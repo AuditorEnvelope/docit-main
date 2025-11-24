@@ -1,10 +1,11 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import update
 
 from app.core.config import settings
 from app.db.session import get_db
@@ -120,7 +121,9 @@ async def get_current_user_info(
         "plan": user.plan.value if hasattr(user.plan, 'value') else str(user.plan),
         "is_active": user.is_active,
         "created_at": user.created_at,
-        "last_login_at": user.last_login_at
+        "last_login_at": user.last_login_at,
+        "is_onboarding_complete": bool(user.is_onboarding_complete),
+        "onboarding_completed_at": user.onboarding_completed_at,
     }
 
 
@@ -178,3 +181,30 @@ async def login_access_token(
         status_code=501,
         detail="Password-based authentication not implemented. Please use GitHub OAuth via /auth/github"
     )
+
+
+@router.post("/onboarding-complete")
+async def mark_onboarding_complete(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Mark the authenticated user's onboarding as complete."""
+
+    if user.is_onboarding_complete:
+        return {"status": "already_complete"}
+
+    stmt = (
+        update(User)
+        .where(User.id == user.id)
+        .values(
+            is_onboarding_complete=True,
+            onboarding_completed_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        .execution_options(synchronize_session="fetch")
+    )
+
+    await db.execute(stmt)
+    await db.commit()
+
+    return {"status": "complete"}

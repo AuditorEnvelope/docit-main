@@ -5,10 +5,15 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, or_, cast, String
 
 from app.db.session import get_db
 from app.models.user import User
+from app.models.repository import Repository
+from app.models.docbook import DocbookReview, DocbookStatus
 from app.services.auth import get_current_user
+from app.services.docbook.service import DocbookService
+from app.services.repositories.service import RepositoryService
 from app.utils.github_dual_app import GitHubDualAppHelper
 
 router = APIRouter()
@@ -95,6 +100,37 @@ def _dual_app_ids(dual_app: GitHubDualAppHelper) -> Dict[str, Optional[int]]:
         "writer": writer_id or fallback_id,
         "is_dual": dual_app.dual_app_mode,
     }
+
+
+async def _resolve_reader_installation_token(
+    org_id: str,
+    user: User,
+    db: AsyncSession,
+) -> tuple[Optional[str], Optional[GitHubDualAppHelper]]:
+    github_token = _require_github_token(user)
+
+    try:
+        dual_app = GitHubDualAppHelper()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+    app_ids = _dual_app_ids(dual_app)
+    reader_app_id = app_ids["reader"]
+    if not reader_app_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reader app not configured")
+
+    installations = await _get_org_installations(org_id, github_token)
+    reader_inst = _match_installation(installations, reader_app_id)
+
+    if not reader_inst:
+        return None, dual_app
+
+    installation_id = reader_inst.get("id")
+    reader_token = await dual_app.get_reader_token(installation_id)
+    if not reader_token:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to get reader installation token")
+
+    return reader_token, dual_app
 
 
 async def _list_installation_repos(installation_token: str) -> List[Dict[str, Any]]:
@@ -234,28 +270,10 @@ async def get_reader_app_repositories(
 
     Returns list of repositories the Reader App has access to
     """
-    github_token = _require_github_token(user)
+    reader_token, _ = await _resolve_reader_installation_token(org_id, user, db)
 
-    try:
-        dual_app = GitHubDualAppHelper()
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
-
-    app_ids = _dual_app_ids(dual_app)
-    reader_app_id = app_ids["reader"]
-    if not reader_app_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reader app not configured")
-
-    installations = await _get_org_installations(org_id, github_token)
-    reader_inst = _match_installation(installations, reader_app_id)
-
-    if not reader_inst:
-        return {"org_id": org_id, "repositories": [], "total": 0}
-
-    installation_id = reader_inst.get("id")
-    reader_token = await dual_app.get_reader_token(installation_id)
     if not reader_token:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to get reader installation token")
+        return {"org_id": org_id, "repositories": [], "total": 0}
 
     repos = await _list_installation_repos(reader_token)
 
@@ -263,4 +281,95 @@ async def get_reader_app_repositories(
         "org_id": org_id,
         "repositories": repos,
         "total": len(repos),
+    }
+
+
+@router.get("/org/{org_id}/repositories/summary")
+async def get_org_repository_summary(
+    org_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return repository cards metadata for an organization."""
+
+    reader_token, dual_app = await _resolve_reader_installation_token(org_id, user, db)
+
+    if not reader_token:
+        return {
+            "org_id": org_id,
+            "docbook_tracked_branch": "main",
+            "repositories": [],
+            "total": 0,
+        }
+
+    repos = await _list_installation_repos(reader_token)
+    repo_full_names = [repo.get("full_name") for repo in repos if repo.get("full_name")]
+
+    db_metadata: Dict[str, Dict[str, Any]] = {}
+
+    pending_map: Dict[str, int] = {}
+    review_stmt = (
+        select(
+            DocbookReview.source_repo_name,
+            func.count().label("pending"),
+        )
+        .where(
+            DocbookReview.org_id == org_id,
+            cast(DocbookReview.status, String) == DocbookStatus.PENDING_REVIEW.value,
+        )
+        .group_by(DocbookReview.source_repo_name)
+    )
+    review_result = await db.execute(review_stmt)
+    for row in review_result:
+        pending_map[row[0]] = row[1]
+
+    docbook_service = DocbookService(db)
+    tracked_map = await docbook_service.get_tracked_branches_for_orgs([org_id])
+    docbook_tracked_branch = tracked_map.get(org_id, "main")
+
+    repo_service = RepositoryService(db)
+    repo_tracked_map: Dict[str, str] = {}
+    if repo_full_names:
+        for full_name in repo_full_names:
+            try:
+                repo_branch = await repo_service.get_tracked_branch(full_name)
+                if repo_branch:
+                    repo_tracked_map[full_name] = repo_branch
+            except Exception:
+                continue
+
+    summaries: List[Dict[str, Any]] = []
+    for repo in repos:
+        full_name = repo.get("full_name") or (
+            f"{org_id}/{repo.get('name')}" if repo.get("name") else None
+        )
+        if not full_name:
+            continue
+
+        meta = db_metadata.get(full_name) or {}
+        summaries.append(
+            {
+                "full_name": full_name,
+                "name": repo.get("name"),
+                "description": repo.get("description"),
+                "default_branch": repo.get("default_branch"),
+                "private": repo.get("private", False),
+                "doc_persona": None,
+                "last_documented_at": None,
+                "last_commit_sha": None,
+                "last_webhook_at": None,
+                "pending_reviews": pending_map.get(full_name, 0),
+                "docbook_tracked_branch": docbook_tracked_branch,
+                "tracked_branch": repo_tracked_map.get(full_name, docbook_tracked_branch),
+                "tracked_branch_source": "repository"
+                if full_name in repo_tracked_map
+                else "docbook",
+            }
+        )
+
+    return {
+        "org_id": org_id,
+        "docbook_tracked_branch": docbook_tracked_branch,
+        "repositories": summaries,
+        "total": len(summaries),
     }

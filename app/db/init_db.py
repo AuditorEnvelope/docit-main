@@ -8,6 +8,9 @@ async def init_models():
     """Initialize database tables (idempotent - safe to run multiple times)"""
     print("📊 Initializing database schema...")
     async with engine.begin() as conn:
+        # Ensure connections operate in the public schema before creating objects
+        await conn.execute(text("SET search_path TO public"))
+
         # Create all tables (idempotent - only creates if they don't exist)
         await conn.run_sync(Base.metadata.create_all)
 
@@ -223,7 +226,16 @@ async def init_models():
                 """
             )
         )
-    
+
+        await conn.execute(
+            text(
+                """
+                ALTER TABLE docbook_repos
+                ALTER COLUMN tracked_branch SET DEFAULT 'main'
+                """
+            )
+        )
+
     print("✅ Database schema initialized!")
 
 if __name__ == "__main__":

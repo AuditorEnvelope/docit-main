@@ -43,7 +43,10 @@ class AgentService:
     
     async def init_db(self):
         """Initialize database connection"""
-        self.pool = await asyncpg.create_pool(self.db_url)
+        async def _set_search_path(conn):
+            await conn.execute("SET search_path TO public")
+
+        self.pool = await asyncpg.create_pool(self.db_url, init=_set_search_path)
     
     async def classify_intent(self, question: str) -> str:
         """

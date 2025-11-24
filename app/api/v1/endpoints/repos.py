@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.models.user import User
 from app.services.auth import get_current_user
+from app.services.github.app_installation_service import AppInstallationService
+from app.utils.github_dual_app import GitHubDualAppHelper
 
 router = APIRouter()
 
@@ -34,6 +36,59 @@ async def _fetch_github(
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(url, headers=headers, params=params)
     return response
+
+
+async def _resolve_repo_token(user: User, repo_full_name: str, db: AsyncSession) -> str:
+    if "/" not in repo_full_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid repository identifier. Expected format 'org/repo'.",
+        )
+
+    if user.github_access_token:
+        return user.github_access_token
+
+    try:
+        dual_app = GitHubDualAppHelper()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GitHub App configuration missing",
+        ) from exc
+
+    reader_app_id = getattr(dual_app, "reader_app_id", None) or getattr(dual_app, "github_app_id", None)
+    if reader_app_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GitHub App configuration missing",
+        )
+
+    try:
+        app_id_int = int(reader_app_id)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Invalid GitHub App configuration",
+        ) from exc
+
+    org = repo_full_name.split("/")[0]
+    installation_service = AppInstallationService(db_session=db)
+    installation_id = await installation_service.get_app_installation_id(org_id=org, app_id=app_id_int)
+
+    if not installation_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="GitHub App installation not found for organization",
+        )
+
+    token = await dual_app.get_reader_token(installation_id)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to retrieve GitHub installation token",
+        )
+
+    return token
 
 
 async def _build_tree(
@@ -70,6 +125,48 @@ async def _build_tree(
         children.append(node)
 
     return children
+
+
+@router.get("/github/repos/{repo_name}/branches")
+async def list_repository_branches(
+    repo_name: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    token = await _resolve_repo_token(user, repo_name, db)
+
+    url = f"https://api.github.com/repos/{repo_name}/branches"
+    branches: List[Dict[str, Any]] = []
+    page = 1
+
+    while True:
+        response = await _fetch_github(url, token, params={"per_page": 100, "page": page})
+
+        if response.status_code == 404:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found on GitHub")
+        if response.status_code != 200:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch branches")
+
+        page_data = response.json()
+        if not isinstance(page_data, list):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Unexpected response from GitHub")
+
+        for branch in page_data:
+            name = branch.get("name")
+            if not name:
+                continue
+            branches.append({
+                "name": name,
+                "protected": branch.get("protected", False),
+            })
+
+        link_header = response.headers.get("Link", "")
+        if 'rel="next"' not in link_header:
+            break
+
+        page += 1
+
+    return branches
 
 
 @router.get("/repos/{repo_name}/tree")

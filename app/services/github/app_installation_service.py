@@ -216,6 +216,7 @@ class AppInstallationService:
                     "repo_full_name": repo_data["repo_full_name"],
                 },
             )
+            await self._upsert_repository_session(repo_data)
 
     async def _store_installation_conn(self, conn, *, org_id: str, app_id: int, installation_id: int, repository_selection: str, user_id: Optional[str]) -> None:
         await conn.execute(
@@ -277,6 +278,7 @@ class AppInstallationService:
                 repo_data["repo_name"],
                 repo_data["repo_full_name"],
             )
+            await self._upsert_repository_conn(conn, repo_data)
 
     async def get_app_installation_id(
         self,
@@ -337,8 +339,115 @@ class AppInstallationService:
             raise ValueError("Repository payload missing 'id'")
         repo_name = repo.get("name") or repo.get("full_name", "")
         repo_full_name = repo.get("full_name") or repo_name
+        default_branch = (repo.get("default_branch") or "main").strip() or "main"
+        git_url = (
+            repo.get("clone_url")
+            or repo.get("git_url")
+            or repo.get("ssh_url")
+            or None
+        )
         return {
             "repo_id": repo_id,
             "repo_name": repo_name,
             "repo_full_name": repo_full_name,
+            "default_branch": default_branch,
+            "git_url": git_url,
         }
+
+    async def _upsert_repository_session(self, repo_data: dict) -> None:
+        repo_identifier = repo_data["repo_full_name"]
+        name = repo_data["repo_name"]
+        default_branch = repo_data.get("default_branch") or "main"
+        git_url = repo_data.get("git_url")
+
+        await self.db_session.execute(
+            text(
+                """
+                INSERT INTO repositories (
+                    repo_id,
+                    name,
+                    full_name,
+                    git_url,
+                    default_branch,
+                    enabled,
+                    indexing_frequency,
+                    auto_generate_docs
+                )
+                VALUES (
+                    :repo_id,
+                    :name,
+                    :full_name,
+                    :git_url,
+                    :default_branch,
+                    TRUE,
+                    'realtime',
+                    TRUE
+                )
+                ON CONFLICT (repo_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    full_name = EXCLUDED.full_name,
+                    git_url = COALESCE(EXCLUDED.git_url, repositories.git_url),
+                    default_branch = CASE
+                        WHEN COALESCE(repositories.default_branch, '') = '' THEN EXCLUDED.default_branch
+                        ELSE repositories.default_branch
+                    END,
+                    enabled = TRUE,
+                    indexing_frequency = 'realtime',
+                    auto_generate_docs = TRUE
+                """
+            ),
+            {
+                "repo_id": repo_identifier,
+                "name": name,
+                "full_name": repo_identifier,
+                "git_url": git_url,
+                "default_branch": default_branch,
+            },
+        )
+
+    async def _upsert_repository_conn(self, conn, repo_data: dict) -> None:
+        repo_identifier = repo_data["repo_full_name"]
+        name = repo_data["repo_name"]
+        default_branch = repo_data.get("default_branch") or "main"
+        git_url = repo_data.get("git_url")
+
+        await conn.execute(
+            """
+            INSERT INTO repositories (
+                repo_id,
+                name,
+                full_name,
+                git_url,
+                default_branch,
+                enabled,
+                indexing_frequency,
+                auto_generate_docs
+            )
+            VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                $5,
+                TRUE,
+                'realtime',
+                TRUE
+            )
+            ON CONFLICT (repo_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                full_name = EXCLUDED.full_name,
+                git_url = COALESCE(EXCLUDED.git_url, repositories.git_url),
+                default_branch = CASE
+                    WHEN COALESCE(repositories.default_branch, '') = '' THEN EXCLUDED.default_branch
+                    ELSE repositories.default_branch
+                END,
+                enabled = TRUE,
+                indexing_frequency = 'realtime',
+                auto_generate_docs = TRUE
+            """,
+            repo_identifier,
+            name,
+            repo_identifier,
+            git_url,
+            default_branch,
+        )

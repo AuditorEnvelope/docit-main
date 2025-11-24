@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
 import DocPersonaSelector from "@/components/DocPersonaSelector";
-import { ArrowLeft, Settings, Loader2 } from "lucide-react";
+import TrackedBranchSelector from "@/components/TrackedBranchSelector";
+import {
+  ArrowLeft,
+  Settings,
+  Loader2,
+  Sparkles,
+  ShieldCheck,
+  HelpCircle,
+} from "lucide-react";
 import Link from "next/link";
 
 interface SettingsPageProps {
@@ -71,37 +79,74 @@ export default function RepositorySettingsPage({ params }: SettingsPageProps) {
 
   return (
     <Layout>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-        <div className="container mx-auto px-4 py-8">
+      <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+        <div className="absolute inset-0">
+          <div
+            className="absolute left-[-12%] top-[10%] h-[420px] w-[420px] rounded-full bg-blue-600/35 blur-[180px]"
+            aria-hidden
+          />
+          <div
+            className="absolute right-[-8%] top-[35%] h-[360px] w-[360px] rounded-full bg-purple-500/30 blur-[180px]"
+            aria-hidden
+          />
+          <div
+            className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-blue-500/15 via-transparent to-transparent"
+            aria-hidden
+          />
+          <div
+            className="absolute inset-x-0 bottom-[-30%] h-[420px] bg-gradient-to-t from-slate-950 via-slate-900/40 to-transparent"
+            aria-hidden
+          />
+        </div>
+
+        <div className="relative mx-auto flex max-w-6xl flex-col gap-10 px-6 py-14">
           {/* Header */}
-          <div className="mb-8">
+          <div className="space-y-6">
             <Link
-              href={`/repo/${repoName}`}
-              className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 mb-4"
+              href={`/dashboard`}
+              className="inline-flex items-center gap-2 text-sm font-medium text-blue-300 transition hover:text-blue-200"
             >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Repository
+              <ArrowLeft className="h-4 w-4" /> Back to dashboard
             </Link>
 
-            <div className="flex items-center gap-3">
-              <Settings className="w-8 h-8 text-blue-600" />
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                  Repository Settings
-                </h1>
-                <p className="text-gray-600 dark:text-gray-400 mt-1">
-                  {repoName}
-                </p>
+            <div className="rounded-3xl border border-slate-900/60 bg-slate-900/70 p-8 shadow-lg shadow-blue-950/40">
+              <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-start gap-4">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-500/50 bg-blue-500/10 text-blue-200">
+                    <Settings className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-950/60 px-3 py-1 text-[11px] uppercase tracking-[0.32em] text-slate-400">
+                      Repository settings
+                    </div>
+                    <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">
+                      {repoName}
+                    </h1>
+                    <p className="mt-2 text-sm text-slate-400 sm:text-base">
+                      Choose personas, tracked branches, and upcoming controls
+                      to keep docbooks aligned with your release flow.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-left text-sm text-slate-400">
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <Sparkles className="h-4 w-4 text-blue-300" /> Tips
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Persona controls influence AI tone, and tracked branches
+                    steer your staging cadence.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Settings Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
             {/* Main Content */}
-            <div className="lg:col-span-2">
-              {/* Doc Persona Section */}
-              <div className="mb-8">
+            <div className="space-y-8">
+              <div className="rounded-3xl border border-slate-900/60 bg-slate-900/70 p-6 shadow-lg shadow-blue-950/30">
                 <DocPersonaSelector
                   repoId={repoName}
                   backendUrl={BACKEND_URL}
@@ -112,54 +157,70 @@ export default function RepositorySettingsPage({ params }: SettingsPageProps) {
                 />
               </div>
 
-              {/* Additional Settings (Future) */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
-                  Other Settings
+              <div className="rounded-3xl border border-slate-900/60 bg-slate-900/70 p-6 shadow-lg shadow-blue-950/30">
+                <TrackedBranchSelector
+                  repoId={repoName}
+                  backendUrl={BACKEND_URL}
+                  userToken={userToken}
+                  onSave={(branch) => {
+                    console.log(`✅ Saved tracked_branch: ${branch}`);
+                  }}
+                />
+              </div>
+
+              <div className="rounded-3xl border border-dashed border-slate-800/80 bg-slate-950/50 p-6 text-sm text-slate-400">
+                <h3 className="text-lg font-semibold text-slate-100">
+                  More controls coming soon
                 </h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  More settings coming soon...
+                <p className="mt-2">
+                  We're building automation toggles for publishing cadence,
+                  review routing, and docbook labeling. Stay tuned!
                 </p>
               </div>
             </div>
 
             {/* Sidebar */}
-            <div className="lg:col-span-1">
-              {/* Info Card */}
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
-                <h4 className="font-semibold text-blue-900 dark:text-blue-300 mb-3">
-                  💡 Documentation Personas
-                </h4>
-                <div className="space-y-3 text-sm text-blue-800 dark:text-blue-200">
+            <div className="space-y-6">
+              <div className="rounded-3xl border border-blue-500/20 bg-blue-500/10 p-6 text-sm text-blue-100">
+                <div className="flex items-center gap-2 text-blue-200">
+                  <ShieldCheck className="h-5 w-5" /> Persona quickstart
+                </div>
+                <div className="mt-4 space-y-4">
                   <div>
-                    <p className="font-medium">Internal</p>
-                    <p className="text-xs opacity-75">
-                      For staff engineers. Includes detailed architecture and implementation.
+                    <p className="text-sm font-semibold text-blue-100">
+                      Internal
+                    </p>
+                    <p className="mt-1 text-xs text-blue-200/80">
+                      Deep dive for staff engineers—architecture, implementation
+                      detail, and workflow nuance.
                     </p>
                   </div>
                   <div>
-                    <p className="font-medium">Developer</p>
-                    <p className="text-xs opacity-75">
-                      For external partners. Focuses on APIs and usage examples.
+                    <p className="text-sm font-semibold text-blue-100">
+                      Developer
+                    </p>
+                    <p className="mt-1 text-xs text-blue-200/80">
+                      External-friendly docs highlighting APIs, usage stories,
+                      and integration paths.
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Help Card */}
-              <div className="mt-6 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-                <h4 className="font-semibold text-gray-900 dark:text-white mb-3">
-                  ❓ Need Help?
-                </h4>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  The documentation persona determines what type of documentation is generated
-                  for your repository.
+              <div className="rounded-3xl border border-slate-900/60 bg-slate-900/70 p-6 text-sm text-slate-400">
+                <div className="flex items-center gap-2 text-slate-200">
+                  <HelpCircle className="h-5 w-5 text-blue-300" /> Need help?
+                </div>
+                <p className="mt-3">
+                  Personas guide AI phrasing while tracked branches decide which
+                  commits feed docbook staging.
                 </p>
                 <a
                   href="#"
-                  className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium mt-3 inline-block"
+                  className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-blue-300 transition hover:text-blue-200"
                 >
-                  Learn more →
+                  Learn more
+                  <ArrowLeft className="rotate-180 h-3.5 w-3.5" />
                 </a>
               </div>
             </div>

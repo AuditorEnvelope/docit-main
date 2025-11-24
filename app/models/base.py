@@ -1,5 +1,6 @@
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, DateTime, func, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, func, UniqueConstraint, BigInteger, Boolean, JSON
+from sqlalchemy.dialects.postgresql import UUID
 
 Base = declarative_base()
 
@@ -29,9 +30,22 @@ class GitHubInstallation(Base, TimeStampedModel):
 
     __tablename__ = "github_installations"
 
-    id = Column(Integer, primary_key=True)
-    org_id = Column(String(100), nullable=False)
-    installation_id = Column(Integer, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    installation_id = Column(BigInteger, nullable=False, unique=True)
+    user_id = Column(UUID(as_uuid=True))
+    account_type = Column(String(50), nullable=False)
+    account_id = Column(BigInteger, nullable=False)
+    account_login = Column(String(255), nullable=False)
+    target_type = Column(String(50), nullable=False)
+    permissions = Column(JSON, default=dict)
+    events = Column(JSON, default=list)
+    access_token = Column(String)
+    token_expires_at = Column(DateTime(timezone=True))
+    is_active = Column(Boolean, nullable=False, default=True)
+    suspended_at = Column(DateTime(timezone=True))
+    suspended_by = Column(String(255))
+    metadata_json = Column("metadata", JSON, default=dict)
+    org_id = Column(String(255), nullable=False)
     app_id = Column(Integer, nullable=False)
     __table_args__ = (
         UniqueConstraint("org_id", "app_id", name="uq_github_installations_org_app"),

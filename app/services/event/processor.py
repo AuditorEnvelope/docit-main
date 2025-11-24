@@ -43,10 +43,16 @@ class EventProcessor:
         """
         try:
             logger.info(f"Processing event {event.id} of type {event.event_type}")
-            
-            # Route to the appropriate handler based on event type
-            handler_name = f"_handle_{event.event_type.lower()}"
-            handler = getattr(self, handler_name, self._handle_unknown_event)
+
+            normalized_type = (event.event_type or "").lower()
+            handler_overrides = {
+                "github.installation": self._handle_installation,
+            }
+
+            handler = handler_overrides.get(normalized_type)
+            if handler is None:
+                handler_name = f"_handle_{normalized_type}"
+                handler = getattr(self, handler_name, self._handle_unknown_event)
             
             # Process the event
             success = await handler(event)
@@ -147,7 +153,10 @@ class EventProcessor:
             raise ValueError("Installation payload missing org_id, installation_id, or app_id")
 
         result = await self.db.execute(
-            select(GitHubInstallation).where(GitHubInstallation.org_id == org_id)
+            select(GitHubInstallation).where(
+                (GitHubInstallation.org_id == org_id)
+                & (GitHubInstallation.app_id == app_id)
+            )
         )
         record = result.scalar_one_or_none()
 
@@ -170,12 +179,15 @@ class EventProcessor:
     async def _handle_installation_removal(self, installation: Dict[str, Any]) -> None:
         """Handle GitHub App uninstallation"""
         org_id = (installation.get("account") or {}).get("login")
+        app_id = installation.get("app_id")
         if not org_id:
             raise ValueError("Installation removal payload missing org_id")
 
-        result = await self.db.execute(
-            select(GitHubInstallation).where(GitHubInstallation.org_id == org_id)
-        )
+        stmt = select(GitHubInstallation).where(GitHubInstallation.org_id == org_id)
+        if app_id is not None:
+            stmt = stmt.where(GitHubInstallation.app_id == app_id)
+
+        result = await self.db.execute(stmt)
         record = result.scalar_one_or_none()
 
         if record:
@@ -185,31 +197,48 @@ class EventProcessor:
         else:
             logger.warning("⚠️ Attempted to remove unknown installation for %s", org_id)
 
-    async def _lookup_installation_id(self, org_id: str, db_pool=None) -> Optional[int]:
+    async def _lookup_installation_id(self, org_id: str, db_pool=None, app_id: Optional[int] = None) -> Optional[int]:
         """Lookup installation ID - uses asyncpg pool if available to avoid greenlet_spawn errors"""
         if db_pool:
             # Use asyncpg pool (like old codebase) to avoid greenlet_spawn errors
             try:
                 async with db_pool.acquire() as conn:
-                    result = await conn.fetchval("""
-                        SELECT installation_id FROM github_installations
-                        WHERE org_id = $1
-                        ORDER BY updated_at DESC
-                        LIMIT 1
-                    """, org_id)
+                    if app_id is not None:
+                        result = await conn.fetchval(
+                            """
+                            SELECT installation_id FROM github_installations
+                            WHERE org_id = $1 AND app_id = $2
+                            ORDER BY updated_at DESC
+                            LIMIT 1
+                            """,
+                            org_id,
+                            app_id,
+                        )
+                    else:
+                        result = await conn.fetchval(
+                            """
+                            SELECT installation_id FROM github_installations
+                            WHERE org_id = $1
+                            ORDER BY updated_at DESC
+                            LIMIT 1
+                            """,
+                            org_id,
+                        )
                     return result
             except Exception as e:
                 logger.warning(f"Error looking up installation_id with db_pool: {e}")
                 # Fall back to SQLAlchemy session
                 pass
-        
+
         # Fallback to SQLAlchemy session
         try:
-            result = await self.db.execute(
-                select(GitHubInstallation.installation_id)
-                .where(GitHubInstallation.org_id == org_id)
-                .order_by(GitHubInstallation.updated_at.desc())
+            stmt = select(GitHubInstallation.installation_id).where(
+                GitHubInstallation.org_id == org_id
             )
+            if app_id is not None:
+                stmt = stmt.where(GitHubInstallation.app_id == app_id)
+            stmt = stmt.order_by(GitHubInstallation.updated_at.desc()).limit(1)
+            result = await self.db.execute(stmt)
             return result.scalar_one_or_none()
         except Exception as e:
             logger.warning(f"Error looking up installation_id with SQLAlchemy: {e}")

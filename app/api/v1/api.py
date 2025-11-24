@@ -12,6 +12,7 @@ from .endpoints import (
     repos,
     docbook,
     docs,
+    webhooks,
 )
 from app.webhooks.github import router as github_webhook_router
 
@@ -70,7 +71,17 @@ api_router.include_router(
     responses={404: {"description": "Not found"}},
 )
 
-# Webhook endpoints (no auth - signature verified)
+# Webhook endpoints (registration + GitHub delivery)
+api_router.include_router(
+    webhooks.router,
+    tags=["Webhooks"],
+    responses={
+        200: {"description": "Webhook registered"},
+        400: {"description": "Invalid request"},
+        401: {"description": "Unauthorized"},
+        500: {"description": "Internal server error"},
+    },
+)
 api_router.include_router(
     github_webhook_router,
     prefix="/webhooks",

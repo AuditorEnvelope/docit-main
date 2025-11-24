@@ -36,6 +36,7 @@ class Repository(Base):
     # Git configuration
     git_url = Column(String(500), nullable=True)
     default_branch = Column(String(100), default="main", nullable=True)
+    tracked_branch = Column(String(100), nullable=True)
     
     # Settings
     enabled = Column(Boolean, default=True, nullable=True)

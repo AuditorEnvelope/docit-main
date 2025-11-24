@@ -6,12 +6,15 @@ from app.core.config import settings
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DATABASE_ECHO,
-    future=True
+    future=True,
+    connect_args={
+        "server_settings": {"search_path": "public"}
+    }
 )
 
 # Create async session factory
 async_session = sessionmaker(
-    engine, 
+    engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autoflush=False
