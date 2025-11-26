@@ -76,6 +76,25 @@ async def generate_documentation_v4(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=publish_result.get("message", "Docbook publication failed"),
         )
+    
+    # Update last_documented_at timestamp in repositories table
+    from datetime import datetime, timezone
+    from sqlalchemy import select, update
+    from app.models.repository import Repository
+    
+    try:
+        # Update the repository's last_documented_at field
+        stmt = (
+            update(Repository)
+            .where(Repository.full_name == repo_name)
+            .values(last_documented_at=datetime.now(timezone.utc))
+        )
+        await db.execute(stmt)
+        await db.commit()
+        print(f"✅ Updated last_documented_at for {repo_name}")
+    except Exception as e:
+        print(f"⚠️ Failed to update last_documented_at: {e}")
+        # Don't fail the whole request if this update fails
 
     return ManualGenerationResponse(
         status=publish_result.get("status", "published_to_staging"),

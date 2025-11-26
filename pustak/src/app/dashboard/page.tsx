@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
 import { GenerateDocsButton } from "@/components/GenerateDocsButton";
+import { PublishToLiveButton } from "@/components/PublishToLiveButton";
 import PendingReviewsTab from "@/components/PendingReviewsTab";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePendingReviews } from "@/hooks/usePendingReviews";
@@ -741,6 +742,26 @@ export default function DashboardPage() {
                               disabledReason={isDocbookRepo ? "" : undefined}
                               fullWidth
                             />
+
+                            {!isDocbookRepo && (
+                              <div className="relative">
+                                <PublishToLiveButton
+                                  repoFullName={fullName}
+                                  orgId={selectedOrg}
+                                  repoId={fullName.split("/")[1] || displayName}
+                                  hasPublished={false}
+                                  lastPublishedAt={null}
+                                  onPublishComplete={loadRepositories}
+                                  fullWidth
+                                  disabled={!hasDocs}
+                                />
+                                {!hasDocs && (
+                                  <p className="mt-2 text-xs text-amber-400">
+                                    Generate docs first to enable publishing
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

@@ -38,6 +38,10 @@ class DocbookRepo(Base):
 
     is_active = Column(Boolean, default=True, nullable=False)
     last_published_at = Column(DateTime(timezone=True), nullable=True)
+    last_published_commit = Column(String(40), nullable=True)
+    live_url = Column(String(500), nullable=True)
+    live_theme = Column(JSONB(astext_type=Text()), nullable=True)
+    live_sidebar_config = Column(JSONB(astext_type=Text()), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
@@ -80,4 +84,39 @@ class DocbookReview(Base):
         self.status = DocbookStatus.REJECTED
 
 
-__all__ = ["DocbookRepo", "DocbookReview", "DocbookStatus"]
+class DocbookPublishEvent(Base):
+    """Tracks live documentation publishing events and history."""
+
+    __tablename__ = "docbook_publish_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    org_id = Column(String(255), nullable=False, index=True)
+    repo_id = Column(String(255), nullable=False, index=True)
+
+    staging_commit = Column(String(40), nullable=True)
+    main_commit = Column(String(40), nullable=False)
+    published_by = Column(UUID(as_uuid=True), nullable=False)
+
+    status = Column(String(50), default="pending", nullable=False, index=True)
+    error_message = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    def mark_completed(self) -> None:
+        """Mark the publish event as successfully completed."""
+        self.status = "success"
+        self.completed_at = datetime.utcnow()
+
+    def mark_failed(self, error: str) -> None:
+        """Mark the publish event as failed with an error message."""
+        self.status = "failed"
+        self.error_message = error
+        self.completed_at = datetime.utcnow()
+
+    def __repr__(self) -> str:  # pragma: no cover - repr helper
+        return f"<DocbookPublishEvent(org='{self.org_id}', repo='{self.repo_id}', status='{self.status}')>"
+
+
+__all__ = ["DocbookRepo", "DocbookReview", "DocbookStatus", "DocbookPublishEvent"]
