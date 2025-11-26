@@ -16,21 +16,21 @@ const nextConfig: NextConfig = {
     domains: ['avatars.githubusercontent.com', 'github.com'],
   },
   async rewrites() {
+    const hostRule = {
+      type: 'host' as const,
+      value: '(?<org>[^.]+)\\.docbook\\.site',
+    };
+
     return [
       {
-        source: '/:path*',
-        has: [
-          {
-            type: 'host',
-            value: '(?<org>[^.]+)\\.docbook\\.site',
-          },
-          {
-            type: 'missing',
-            key: 'path',
-            value: '^(_next|api)(/.*)?$',
-          },
-        ],
-        destination: '/docs/:org/:path*',
+        source: '/',
+        has: [hostRule],
+        destination: '/docs/:org',
+      },
+      {
+        source: '/:path((?!_next|api).*)',
+        has: [hostRule],
+        destination: '/docs/:org/:path',
       },
     ];
   },
