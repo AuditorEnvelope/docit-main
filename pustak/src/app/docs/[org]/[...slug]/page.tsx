@@ -93,11 +93,32 @@ export default function LiveDocsPage() {
   const docSegmentsKey = useMemo(() => docSegments.join("/"), [docSegments]);
 
   // Use resolvedTheme to avoid hydration issues
-  const isLight = mounted ? resolvedTheme === "light" : false;
+  const isLight = mounted ? resolvedTheme === "light" : true; // Default to light theme
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const root = document.documentElement;
+    const previousFontSize = root.style.fontSize;
+    root.style.fontSize = "90%";
+    return () => {
+      root.style.fontSize = previousFontSize;
+    };
+  }, [mounted]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const root = document.documentElement;
+    if (isLight) {
+      root.style.setProperty("--tw-text-opacity", "1");
+      root.classList.remove("dark");
+    } else {
+      root.classList.add("dark");
+    }
+  }, [isLight, mounted]);
 
   useEffect(() => {
     if (!org || !repo) {
@@ -433,7 +454,9 @@ export default function LiveDocsPage() {
         <div className="max-w-md text-center">
           <div
             className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${
-              isLight ? "bg-red-100" : "bg-red-500/20"
+              isLight
+                ? "bg-red-100"
+                : "bg-red-500/20"
             }`}
           >
             <X
@@ -462,6 +485,9 @@ export default function LiveDocsPage() {
       className={`min-h-screen transition-colors ${
         isLight ? "bg-white" : "bg-slate-950"
       }`}
+      style={{
+        color: isLight ? '#000000' : '#e2e8f0'
+      }}
     >
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
@@ -641,7 +667,7 @@ export default function LiveDocsPage() {
           </header>
 
           {/* Content - UPDATED SECTION */}
-          <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+          <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-10">
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2
@@ -652,15 +678,11 @@ export default function LiveDocsPage() {
               </div>
             ) : (
               <>
-                <article
-                  className={`prose prose-sm sm:prose-base max-w-none ${
-                    isLight
-                      ? "prose-slate prose-headings:text-slate-900 prose-p:text-slate-700 prose-li:text-slate-700 prose-strong:text-slate-900"
-                      : "prose-invert prose-headings:text-white prose-p:text-slate-300 prose-li:text-slate-300 prose-strong:text-white"
-                  } prose-headings:font-semibold prose-a:text-indigo-600 prose-a:no-underline hover:prose-a:underline prose-pre:bg-slate-900 prose-pre:text-slate-100`}
-                >
-                  <MarkdownRenderer content={content} />
-                </article>
+                <MarkdownRenderer
+                  content={content}
+                  isLight={isLight}
+                  className="space-y-6"
+                />
 
                 {/* Navigation */}
                 {(neighbors.previous || neighbors.next) && (
