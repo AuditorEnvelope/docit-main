@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export function middleware(request: NextRequest) {
+const RAW_BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const API_BASE = RAW_BACKEND_URL.endsWith("/api/v1")
+  ? RAW_BACKEND_URL
+  : `${RAW_BACKEND_URL.replace(/\/$/, "")}/api/v1`;
+
+export async function middleware(request: NextRequest) {
   const { hostname, pathname } = request.nextUrl;
 
   // Extract subdomain (org name) from hostname
@@ -32,11 +38,40 @@ export function middleware(request: NextRequest) {
 
   // If we have an org subdomain, this is a docs viewer request
   if (org && pathname.startsWith("/")) {
+    try {
+      const liveStatusUrl = `${API_BASE}/docbook/live-org-status?org_id=${encodeURIComponent(
+        org,
+      )}`;
+      const validationResponse = await fetch(liveStatusUrl, {
+        method: "GET",
+        headers: {
+          "User-Agent": "pustak-docbook-middleware",
+        },
+        cache: "no-store",
+      });
+
+      if (!validationResponse.ok) {
+        const notFoundUrl = request.nextUrl.clone();
+        notFoundUrl.pathname = "/404";
+        return NextResponse.rewrite(notFoundUrl, { status: 404 });
+      }
+    } catch (error) {
+      console.error("❌ Failed to validate docbook org", {
+        hostname,
+        org,
+        error,
+      });
+      return NextResponse.json(
+        { message: "Service temporarily unavailable" },
+        { status: 503 },
+      );
+    }
+
     // Rewrite to the docs viewer route with org in the path
     // This allows Next.js to route to app/docs/[org]/[...slug]
     const url = request.nextUrl.clone();
     url.pathname = `/docs/${org}${pathname}`;
-    
+
     // Add org as a header for easy access in the component
     const response = NextResponse.rewrite(url);
     response.headers.set("x-org-id", org);

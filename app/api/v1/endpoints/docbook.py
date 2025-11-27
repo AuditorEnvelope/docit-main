@@ -827,6 +827,14 @@ class PublishLiveResponse(BaseModel):
     message: str
 
 
+class LiveOrgStatusResponse(BaseModel):
+    """Response for checking if an org has a live docbook."""
+
+    org_id: str
+    exists: bool
+    live_url: Optional[str]
+
+
 @router.post("/docbook/publish-live", response_model=PublishLiveResponse)
 async def publish_docs_live(
     request: PublishLiveRequest,
@@ -1346,6 +1354,30 @@ async def get_live_manifest(
         import traceback
         print(f"📋 Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/docbook/live-org-status", response_model=LiveOrgStatusResponse)
+async def get_live_org_status(
+    org_id: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Public endpoint to validate if an org has a published live docbook."""
+
+    normalized_org = org_id.strip()
+    if not normalized_org:
+        raise HTTPException(status_code=400, detail="org_id is required")
+
+    docbook_service = DocbookService(db)
+    repo = await docbook_service.get_repo_by_org(normalized_org)
+
+    if not repo or not repo.live_url:
+        raise HTTPException(status_code=404, detail="Live docs not found for org")
+
+    return LiveOrgStatusResponse(
+        org_id=repo.org_id,
+        exists=True,
+        live_url=repo.live_url,
+    )
 
 
 @router.get("/docbook/live-manifest/public")
