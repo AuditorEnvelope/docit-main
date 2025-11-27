@@ -332,7 +332,7 @@ export default function LiveDocsPage() {
               onClick={() => toggleNode(item.id)}
               className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 isLight
-                  ? "text-slate-700 hover:bg-slate-100"
+                  ? "text-slate-800 hover:bg-slate-100" // Improved contrast
                   : "text-slate-300 hover:bg-slate-800"
               }`}
               style={{ paddingLeft: `${depth * 16 + 12}px` }}
@@ -367,7 +367,7 @@ export default function LiveDocsPage() {
                 ? "bg-indigo-50 text-indigo-600 font-medium"
                 : "bg-indigo-500/10 text-indigo-400 font-medium"
               : isLight
-              ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              ? "text-slate-700 hover:bg-slate-100 hover:text-slate-900" // Improved contrast
               : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
           }`}
           style={{ paddingLeft: `${depth * 16 + 40}px` }}
@@ -413,7 +413,9 @@ export default function LiveDocsPage() {
               isLight ? "text-indigo-600" : "text-indigo-400"
             }`}
           />
-          <p className={isLight ? "text-slate-600" : "text-slate-400"}>
+          <p className={isLight ? "text-slate-700" : "text-slate-400"}>
+            {" "}
+            {/* Improved contrast */}
             Loading documentation...
           </p>
         </div>
@@ -445,7 +447,9 @@ export default function LiveDocsPage() {
           >
             Error
           </h1>
-          <p className={isLight ? "text-slate-600" : "text-slate-400"}>
+          <p className={isLight ? "text-slate-700" : "text-slate-400"}>
+            {" "}
+            {/* Improved contrast */}
             {error}
           </p>
         </div>
@@ -474,7 +478,7 @@ export default function LiveDocsPage() {
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           } ${
             isLight
-              ? "border-slate-200 bg-white"
+              ? "border-slate-300 bg-white" // Improved border contrast
               : "border-slate-800 bg-slate-900"
           }`}
         >
@@ -482,7 +486,8 @@ export default function LiveDocsPage() {
             {/* Sidebar Header */}
             <div
               className={`flex items-center justify-between border-b px-6 py-4 ${
-                isLight ? "border-slate-200" : "border-slate-800"
+                isLight ? "border-slate-300" : "border-slate-800"
+              } // Improved border contrast
               }`}
             >
               <div className="flex items-center gap-3">
@@ -499,7 +504,8 @@ export default function LiveDocsPage() {
                   </h2>
                   <p
                     className={`text-xs ${
-                      isLight ? "text-slate-500" : "text-slate-400"
+                      isLight ? "text-slate-700" : "text-slate-400"
+                    } // Improved contrast
                     }`}
                   >
                     {org}
@@ -510,7 +516,7 @@ export default function LiveDocsPage() {
                 onClick={() => setSidebarOpen(false)}
                 className={`rounded-lg p-1.5 transition-colors lg:hidden ${
                   isLight
-                    ? "text-slate-500 hover:bg-slate-100"
+                    ? "text-slate-700 hover:bg-slate-100" // Improved contrast
                     : "text-slate-400 hover:bg-slate-800"
                 }`}
               >
@@ -531,7 +537,7 @@ export default function LiveDocsPage() {
           <header
             className={`sticky top-0 z-30 border-b backdrop-blur-sm ${
               isLight
-                ? "border-slate-200 bg-white/80"
+                ? "border-slate-300 bg-white/80" // Improved border contrast
                 : "border-slate-800 bg-slate-900/80"
             }`}
           >
@@ -541,7 +547,7 @@ export default function LiveDocsPage() {
                   onClick={() => setSidebarOpen(true)}
                   className={`rounded-lg p-2 transition-colors lg:hidden ${
                     isLight
-                      ? "text-slate-600 hover:bg-slate-100"
+                      ? "text-slate-700 hover:bg-slate-100" // Improved contrast
                       : "text-slate-400 hover:bg-slate-800"
                   }`}
                 >
@@ -555,7 +561,7 @@ export default function LiveDocsPage() {
                       {index > 0 && (
                         <ChevronRight
                           className={`h-4 w-4 ${
-                            isLight ? "text-slate-400" : "text-slate-600"
+                            isLight ? "text-slate-500" : "text-slate-600" // Improved contrast
                           }`}
                         />
                       )}
@@ -567,7 +573,7 @@ export default function LiveDocsPage() {
                               ? "font-medium text-slate-900"
                               : "font-medium text-white"
                             : isLight
-                            ? "text-slate-600 hover:text-slate-900"
+                            ? "text-slate-700 hover:text-slate-900" // Improved contrast
                             : "text-slate-400 hover:text-slate-200"
                         }`}
                       >
@@ -584,7 +590,7 @@ export default function LiveDocsPage() {
                   onClick={() => setSearchOpen(true)}
                   className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
                     isLight
-                      ? "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      ? "border-slate-300 text-slate-700 hover:bg-slate-50" // Improved contrast
                       : "border-slate-700 text-slate-400 hover:bg-slate-800"
                   }`}
                 >
@@ -593,7 +599,7 @@ export default function LiveDocsPage() {
                   <kbd
                     className={`hidden rounded border px-1.5 py-0.5 text-xs md:inline ${
                       isLight
-                        ? "border-slate-300 bg-slate-100 text-slate-500"
+                        ? "border-slate-400 bg-slate-100 text-slate-600" // Improved contrast
                         : "border-slate-600 bg-slate-800 text-slate-400"
                     }`}
                   >
@@ -606,7 +612,7 @@ export default function LiveDocsPage() {
                   onClick={handleCopyLink}
                   className={`rounded-lg border p-2 transition-colors ${
                     isLight
-                      ? "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      ? "border-slate-300 text-slate-700 hover:bg-slate-50" // Improved contrast
                       : "border-slate-700 text-slate-400 hover:bg-slate-800"
                   }`}
                   title={copied ? "Copied!" : "Copy link"}
@@ -619,7 +625,7 @@ export default function LiveDocsPage() {
                   onClick={handleThemeToggle}
                   className={`rounded-lg border p-2 transition-colors ${
                     isLight
-                      ? "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      ? "border-slate-300 text-slate-700 hover:bg-slate-50" // Improved contrast
                       : "border-slate-700 text-amber-400 hover:bg-slate-800"
                   }`}
                   title={`Switch to ${isLight ? "dark" : "light"} mode`}
@@ -634,12 +640,12 @@ export default function LiveDocsPage() {
             </div>
           </header>
 
-          {/* Content */}
-          <div className="mx-auto max-w-4xl px-6 py-8">
+          {/* Content - UPDATED SECTION */}
+          <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
             {loading ? (
-              <div className="flex items-center justify-center py-12">
+              <div className="flex items-center justify-center py-8">
                 <Loader2
-                  className={`h-8 w-8 animate-spin ${
+                  className={`h-6 w-6 animate-spin ${
                     isLight ? "text-indigo-600" : "text-indigo-400"
                   }`}
                 />
@@ -647,8 +653,10 @@ export default function LiveDocsPage() {
             ) : (
               <>
                 <article
-                  className={`prose max-w-none ${
-                    isLight ? "prose-slate" : "prose-invert"
+                  className={`prose prose-sm sm:prose-base max-w-none ${
+                    isLight
+                      ? "prose-slate prose-headings:text-slate-900 prose-p:text-slate-700 prose-li:text-slate-700 prose-strong:text-slate-900"
+                      : "prose-invert prose-headings:text-white prose-p:text-slate-300 prose-li:text-slate-300 prose-strong:text-white"
                   } prose-headings:font-semibold prose-a:text-indigo-600 prose-a:no-underline hover:prose-a:underline prose-pre:bg-slate-900 prose-pre:text-slate-100`}
                 >
                   <MarkdownRenderer content={content} />
@@ -656,7 +664,7 @@ export default function LiveDocsPage() {
 
                 {/* Navigation */}
                 {(neighbors.previous || neighbors.next) && (
-                  <div className="mt-12 grid gap-4 border-t pt-8 sm:grid-cols-2">
+                  <div className="mt-8 grid gap-3 border-t pt-6 sm:grid-cols-2">
                     {neighbors.previous && (
                       <button
                         onClick={() =>
@@ -666,22 +674,23 @@ export default function LiveDocsPage() {
                             neighbors.previous!.source_path
                           )
                         }
-                        className={`flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors ${
+                        className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
                           isLight
-                            ? "border-slate-200 hover:bg-slate-50"
+                            ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
                             : "border-slate-800 hover:bg-slate-800"
                         }`}
                       >
                         <div
-                          className={`flex items-center gap-2 text-sm ${
-                            isLight ? "text-slate-500" : "text-slate-400"
+                          className={`flex items-center gap-1 text-sm ${
+                            isLight ? "text-slate-600" : "text-slate-400"
+                          } // Improved contrast
                           }`}
                         >
-                          <ArrowLeft className="h-4 w-4" />
+                          <ArrowLeft className="h-3 w-3" />
                           <span>Previous</span>
                         </div>
                         <span
-                          className={`font-medium ${
+                          className={`text-sm font-medium ${
                             isLight ? "text-slate-900" : "text-white"
                           }`}
                         >
@@ -698,22 +707,23 @@ export default function LiveDocsPage() {
                             neighbors.next!.source_path
                           )
                         }
-                        className={`flex flex-col items-end gap-2 rounded-lg border p-4 text-right transition-colors ${
+                        className={`flex flex-col items-end gap-1 rounded-lg border p-3 text-right transition-colors ${
                           isLight
-                            ? "border-slate-200 hover:bg-slate-50"
+                            ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
                             : "border-slate-800 hover:bg-slate-800"
                         } ${!neighbors.previous ? "sm:col-start-2" : ""}`}
                       >
                         <div
-                          className={`flex items-center gap-2 text-sm ${
-                            isLight ? "text-slate-500" : "text-slate-400"
+                          className={`flex items-center gap-1 text-sm ${
+                            isLight ? "text-slate-600" : "text-slate-400"
+                          } // Improved contrast
                           }`}
                         >
                           <span>Next</span>
-                          <ArrowRight className="h-4 w-4" />
+                          <ArrowRight className="h-3 w-3" />
                         </div>
                         <span
-                          className={`font-medium ${
+                          className={`text-sm font-medium ${
                             isLight ? "text-slate-900" : "text-white"
                           }`}
                         >
@@ -735,18 +745,20 @@ export default function LiveDocsPage() {
           <div
             className={`w-full max-w-2xl rounded-xl border shadow-2xl ${
               isLight
-                ? "border-slate-200 bg-white"
+                ? "border-slate-300 bg-white" // Improved border contrast
                 : "border-slate-700 bg-slate-900"
             }`}
           >
             <div
               className={`flex items-center gap-3 border-b px-4 py-3 ${
-                isLight ? "border-slate-200" : "border-slate-800"
+                isLight ? "border-slate-300" : "border-slate-800"
+              } // Improved border contrast
               }`}
             >
               <Search
                 className={`h-5 w-5 ${
-                  isLight ? "text-slate-400" : "text-slate-500"
+                  isLight ? "text-slate-500" : "text-slate-500"
+                } // Improved contrast
                 }`}
               />
               <input
@@ -756,13 +768,13 @@ export default function LiveDocsPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className={`flex-1 bg-transparent text-base outline-none placeholder:${
-                  isLight ? "text-slate-400" : "text-slate-500"
+                  isLight ? "text-slate-500" : "text-slate-500"
                 } ${isLight ? "text-slate-900" : "text-white"}`}
               />
               <kbd
                 className={`rounded border px-2 py-1 text-xs ${
                   isLight
-                    ? "border-slate-300 bg-slate-100 text-slate-500"
+                    ? "border-slate-400 bg-slate-100 text-slate-600" // Improved contrast
                     : "border-slate-700 bg-slate-800 text-slate-400"
                 }`}
               >
@@ -774,7 +786,8 @@ export default function LiveDocsPage() {
               {filteredResults.length === 0 ? (
                 <p
                   className={`py-8 text-center text-sm ${
-                    isLight ? "text-slate-500" : "text-slate-400"
+                    isLight ? "text-slate-600" : "text-slate-400"
+                  } // Improved contrast
                   }`}
                 >
                   {searchQuery
@@ -804,7 +817,8 @@ export default function LiveDocsPage() {
                       </span>
                       <span
                         className={`ml-4 text-xs ${
-                          isLight ? "text-slate-400" : "text-slate-500"
+                          isLight ? "text-slate-500" : "text-slate-500"
+                        } // Improved contrast
                         }`}
                       >
                         {item.path.replace(`/${repo}/`, "")}
