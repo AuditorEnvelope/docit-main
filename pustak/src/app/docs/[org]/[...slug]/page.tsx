@@ -401,6 +401,7 @@ export default function LiveDocsPage() {
   const panelShadow = isLight ? "shadow-xl shadow-slate-200/40" : "shadow-lg shadow-black/30";
   const headerBg = isLight ? "bg-white/90" : "bg-[var(--live-background)]/80";
   const sidebarBg = isLight ? "bg-white" : "bg-white/5";
+  const proseSize = "prose-xs sm:prose-sm"; // Even smaller prose size
 
   if (loading && !manifest) {
     return (
@@ -439,11 +440,11 @@ export default function LiveDocsPage() {
           <div className="flex h-full flex-col">
             <div className="flex items-center justify-between px-6 py-6">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--live-primary)] to-[var(--live-secondary)] shadow-lg shadow-[var(--live-primary)]/30">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--live-primary)] to-[var(--live-secondary)] shadow-lg shadow-[var(--live-primary)]/30">
                   <Book className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold text-white">{manifest?.title}</h2>
+                  <h2 className="text-base font-semibold text-white">{manifest?.title}</h2>
                   <p className="text-xs uppercase tracking-wide text-slate-400">{org}</p>
                 </div>
               </div>
@@ -477,11 +478,11 @@ export default function LiveDocsPage() {
         {/* Main Area */}
         <div className="flex min-h-screen flex-1 flex-col">
           <header className={`sticky top-0 z-40 w-full border-b ${mutedBorder} ${headerBg} backdrop-blur-xl transition-colors`}>
-            <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-4">
+            <div className="mx-auto flex w-full max-w-4xl items-center justify-between px-4 py-3">
               <div className="flex items-center gap-4">
                 <button
                   onClick={() => setSidebarOpen(true)}
-                  className={`rounded-lg border ${mutedBorder} p-2 ${subtleText} transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)] lg:hidden`}
+                  className={`rounded-md border ${mutedBorder} p-1.5 ${subtleText} transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)] lg:hidden`}
                 >
                   <Menu className="h-5 w-5" />
                 </button>
@@ -518,7 +519,11 @@ export default function LiveDocsPage() {
                 </button>
                 <button
                   onClick={handleThemeToggle}
-                  className={`rounded-lg border ${mutedBorder} p-2 transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)]`}
+                  className={`rounded-lg border ${mutedBorder} p-2 transition ${
+                    isLight 
+                      ? "bg-gradient-to-r from-indigo-500/10 to-purple-500/10 text-indigo-600 hover:from-indigo-500/20 hover:to-purple-500/20" 
+                      : "bg-gradient-to-r from-amber-300/10 to-yellow-300/10 text-amber-400 hover:from-amber-300/20 hover:to-yellow-300/20"
+                  }`}
                 >
                   {isLight ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
                 </button>
@@ -526,14 +531,14 @@ export default function LiveDocsPage() {
             </div>
           </header>
 
-          <main className="relative mx-auto flex w-full max-w-5xl flex-1 flex-col gap-10 px-6 py-10">
-            <section className={`rounded-3xl border ${mutedBorder} ${panelBg} px-8 py-10 ${panelShadow} backdrop-blur-md transition-colors`}>
-              <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <main className="relative mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-4 py-5">
+            <section className={`rounded-xl border ${mutedBorder} ${panelBg} px-6 py-6 ${panelShadow} backdrop-blur-md transition-colors`}>
+              <header className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h1 className="text-2xl font-semibold sm:text-3xl">
+                  <h1 className="text-lg font-semibold sm:text-xl">
                     {pageTitle || manifest?.title}
                   </h1>
-                  <p className={`mt-2 max-w-2xl text-sm ${subtleText}`}>
+                  <p className={`mt-1 max-w-2xl text-xs sm:text-sm ${subtleText}`}>
                     {manifest?.description}
                   </p>
                 </div>
@@ -542,7 +547,7 @@ export default function LiveDocsPage() {
                     href={manifest?.live_url}
                     target="_blank"
                     rel="noreferrer"
-                    className={`rounded-xl border ${mutedBorder} px-4 py-2 text-xs font-medium transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)]`}
+                    className={`rounded-lg border ${mutedBorder} px-3 py-1.5 text-xs font-medium transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)]`}
                   >
                     Open in GitHub
                   </a>
@@ -551,17 +556,17 @@ export default function LiveDocsPage() {
 
               <div className="relative">
                 {loading ? (
-                  <div className="flex items-center justify-center py-20">
-                    <Loader2 className="h-8 w-8 animate-spin text-[var(--live-primary)]" />
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-5 w-5 animate-spin text-[var(--live-primary)]" />
                   </div>
                 ) : (
-                  <article className={`prose max-w-none ${isLight ? "prose-slate" : "prose-invert"}`}>
+                  <article className={`prose max-w-none ${proseSize} ${isLight ? "prose-slate" : "prose-invert"}`}>
                     <MarkdownRenderer content={content} />
                   </article>
                 )}
               </div>
 
-              <footer className={`mt-10 flex flex-col gap-4 border-t ${mutedBorder} pt-6 lg:flex-row lg:items-center lg:justify-between`}>
+              <footer className={`mt-6 flex flex-col gap-3 border-t ${mutedBorder} pt-4 lg:flex-row lg:items-center lg:justify-between`}>
                 <div className={`flex flex-wrap items-center gap-3 text-xs ${subtleText}`}>
                   <span>Commit</span>
                   <span className={`rounded bg-[var(--live-primary)]/10 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--live-foreground)]`}>
@@ -583,7 +588,7 @@ export default function LiveDocsPage() {
                           neighbors.previous!.source_path ?? neighbors.previous!.path,
                         )
                       }
-                      className={`group flex w-full min-w-[210px] items-center justify-between rounded-2xl border ${mutedBorder} px-4 py-3 text-sm font-medium transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)] sm:w-auto`}
+                      className={`group flex w-full items-center justify-between rounded-lg border ${mutedBorder} px-3 py-2 text-xs font-medium transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)] sm:w-auto sm:max-w-[180px]`}
                     >
                       <div className="flex items-center gap-2">
                         <ArrowLeft className="h-4 w-4 transition group-hover:-translate-x-1" />
@@ -601,9 +606,9 @@ export default function LiveDocsPage() {
                           neighbors.next!.source_path ?? neighbors.next!.path,
                         )
                       }
-                      className={`group flex w-full min-w-[210px] items-center justify-between rounded-2xl border ${mutedBorder} px-4 py-3 text-sm font-medium transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)] sm:w-auto`}
+                      className={`group flex w-full items-center justify-between rounded-lg border ${mutedBorder} px-3 py-2 text-xs font-medium transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)] sm:w-auto sm:max-w-[180px]`}
                     >
-                      <span className="truncate">{neighbors.next.name}</span>
+                      <span className="max-w-[100px] truncate">{neighbors.next.name}</span>
                       <div className="flex items-center gap-2">
                         <span className={`text-xs uppercase tracking-wide ${subtleText}`}>Next</span>
                         <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
