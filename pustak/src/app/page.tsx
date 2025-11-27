@@ -20,6 +20,8 @@ import {
   Globe2,
 } from "lucide-react";
 
+export const dynamic = "force-dynamic";
+
 export default function HomePage() {
   const router = useRouter();
   const [stats, setStats] = useState({
