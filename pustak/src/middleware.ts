@@ -53,7 +53,12 @@ export async function middleware(request: NextRequest) {
       if (!validationResponse.ok) {
         const notFoundUrl = request.nextUrl.clone();
         notFoundUrl.pathname = "/404";
-        return NextResponse.rewrite(notFoundUrl, { status: 404 });
+        const notFoundResponse = NextResponse.rewrite(notFoundUrl, {
+          status: 404,
+        });
+        notFoundResponse.headers.set("x-middleware-cache", "no-cache");
+        notFoundResponse.headers.set("cache-control", "no-store");
+        return notFoundResponse;
       }
     } catch (error) {
       console.error("❌ Failed to validate docbook org", {
@@ -74,6 +79,7 @@ export async function middleware(request: NextRequest) {
 
     // Add org as a header for easy access in the component
     const response = NextResponse.rewrite(url);
+    response.headers.set("x-middleware-cache", "no-cache");
     response.headers.set("x-org-id", org);
     return response;
   }
