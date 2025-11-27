@@ -437,6 +437,46 @@ async def _fetch_folder_contents(
     return result
 
 
+def _normalize_sidebar_items(
+    contents: List[Dict[str, Any]],
+    repo_id: str,
+    base_path: str = "",
+) -> List[Dict[str, Any]]:
+    """Convert GitHub API content listing into a hierarchical sidebar."""
+
+    sidebar: List[Dict[str, Any]] = []
+    for item in contents:
+        current_path = f"{base_path}/{item['name']}" if base_path else item["name"]
+        normalized_path = f"/{repo_id}/{current_path}".replace("//", "/")
+
+        if item["type"] == "folder":
+            children = _normalize_sidebar_items(
+                item.get("files", []),
+                repo_id,
+                current_path,
+            )
+            sidebar.append(
+                {
+                    "id": normalized_path,
+                    "name": item["name"],
+                    "type": "folder",
+                    "path": normalized_path,
+                    "children": children,
+                }
+            )
+        elif item["type"] == "file" and item["name"].lower().endswith(".md"):
+            sidebar.append(
+                {
+                    "id": normalized_path,
+                    "name": item["name"].rsplit(".md", 1)[0],
+                    "type": "file",
+                    "path": normalized_path,
+                    "parent": f"/{repo_id}/{base_path}".replace("//", "/") if base_path else None,
+                }
+            )
+    return sidebar
+
+
 @router.get("/docbook/check-github-repo")
 async def check_docbook_repo_on_github(
     org_id: str,
@@ -1088,40 +1128,50 @@ async def _build_live_manifest(
     }
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(contents_url, headers=headers)
+        folder_tree = await _fetch_folder_contents(
+            client,
+            docbook_full_name,
+            repo_id,
+            commit_sha,
+            token,
+        )
 
-    if response.status_code == 404:
+    if not folder_tree:
         raise HTTPException(
             status_code=404,
-            detail=f"Repository {repo_id} not found in docbook",
+            detail=f"No published documentation found for repo {repo_id}",
         )
 
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code=502,
-            detail=f"GitHub API error: {response.text}",
-        )
+    sidebar_items = _normalize_sidebar_items(folder_tree, repo_id)
 
-    contents = response.json()
+    def flatten_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        flat: List[Dict[str, Any]] = []
+        for entry in items:
+            flat.append(entry)
+            if entry.get("children"):
+                flat.extend(flatten_items(entry["children"]))
+        return flat
 
-    sidebar = []
-    for item in contents:
-        if item["type"] == "dir":
-            sidebar.append(
-                {
-                    "section": item["name"],
-                    "path": f"/{repo_id}/{item['name']}",
-                    "type": "folder",
-                }
-            )
-        elif item["name"].endswith(".md"):
-            sidebar.append(
-                {
-                    "page": item["name"].replace(".md", ""),
-                    "path": f"/{repo_id}/{item['name']}",
-                    "type": "file",
-                }
-            )
+    flat_sidebar = [item for item in flatten_items(sidebar_items) if item["type"] == "file"]
+
+    navigation = {}
+    for idx, entry in enumerate(flat_sidebar):
+        prev_item = flat_sidebar[idx - 1] if idx > 0 else None
+        next_item = flat_sidebar[idx + 1] if idx + 1 < len(flat_sidebar) else None
+        navigation[entry["path"]] = {
+            "previous": {
+                "path": prev_item["path"],
+                "name": prev_item["name"],
+            }
+            if prev_item
+            else None,
+            "next": {
+                "path": next_item["path"],
+                "name": next_item["name"],
+            }
+            if next_item
+            else None,
+        }
 
     manifest = {
         "org_id": org_id,
@@ -1133,7 +1183,24 @@ async def _build_live_manifest(
         if docbook_repo.last_published_at
         else None,
         "live_url": docbook_repo.live_url,
-        "sidebar": sidebar,
+        "sidebar": sidebar_items,
+        "navigation": navigation,
+        "breadcrumbs": [
+            {
+                "label": org_id,
+                "path": f"/docs/{org_id}",
+            },
+            {
+                "label": repo_id,
+                "path": f"/docs/{org_id}/{repo_id}",
+            },
+        ],
+        "stats": {
+            "page_count": len(flat_sidebar),
+            "last_published_at": docbook_repo.last_published_at.isoformat()
+            if docbook_repo.last_published_at
+            else None,
+        },
         "theme": docbook_repo.live_theme
         or {
             "primary": "#3b82f6",
@@ -1148,7 +1215,7 @@ async def _build_live_manifest(
         extra={
             "org_id": org_id,
             "repo_id": repo_id,
-            "sidebar_items": len(sidebar),
+            "sidebar_items": len(flat_sidebar),
             "public": not bool(user),
         },
     )
@@ -1243,7 +1310,7 @@ async def _fetch_live_page(
     }
 
 
-@router.get("/live-manifest")
+@router.get("/docbook/live-manifest")
 async def get_live_manifest(
     org_id: str = Query(...),
     repo_id: str = Query(...),
@@ -1276,7 +1343,7 @@ async def get_live_manifest(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/live-manifest/public")
+@router.get("/docbook/live-manifest/public")
 async def get_live_manifest_public(
     org_id: str = Query(...),
     repo_id: str = Query(...),
@@ -1302,7 +1369,7 @@ async def get_live_manifest_public(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/live-content")
+@router.get("/docbook/live-content")
 async def get_live_content(
     org_id: str = Query(...),
     repo_id: str = Query(...),
@@ -1331,7 +1398,7 @@ async def get_live_content(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/live-content/public")
+@router.get("/docbook/live-content/public")
 async def get_live_content_public(
     org_id: str = Query(...),
     repo_id: str = Query(...),
@@ -1359,7 +1426,7 @@ async def get_live_content_public(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/publish-history")
+@router.get("/docbook/publish-history")
 async def get_publish_history(
     org_id: str = Query(...),
     limit: int = Query(10, ge=1, le=50),

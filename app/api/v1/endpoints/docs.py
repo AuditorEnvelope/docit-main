@@ -81,19 +81,34 @@ async def generate_documentation_v4(
     from datetime import datetime, timezone
     from sqlalchemy import select, update
     from app.models.repository import Repository
+    from app.services.repositories.service import RepositoryService
     
     try:
+        # Upsert repository record to ensure it exists
+        repo_service = RepositoryService(db)
+        await repo_service.upsert_tracked_branch(
+            repo_name,
+            tracked_branch="main",  # Default, will be overridden if already set
+            default_branch="main"
+        )
+        
         # Update the repository's last_documented_at field
         stmt = (
             update(Repository)
             .where(Repository.full_name == repo_name)
             .values(last_documented_at=datetime.now(timezone.utc))
         )
-        await db.execute(stmt)
+        result = await db.execute(stmt)
         await db.commit()
-        print(f"✅ Updated last_documented_at for {repo_name}")
+        
+        if result.rowcount > 0:
+            print(f"✅ Updated last_documented_at for {repo_name}")
+        else:
+            print(f"⚠️ No repository found to update last_documented_at for {repo_name}")
     except Exception as e:
         print(f"⚠️ Failed to update last_documented_at: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
         # Don't fail the whole request if this update fails
 
     return ManualGenerationResponse(

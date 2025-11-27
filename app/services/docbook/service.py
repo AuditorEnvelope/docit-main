@@ -63,7 +63,11 @@ class DocbookService:
         return repo
 
     async def get_repo_by_org(self, org_id: str) -> Optional[DocbookRepo]:
-        stmt = select(DocbookRepo).where(DocbookRepo.org_id == org_id, DocbookRepo.is_active.is_(True))
+        from sqlalchemy import func
+        stmt = select(DocbookRepo).where(
+            func.lower(DocbookRepo.org_id) == org_id.lower(),
+            DocbookRepo.is_active.is_(True)
+        )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
