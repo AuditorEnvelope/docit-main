@@ -16,6 +16,9 @@ import {
   Loader2,
   Link2,
   BookOpen,
+  Folder,
+  FileText,
+  Copy,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
@@ -31,6 +34,12 @@ interface SidebarItem {
   parent?: string | null;
   source_path?: string;
   children?: SidebarItem[];
+}
+
+interface HeadingItem {
+  id: string;
+  level: number;
+  text: string;
 }
 
 type ThemeColors = {
@@ -67,6 +76,8 @@ interface Manifest {
   };
 }
 
+const TOC_INDENT_CLASSES = ["pl-0", "pl-3", "pl-6", "pl-9", "pl-12"];
+
 export default function LiveDocsPage() {
   const params = useParams();
   const org = params.org as string;
@@ -86,6 +97,7 @@ export default function LiveDocsPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [headings, setHeadings] = useState<HeadingItem[]>([]);
 
   // Extract repo from slug (first segment)
   const repo = slug[0] || "";
@@ -344,26 +356,52 @@ export default function LiveDocsPage() {
   };
 
   const renderSidebarItems = (items: SidebarItem[], depth = 0) => {
-    return items.map((item) => {
-      if (item.type === "folder") {
+    return items.map((item, index) => {
+      const isFolder = item.type === "folder";
+      const label = item.name.replace(/-/g, " ");
+      const isRoot = depth === 0;
+
+      if (isFolder) {
         const isOpen = expandedNodes.has(item.id);
+        const wrapperClass = [
+          "mb-1",
+          isRoot
+            ? isLight
+              ? "mt-6 first:mt-3 border-t border-slate-200/70 first:border-transparent pt-4 first:pt-2"
+              : "mt-6 first:mt-3 border-t border-slate-800/70 first:border-transparent pt-4 first:pt-2"
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        const buttonClass = [
+          "flex w-full items-center gap-2 rounded-lg pr-3 transition-colors",
+          isRoot
+            ? "py-2 text-[0.7rem] font-semibold uppercase tracking-[0.32em]"
+            : "py-2 text-sm font-medium",
+          isLight
+            ? "text-slate-700 hover:bg-slate-100"
+            : "text-slate-300 hover:bg-slate-800/60",
+        ].join(" ");
+
         return (
-          <div key={item.id} className="mb-1">
+          <div key={item.id} className={wrapperClass}>
             <button
               onClick={() => toggleNode(item.id)}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                isLight
-                  ? "text-slate-800 hover:bg-slate-100" // Improved contrast
-                  : "text-slate-300 hover:bg-slate-800"
-              }`}
-              style={{ paddingLeft: `${depth * 16 + 12}px` }}
+              className={buttonClass}
+              style={{ paddingLeft: `${depth * 16 + 16}px` }}
             >
-              <ChevronRight
-                className={`h-4 w-4 transition-transform ${
-                  isOpen ? "rotate-90" : ""
-                }`}
-              />
-              <span className="capitalize">{item.name.replace(/-/g, " ")}</span>
+              <div className="flex items-center gap-2">
+                <ChevronRight
+                  className={`h-4 w-4 shrink-0 transition-transform ${
+                    isOpen ? "rotate-90" : ""
+                  }`}
+                />
+                <Folder className="h-4 w-4 shrink-0" />
+                <span className={isRoot ? "tracking-[0.32em]" : "capitalize"}>
+                  {isRoot ? label.toUpperCase() : label}
+                </span>
+              </div>
             </button>
             {isOpen && item.children && (
               <div className="mt-1">
@@ -375,6 +413,8 @@ export default function LiveDocsPage() {
       }
 
       const isActive = activePath === item.path;
+      const itemPadding = depth * 16 + 32;
+
       return (
         <button
           key={item.id}
@@ -382,20 +422,19 @@ export default function LiveDocsPage() {
             fetchContentByPath(item.path, true, item.source_path);
             setSidebarOpen(false);
           }}
-          className={`mb-1 flex w-full items-center rounded-lg px-3 py-2 text-sm transition-colors ${
+          className={`mb-1 flex w-full items-center gap-2 rounded-lg py-2 pr-3 text-sm transition-colors ${
             isActive
               ? isLight
                 ? "bg-indigo-50 text-indigo-600 font-medium"
-                : "bg-indigo-500/10 text-indigo-400 font-medium"
+                : "bg-indigo-500/10 text-indigo-300 font-medium"
               : isLight
-              ? "text-slate-700 hover:bg-slate-100 hover:text-slate-900" // Improved contrast
+              ? "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
               : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
           }`}
-          style={{ paddingLeft: `${depth * 16 + 40}px` }}
+          style={{ paddingLeft: `${itemPadding}px` }}
         >
-          <span className="truncate capitalize">
-            {item.name.replace(/-/g, " ")}
-          </span>
+          <FileText className="h-4 w-4 shrink-0" />
+          <span className="truncate capitalize">{label}</span>
         </button>
       );
     });
@@ -416,6 +455,39 @@ export default function LiveDocsPage() {
     const query = searchQuery.toLowerCase();
     return allFiles.filter((item) => item.name.toLowerCase().includes(query));
   }, [allFiles, searchQuery]);
+
+  const tocHeadings = useMemo(() => {
+    const seen = new Set<string>();
+    return headings
+      .filter((heading) => heading.level <= 4)
+      .filter((heading) => {
+        const key = heading.text.trim().toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((heading) => ({
+        ...heading,
+        indentClass:
+          TOC_INDENT_CLASSES[
+            Math.min(heading.level - 1, TOC_INDENT_CLASSES.length - 1)
+          ],
+      }));
+  }, [headings]);
+
+  const lastUpdatedDisplay = useMemo(() => {
+    const timestamp = manifest?.stats?.last_published_at ?? manifest?.published_at;
+    if (!timestamp) return null;
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, [manifest]);
 
   if (!mounted) {
     return null;
@@ -454,9 +526,7 @@ export default function LiveDocsPage() {
         <div className="max-w-md text-center">
           <div
             className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${
-              isLight
-                ? "bg-red-100"
-                : "bg-red-500/20"
+              isLight ? "bg-red-100" : "bg-red-500/20"
             }`}
           >
             <X
@@ -486,7 +556,7 @@ export default function LiveDocsPage() {
         isLight ? "bg-white" : "bg-slate-950"
       }`}
       style={{
-        color: isLight ? '#000000' : '#e2e8f0'
+        color: isLight ? "#000000" : "#e2e8f0",
       }}
     >
       {/* Mobile Sidebar Overlay */}
@@ -558,7 +628,9 @@ export default function LiveDocsPage() {
             {/* Sidebar Footer */}
             <div
               className={`px-4 py-5 ${
-                isLight ? "border-t border-slate-200 bg-white" : "border-t border-slate-800 bg-slate-900"
+                isLight
+                  ? "border-t border-slate-200 bg-white"
+                  : "border-t border-slate-800 bg-slate-900"
               }`}
             >
               <div
@@ -600,12 +672,12 @@ export default function LiveDocsPage() {
           <header
             className={`sticky top-0 z-30 border-b backdrop-blur-sm ${
               isLight
-                ? "border-slate-300 bg-white/80" // Improved border contrast
+                ? "border-slate-300 bg-white/85"
                 : "border-slate-800 bg-slate-900/80"
             }`}
           >
-            <div className="flex items-center justify-between px-6 py-4">
-              <div className="flex items-center gap-4">
+            <div className="flex flex-col gap-3 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-1 items-center gap-4">
                 <button
                   onClick={() => setSidebarOpen(true)}
                   className={`rounded-lg p-2 transition-colors lg:hidden ${
@@ -618,85 +690,104 @@ export default function LiveDocsPage() {
                 </button>
 
                 {/* Breadcrumbs */}
-                <nav className="hidden items-center gap-2 text-sm md:flex">
-                  {dynamicBreadcrumbs.map((crumb, index) => (
-                    <span key={crumb.path} className="flex items-center gap-2">
-                      {index > 0 && (
-                        <ChevronRight
-                          className={`h-4 w-4 ${
-                            isLight ? "text-slate-500" : "text-slate-600" // Improved contrast
-                          }`}
-                        />
-                      )}
-                      <a
-                        href={crumb.path}
-                        className={`transition-colors ${
-                          index === dynamicBreadcrumbs.length - 1
-                            ? isLight
-                              ? "font-medium text-slate-900"
-                              : "font-medium text-white"
-                            : isLight
-                            ? "text-slate-700 hover:text-slate-900" // Improved contrast
-                            : "text-slate-400 hover:text-slate-200"
-                        }`}
+                <nav
+                  className="hidden flex-1 items-center gap-2 text-sm md:flex"
+                  aria-label="Breadcrumb"
+                >
+                  {dynamicBreadcrumbs.map((crumb, index) => {
+                    const isLast = index === dynamicBreadcrumbs.length - 1;
+                    return (
+                      <span
+                        key={crumb.path}
+                        className="flex items-center gap-2"
                       >
-                        {crumb.label}
-                      </a>
-                    </span>
-                  ))}
+                        {index > 0 && (
+                          <ChevronRight
+                            className={`h-4 w-4 ${
+                              isLight ? "text-slate-400" : "text-slate-600"
+                            }`}
+                          />
+                        )}
+                        <a
+                          href={crumb.path}
+                          className={`transition-colors ${
+                            isLast
+                              ? isLight
+                                ? "text-base font-semibold text-slate-900"
+                                : "text-base font-semibold text-white"
+                              : isLight
+                              ? "text-xs font-semibold uppercase tracking-[0.3em] text-slate-500 hover:text-slate-800"
+                              : "text-xs font-semibold uppercase tracking-[0.3em] text-slate-500/80 hover:text-slate-200"
+                          }`}
+                        >
+                          {isLast ? crumb.label : crumb.label}
+                        </a>
+                      </span>
+                    );
+                  })}
                 </nav>
               </div>
 
-              <div className="flex items-center gap-2">
-                {/* Search Button */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Search Trigger */}
                 <button
                   onClick={() => setSearchOpen(true)}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                  className={`hidden min-w-[240px] items-center justify-between rounded-full border px-4 py-2 text-sm shadow-sm transition-all md:flex ${
                     isLight
-                      ? "border-slate-300 text-slate-700 hover:bg-slate-50" // Improved contrast
-                      : "border-slate-700 text-slate-400 hover:bg-slate-800"
+                      ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                      : "border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700 hover:text-slate-100"
                   }`}
                 >
-                  <Search className="h-4 w-4" />
-                  <span className="hidden sm:inline">Search</span>
+                  <span className="flex items-center gap-2">
+                    <Search className="h-4 w-4" />
+                    <span className="text-xs uppercase tracking-[0.3em]">
+                      Search
+                    </span>
+                  </span>
                   <kbd
-                    className={`hidden rounded border px-1.5 py-0.5 text-xs md:inline ${
+                    className={`rounded border px-1.5 py-0.5 text-xs ${
                       isLight
-                        ? "border-slate-400 bg-slate-100 text-slate-600" // Improved contrast
-                        : "border-slate-600 bg-slate-800 text-slate-400"
+                        ? "border-slate-300 bg-slate-100 text-slate-600"
+                        : "border-slate-700 bg-slate-800 text-slate-400"
                     }`}
                   >
                     ⌘K
                   </kbd>
                 </button>
 
-                {/* Copy Link Button */}
+                {/* Copy Page */}
                 <button
                   onClick={handleCopyLink}
-                  className={`rounded-lg border p-2 transition-colors ${
+                  className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
                     isLight
-                      ? "border-slate-300 text-slate-700 hover:bg-slate-50" // Improved contrast
-                      : "border-slate-700 text-slate-400 hover:bg-slate-800"
+                      ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                      : "border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-700 hover:text-slate-100"
                   }`}
-                  title={copied ? "Copied!" : "Copy link"}
                 >
-                  <Link2 className="h-4 w-4" />
+                  <Copy className="h-4 w-4" />
+                  <span>{copied ? "Copied" : "Copy Link"}</span>
                 </button>
 
                 {/* Theme Toggle */}
                 <button
                   onClick={handleThemeToggle}
-                  className={`rounded-lg border p-2 transition-colors ${
+                  className={`flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
                     isLight
-                      ? "border-slate-300 text-slate-700 hover:bg-slate-50" // Improved contrast
-                      : "border-slate-700 text-amber-400 hover:bg-slate-800"
+                      ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                      : "border-slate-800 bg-slate-900 text-amber-400 hover:border-slate-700 hover:text-amber-300"
                   }`}
                   title={`Switch to ${isLight ? "dark" : "light"} mode`}
                 >
                   {isLight ? (
-                    <Moon className="h-4 w-4" />
+                    <>
+                      <Moon className="h-4 w-4" />
+                      <span>Dark</span>
+                    </>
                   ) : (
-                    <Sun className="h-4 w-4" />
+                    <>
+                      <Sun className="h-4 w-4" />
+                      <span>Light</span>
+                    </>
                   )}
                 </button>
               </div>
@@ -705,7 +796,7 @@ export default function LiveDocsPage() {
 
           {/* Content - UPDATED SECTION */}
           <div className="flex-1 overflow-y-visible lg:overflow-y-auto">
-            <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-10">
+            <div className="mx-auto max-w-10xl px-6 py-6 sm:px-8 lg:ml-8 lg:mr-4 lg:px-6">
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2
@@ -716,83 +807,127 @@ export default function LiveDocsPage() {
                 </div>
               ) : (
                 <>
-                  <MarkdownRenderer
-                    content={content}
-                    isLight={isLight}
-                    className="space-y-6"
-                  />
+                  <div className="flex flex-col gap-10 lg:flex-row">
+                    <article className="min-w-0 flex-1 pb-16 lg:mt-14 lg:px-14 lg:pb-24">
+                      <MarkdownRenderer
+                        content={content}
+                        isLight={isLight}
+                        className="space-y-6"
+                        onHeadingsChange={setHeadings}
+                      />
 
-                  {/* Navigation */}
-                  {(neighbors.previous || neighbors.next) && (
-                    <div className="mt-8 grid gap-3 border-t pt-6 sm:grid-cols-2">
-                      {neighbors.previous && (
-                        <button
-                          onClick={() =>
-                            fetchContentByPath(
-                              neighbors.previous!.path,
-                              true,
-                              neighbors.previous!.source_path
-                            )
-                          }
-                          className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
-                            isLight
-                              ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
-                              : "border-slate-800 hover:bg-slate-800"
+                      {/* Navigation */}
+                      {(neighbors.previous || neighbors.next) && (
+                        <div className="mt-10 grid gap-3 border-t pt-6 sm:grid-cols-2">
+                          {neighbors.previous && (
+                            <button
+                              onClick={() =>
+                                fetchContentByPath(
+                                  neighbors.previous!.path,
+                                  true,
+                                  neighbors.previous!.source_path
+                                )
+                              }
+                              className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
+                                isLight
+                                  ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
+                                  : "border-slate-800 hover:bg-slate-800"
+                              }`}
+                            >
+                              <div
+                                className={`flex items-center gap-1 text-sm ${
+                                  isLight ? "text-slate-600" : "text-slate-400"
+                                } // Improved contrast
+                                }`}
+                              >
+                                <ArrowLeft className="h-3 w-3" />
+                                <span>Previous</span>
+                              </div>
+                              <span
+                                className={`text-sm font-medium ${
+                                  isLight ? "text-slate-900" : "text-white"
+                                }`}
+                              >
+                                {neighbors.previous.name}
+                              </span>
+                            </button>
+                          )}
+                          {neighbors.next && (
+                            <button
+                              onClick={() =>
+                                fetchContentByPath(
+                                  neighbors.next!.path,
+                                  true,
+                                  neighbors.next!.source_path
+                                )
+                              }
+                              className={`flex flex-col items-end gap-1 rounded-lg border p-3 text-right transition-colors ${
+                                isLight
+                                  ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
+                                  : "border-slate-800 hover:bg-slate-800"
+                              } ${!neighbors.previous ? "sm:col-start-2" : ""}`}
+                            >
+                              <div
+                                className={`flex items-center gap-1 text-sm ${
+                                  isLight ? "text-slate-600" : "text-slate-400"
+                                } // Improved contrast
+                                }`}
+                              >
+                                <span>Next</span>
+                                <ArrowRight className="h-3 w-3" />
+                              </div>
+                              <span
+                                className={`text-sm font-medium ${
+                                  isLight ? "text-slate-900" : "text-white"
+                                }`}
+                              >
+                                {neighbors.next.name}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {lastUpdatedDisplay && (
+                        <p
+                          className={`mt-12 text-sm ${
+                            isLight ? "text-slate-500" : "text-slate-500"
                           }`}
                         >
-                          <div
-                            className={`flex items-center gap-1 text-sm ${
-                              isLight ? "text-slate-600" : "text-slate-400"
-                            } // Improved contrast
-                            }`}
-                          >
-                            <ArrowLeft className="h-3 w-3" />
-                            <span>Previous</span>
-                          </div>
-                          <span
-                            className={`text-sm font-medium ${
-                              isLight ? "text-slate-900" : "text-white"
-                            }`}
-                          >
-                            {neighbors.previous.name}
-                          </span>
-                        </button>
+                          Last updated {lastUpdatedDisplay}
+                        </p>
                       )}
-                      {neighbors.next && (
-                        <button
-                          onClick={() =>
-                            fetchContentByPath(
-                              neighbors.next!.path,
-                              true,
-                              neighbors.next!.source_path
-                            )
-                          }
-                          className={`flex flex-col items-end gap-1 rounded-lg border p-3 text-right transition-colors ${
-                            isLight
-                              ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
-                              : "border-slate-800 hover:bg-slate-800"
-                          } ${!neighbors.previous ? "sm:col-start-2" : ""}`}
-                        >
-                          <div
-                            className={`flex items-center gap-1 text-sm ${
-                              isLight ? "text-slate-600" : "text-slate-400"
-                            } // Improved contrast
+                    </article>
+
+                    {tocHeadings.length > 0 && (
+                      <aside className="hidden w-64 shrink-0 lg:ml-12 lg:block">
+                        <div className="sticky top-12 text-sm">
+                          <p
+                            className={`text-xs font-semibold uppercase tracking-[0.35em] ${
+                              isLight ? "text-slate-500" : "text-slate-500"
                             }`}
                           >
-                            <span>Next</span>
-                            <ArrowRight className="h-3 w-3" />
-                          </div>
-                          <span
-                            className={`text-sm font-medium ${
-                              isLight ? "text-slate-900" : "text-white"
-                            }`}
-                          >
-                            {neighbors.next.name}
-                          </span>
-                        </button>
-                      )}
-                    </div>
-                  )}
+                            On this page
+                          </p>
+                          <nav className="mt-3 space-y-1.5">
+                            {tocHeadings.map((heading) => (
+                              <a
+                                key={heading.id}
+                                href={`#${heading.id}`}
+                                className={`block rounded-full py-1 text-sm transition-colors ${
+                                  isLight
+                                    ? "text-slate-500 hover:text-slate-900"
+                                    : "text-slate-400 hover:text-slate-100"
+                                } ${heading.indentClass}`}
+                              >
+                                {heading.text}
+                              </a>
+                            ))}
+                          </nav>
+                        </div>
+                      </aside>
+                    )}
+                  </div>
                 </>
               )}
             </div>
