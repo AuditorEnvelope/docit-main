@@ -497,7 +497,7 @@ export default function LiveDocsPage() {
         />
       )}
 
-      <div className="relative flex min-h-screen">
+      <div className="relative flex min-h-screen lg:h-screen lg:overflow-hidden">
         {/* Sidebar */}
         <aside
           className={`fixed inset-y-0 left-0 z-50 w-64 border-r transition-all duration-300 lg:relative lg:translate-x-0 ${
@@ -554,11 +554,48 @@ export default function LiveDocsPage() {
             <div className="flex-1 overflow-y-auto px-3 py-4">
               {manifest && renderSidebarItems(manifest.sidebar)}
             </div>
+
+            {/* Sidebar Footer */}
+            <div
+              className={`px-4 py-5 ${
+                isLight ? "border-t border-slate-200 bg-white" : "border-t border-slate-800 bg-slate-900"
+              }`}
+            >
+              <div
+                className={`rounded-xl p-4 text-center shadow-sm ${
+                  isLight
+                    ? "bg-gradient-to-r from-indigo-50 via-white to-purple-50"
+                    : "bg-slate-800/60"
+                }`}
+              >
+                <p
+                  className={`text-[10px] font-semibold uppercase tracking-[0.35em] ${
+                    isLight ? "text-slate-500" : "text-slate-400"
+                  }`}
+                >
+                  Powered by
+                </p>
+                <p
+                  className={`mt-2 text-lg font-bold ${
+                    isLight ? "text-indigo-600" : "text-indigo-300"
+                  }`}
+                >
+                  Pustak
+                </p>
+                <p
+                  className={`mt-3 text-xs leading-relaxed ${
+                    isLight ? "text-slate-500" : "text-slate-400"
+                  }`}
+                >
+                  Beautiful AI-generated documentation, always in sync.
+                </p>
+              </div>
+            </div>
           </div>
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1">
+        <main className="flex min-h-screen flex-1 flex-col lg:overflow-hidden">
           {/* Header */}
           <header
             className={`sticky top-0 z-30 border-b backdrop-blur-sm ${
@@ -667,96 +704,98 @@ export default function LiveDocsPage() {
           </header>
 
           {/* Content - UPDATED SECTION */}
-          <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-10">
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2
-                  className={`h-6 w-6 animate-spin ${
-                    isLight ? "text-indigo-600" : "text-indigo-400"
-                  }`}
-                />
-              </div>
-            ) : (
-              <>
-                <MarkdownRenderer
-                  content={content}
-                  isLight={isLight}
-                  className="space-y-6"
-                />
+          <div className="flex-1 overflow-y-visible lg:overflow-y-auto">
+            <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-10">
+              {loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2
+                    className={`h-6 w-6 animate-spin ${
+                      isLight ? "text-indigo-600" : "text-indigo-400"
+                    }`}
+                  />
+                </div>
+              ) : (
+                <>
+                  <MarkdownRenderer
+                    content={content}
+                    isLight={isLight}
+                    className="space-y-6"
+                  />
 
-                {/* Navigation */}
-                {(neighbors.previous || neighbors.next) && (
-                  <div className="mt-8 grid gap-3 border-t pt-6 sm:grid-cols-2">
-                    {neighbors.previous && (
-                      <button
-                        onClick={() =>
-                          fetchContentByPath(
-                            neighbors.previous!.path,
-                            true,
-                            neighbors.previous!.source_path
-                          )
-                        }
-                        className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
-                          isLight
-                            ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
-                            : "border-slate-800 hover:bg-slate-800"
-                        }`}
-                      >
-                        <div
-                          className={`flex items-center gap-1 text-sm ${
-                            isLight ? "text-slate-600" : "text-slate-400"
-                          } // Improved contrast
+                  {/* Navigation */}
+                  {(neighbors.previous || neighbors.next) && (
+                    <div className="mt-8 grid gap-3 border-t pt-6 sm:grid-cols-2">
+                      {neighbors.previous && (
+                        <button
+                          onClick={() =>
+                            fetchContentByPath(
+                              neighbors.previous!.path,
+                              true,
+                              neighbors.previous!.source_path
+                            )
+                          }
+                          className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
+                            isLight
+                              ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
+                              : "border-slate-800 hover:bg-slate-800"
                           }`}
                         >
-                          <ArrowLeft className="h-3 w-3" />
-                          <span>Previous</span>
-                        </div>
-                        <span
-                          className={`text-sm font-medium ${
-                            isLight ? "text-slate-900" : "text-white"
-                          }`}
+                          <div
+                            className={`flex items-center gap-1 text-sm ${
+                              isLight ? "text-slate-600" : "text-slate-400"
+                            } // Improved contrast
+                            }`}
+                          >
+                            <ArrowLeft className="h-3 w-3" />
+                            <span>Previous</span>
+                          </div>
+                          <span
+                            className={`text-sm font-medium ${
+                              isLight ? "text-slate-900" : "text-white"
+                            }`}
+                          >
+                            {neighbors.previous.name}
+                          </span>
+                        </button>
+                      )}
+                      {neighbors.next && (
+                        <button
+                          onClick={() =>
+                            fetchContentByPath(
+                              neighbors.next!.path,
+                              true,
+                              neighbors.next!.source_path
+                            )
+                          }
+                          className={`flex flex-col items-end gap-1 rounded-lg border p-3 text-right transition-colors ${
+                            isLight
+                              ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
+                              : "border-slate-800 hover:bg-slate-800"
+                          } ${!neighbors.previous ? "sm:col-start-2" : ""}`}
                         >
-                          {neighbors.previous.name}
-                        </span>
-                      </button>
-                    )}
-                    {neighbors.next && (
-                      <button
-                        onClick={() =>
-                          fetchContentByPath(
-                            neighbors.next!.path,
-                            true,
-                            neighbors.next!.source_path
-                          )
-                        }
-                        className={`flex flex-col items-end gap-1 rounded-lg border p-3 text-right transition-colors ${
-                          isLight
-                            ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
-                            : "border-slate-800 hover:bg-slate-800"
-                        } ${!neighbors.previous ? "sm:col-start-2" : ""}`}
-                      >
-                        <div
-                          className={`flex items-center gap-1 text-sm ${
-                            isLight ? "text-slate-600" : "text-slate-400"
-                          } // Improved contrast
-                          }`}
-                        >
-                          <span>Next</span>
-                          <ArrowRight className="h-3 w-3" />
-                        </div>
-                        <span
-                          className={`text-sm font-medium ${
-                            isLight ? "text-slate-900" : "text-white"
-                          }`}
-                        >
-                          {neighbors.next.name}
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
+                          <div
+                            className={`flex items-center gap-1 text-sm ${
+                              isLight ? "text-slate-600" : "text-slate-400"
+                            } // Improved contrast
+                            }`}
+                          >
+                            <span>Next</span>
+                            <ArrowRight className="h-3 w-3" />
+                          </div>
+                          <span
+                            className={`text-sm font-medium ${
+                              isLight ? "text-slate-900" : "text-white"
+                            }`}
+                          >
+                            {neighbors.next.name}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </main>
       </div>

@@ -67,17 +67,17 @@ export function MarkdownRenderer({
 
   const components = {
     h1: ({ children }: any) => (
-      <h1 className={`text-[1.75rem] leading-tight font-bold mt-10 mb-5 pb-3 border-b-2 ${isDark ? "text-slate-100 border-blue-400" : "text-black border-blue-500"}`}>
+      <h1 className={`text-[1.75rem] leading-tight font-bold mt-6 first:mt-3 mb-5 pb-3 border-b-2 ${isDark ? "text-slate-100 border-blue-400" : "text-black border-blue-500"}`}>
         {children}
       </h1>
     ),
     h2: ({ children }: any) => (
-      <h2 className={`text-xl font-semibold mt-8 mb-4 pb-2 border-b ${isDark ? "text-slate-100 border-slate-700" : "text-black border-slate-200"}`}>
+      <h2 className={`text-xl font-semibold mt-6 first:mt-4 mb-4 pb-2 border-b ${isDark ? "text-slate-100 border-slate-700" : "text-black border-slate-200"}`}>
         {children}
       </h2>
     ),
     h3: ({ children }: any) => (
-      <h3 className={`text-lg font-semibold mt-6 mb-2 ${isDark ? "text-slate-100" : "text-black"}`}>
+      <h3 className={`text-lg font-semibold mt-5 first:mt-3 mb-2 ${isDark ? "text-slate-100" : "text-black"}`}>
         {children}
       </h3>
     ),
