@@ -461,16 +461,19 @@ def _normalize_sidebar_items(
                     "name": item["name"],
                     "type": "folder",
                     "path": normalized_path,
+                    "source_path": normalized_path,
                     "children": children,
                 }
             )
         elif item["type"] == "file" and item["name"].lower().endswith(".md"):
+            display_path = normalized_path.rsplit(".md", 1)[0]
             sidebar.append(
                 {
-                    "id": normalized_path,
+                    "id": display_path,
                     "name": item["name"].rsplit(".md", 1)[0],
                     "type": "file",
-                    "path": normalized_path,
+                    "path": display_path,
+                    "source_path": normalized_path,
                     "parent": f"/{repo_id}/{base_path}".replace("//", "/") if base_path else None,
                 }
             )
@@ -1161,12 +1164,14 @@ async def _build_live_manifest(
         navigation[entry["path"]] = {
             "previous": {
                 "path": prev_item["path"],
+                "source_path": prev_item.get("source_path"),
                 "name": prev_item["name"],
             }
             if prev_item
             else None,
             "next": {
                 "path": next_item["path"],
+                "source_path": next_item.get("source_path"),
                 "name": next_item["name"],
             }
             if next_item

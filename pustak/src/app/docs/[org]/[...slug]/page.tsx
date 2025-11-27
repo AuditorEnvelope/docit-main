@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   Book,
@@ -30,6 +30,7 @@ interface SidebarItem {
   id: string;
   name: string;
   parent?: string | null;
+  source_path?: string;
   children?: SidebarItem[];
 }
 
@@ -45,8 +46,8 @@ interface Manifest {
   navigation: Record<
     string,
     {
-      previous: { path: string; name: string } | null;
-      next: { path: string; name: string } | null;
+      previous: { path: string; source_path?: string; name: string } | null;
+      next: { path: string; source_path?: string; name: string } | null;
     }
   >;
   breadcrumbs: { label: string; path: string }[];
@@ -76,6 +77,9 @@ export default function LiveDocsPage() {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [pageTitle, setPageTitle] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const { theme, setTheme } = useTheme();
 
   // Extract repo from slug (first segment)
@@ -83,6 +87,7 @@ export default function LiveDocsPage() {
   const docSegments = useMemo(() => slug.slice(1), [slug]);
   const docSegmentsKey = useMemo(() => docSegments.join("/"), [docSegments]);
   const docPath = docSegments.join("/");
+  const isLight = theme === "light";
 
   useEffect(() => {
     if (!org || !repo) {
@@ -136,7 +141,11 @@ export default function LiveDocsPage() {
     }
   };
 
-  const fetchContent = async (slugSegments: string[], displayPath?: string) => {
+  const fetchContent = async (
+    slugSegments: string[],
+    displayPath?: string,
+    sourceSegments?: string[],
+  ) => {
     setLoading(true);
     setError(null);
 
@@ -146,7 +155,9 @@ export default function LiveDocsPage() {
         repo_id: repo,
       });
 
-      slugSegments.forEach((segment) => {
+      const segmentsToUse = sourceSegments && sourceSegments.length ? sourceSegments : slugSegments;
+
+      segmentsToUse.forEach((segment) => {
         if (segment) {
           params.append("slug", segment);
         }
@@ -165,7 +176,7 @@ export default function LiveDocsPage() {
       const normalizedPath = displayPath || `/${[repo, ...slugSegments].join("/")}`;
       setActivePath(normalizedPath);
       const activeName = normalizedPath.split("/").pop() || repo;
-      setPageTitle(activeName.replace(/-/g, " ").replace(/_/g, " ")); 
+      setPageTitle(activeName.replace(/-/g, " ").replace(/_/g, " "));
       setError(null);
     } catch (err) {
       console.error("Error fetching content:", err);
@@ -175,17 +186,26 @@ export default function LiveDocsPage() {
     }
   };
 
-  const fetchContentByPath = async (path: string, pushHistory = true) => {
+  const fetchContentByPath = async (
+    path: string,
+    pushHistory = true,
+    sourcePath?: string,
+  ) => {
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     const segments = normalizedPath.split("/").filter(Boolean);
     const slugSegments = segments.slice(1);
+
+    const sourceNormalized = sourcePath
+      ? (sourcePath.startsWith("/") ? sourcePath : `/${sourcePath}`)
+      : normalizedPath;
+    const sourceSegments = sourceNormalized.split("/").filter(Boolean).slice(1);
 
     if (pushHistory) {
       const nextUrl = `/docs/${org}${normalizedPath}`;
       window.history.pushState({}, "", nextUrl);
     }
 
-    await fetchContent(slugSegments, normalizedPath);
+    await fetchContent(slugSegments, normalizedPath, sourceSegments);
   };
 
   useEffect(() => {
@@ -195,17 +215,13 @@ export default function LiveDocsPage() {
       const currentPath = `/${[repo, ...docSegments].join("/")}`;
       fetchContent(docSegments, currentPath);
     } else {
-      const firstDoc = manifest.sidebar
-        .flatMap((item) => {
-          if (item.type === "file") return [item];
-          if (item.children) {
-            return item.children.filter((child) => child.type === "file");
-          }
-          return [];
-        })
-        .find(Boolean);
+      const flatten = (items: SidebarItem[]): SidebarItem[] =>
+        items.flatMap((entry) =>
+          entry.type === "folder" && entry.children ? flatten(entry.children) : [entry],
+        );
+      const firstDoc = flatten(manifest.sidebar).find((item) => item.type === "file");
       if (firstDoc) {
-        fetchContentByPath(firstDoc.path);
+        fetchContentByPath(firstDoc.path, true, firstDoc.source_path);
       } else {
         setError("No published documentation found.");
       }
@@ -247,13 +263,30 @@ export default function LiveDocsPage() {
     return [...base, ...crumbs];
   }, [manifest, activePath, org, repo]);
 
+  const defaultDarkTheme = {
+    primary: manifest?.theme.primary ?? "#3b82f6",
+    secondary: manifest?.theme.secondary ?? "#8b5cf6",
+    background: manifest?.theme.background ?? "#0f172a",
+    foreground: manifest?.theme.foreground ?? "#f8fafc",
+  };
+
+  const defaultLightTheme = {
+    primary: "#2563eb",
+    secondary: "#7c3aed",
+    background: "#f8fafc",
+    foreground: "#0f172a",
+  };
+
+  const activeTheme = isLight ? defaultLightTheme : defaultDarkTheme;
+
   useEffect(() => {
     if (!manifest) return;
-    document.documentElement.style.setProperty("--live-primary", manifest.theme.primary);
-    document.documentElement.style.setProperty("--live-secondary", manifest.theme.secondary);
-    document.documentElement.style.setProperty("--live-background", manifest.theme.background);
-    document.documentElement.style.setProperty("--live-foreground", manifest.theme.foreground);
-  }, [manifest]);
+    document.documentElement.style.setProperty("--live-primary", activeTheme.primary);
+    document.documentElement.style.setProperty("--live-secondary", activeTheme.secondary);
+    document.documentElement.style.setProperty("--live-background", activeTheme.background);
+    document.documentElement.style.setProperty("--live-foreground", activeTheme.foreground);
+    document.body.style.backgroundColor = activeTheme.background;
+  }, [manifest, activeTheme]);
 
   useEffect(() => {
     if (copied) {
@@ -261,6 +294,24 @@ export default function LiveDocsPage() {
       return () => clearTimeout(timeout);
     }
   }, [copied]);
+
+  useEffect(() => {
+    if (searchOpen) {
+      const timeout = setTimeout(() => searchInputRef.current?.focus(), 120);
+      return () => clearTimeout(timeout);
+    }
+  }, [searchOpen]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && searchOpen) {
+        setSearchOpen(false);
+        setSearchQuery("");
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [searchOpen]);
 
   const toggleNode = (id: string) => {
     setExpandedNodes((prev) => {
@@ -307,7 +358,7 @@ export default function LiveDocsPage() {
         <button
           key={item.id}
           onClick={() => {
-            fetchContentByPath(item.path);
+            fetchContentByPath(item.path, true, item.source_path);
             setSidebarOpen(false);
           }}
           className={`group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
@@ -333,6 +384,23 @@ export default function LiveDocsPage() {
   const handleThemeToggle = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   };
+
+  const handleSearchClick = () => {
+    setSearchOpen(true);
+  };
+
+  const filteredResults = useMemo(() => {
+    if (!searchQuery.trim()) return allFiles;
+    const query = searchQuery.toLowerCase();
+    return allFiles.filter((item) => item.name.toLowerCase().includes(query));
+  }, [allFiles, searchQuery]);
+
+  const subtleText = isLight ? "text-slate-600" : "text-slate-400";
+  const mutedBorder = isLight ? "border-slate-200" : "border-white/10";
+  const panelBg = isLight ? "bg-white" : "bg-white/5";
+  const panelShadow = isLight ? "shadow-xl shadow-slate-200/40" : "shadow-lg shadow-black/30";
+  const headerBg = isLight ? "bg-white/90" : "bg-[var(--live-background)]/80";
+  const sidebarBg = isLight ? "bg-white" : "bg-white/5";
 
   if (loading && !manifest) {
     return (
@@ -360,11 +428,11 @@ export default function LiveDocsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--live-background)] text-slate-100">
+    <div className={`min-h-screen ${isLight ? "bg-slate-100 text-slate-900" : "bg-[var(--live-background)] text-slate-100"} transition-colors`}>
       <div className="relative flex min-h-screen">
         {/* Sidebar */}
         <aside
-          className={`fixed inset-y-0 left-0 z-50 w-80 border-r border-white/5 bg-white/5 backdrop-blur-xl transition-transform duration-300 lg:relative lg:translate-x-0 ${
+          className={`fixed inset-y-0 left-0 z-50 w-80 border-r ${mutedBorder} ${sidebarBg} backdrop-blur-xl transition-transform duration-300 lg:relative lg:translate-x-0 ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -381,34 +449,24 @@ export default function LiveDocsPage() {
               </div>
               <button
                 onClick={() => setSidebarOpen(false)}
-                className="rounded-lg p-1 text-slate-400 transition hover:bg-white/10 hover:text-white lg:hidden"
+                className={`rounded-lg p-1 ${subtleText} transition hover:bg-white/10 hover:text-[var(--live-primary)] lg:hidden`}
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="px-4">
-              <button className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 transition hover:border-white/20">
-                <Search className="h-4 w-4" />
-                <span>Search documentation</span>
-                <kbd className="ml-auto hidden rounded border border-white/20 px-1.5 py-0.5 text-xs text-slate-300 sm:inline">
-                  ⌘K
-                </kbd>
-              </button>
-            </div>
-
-            <nav className="mt-6 flex-1 overflow-y-auto px-2 pb-10">
+            <nav className="mt-2 flex-1 overflow-y-auto px-2 pb-10">
               <div className="space-y-1">
                 {manifest && renderSidebarItems(manifest.sidebar)}
               </div>
             </nav>
 
-            <footer className="border-t border-white/10 px-6 py-5">
-              <p className="text-xs text-slate-400">
+            <footer className={`border-t ${mutedBorder} px-6 py-5`}>
+              <p className={`text-xs ${subtleText}`}>
                 Powered by <span className="text-[var(--live-primary)]">Pustak AI</span>
               </p>
               {manifest?.stats?.last_published_at && (
-                <p className="mt-2 text-xs text-slate-500">
+                <p className={`mt-2 text-xs ${subtleText}`}>
                   Last published {new Date(manifest.stats.last_published_at).toLocaleString()}
                 </p>
               )}
@@ -418,12 +476,12 @@ export default function LiveDocsPage() {
 
         {/* Main Area */}
         <div className="flex min-h-screen flex-1 flex-col">
-          <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-[var(--live-background)]/80 backdrop-blur-xl">
-            <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <header className={`sticky top-0 z-40 w-full border-b ${mutedBorder} ${headerBg} backdrop-blur-xl transition-colors`}>
+            <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-4">
               <div className="flex items-center gap-4">
                 <button
                   onClick={() => setSidebarOpen(true)}
-                  className="rounded-lg border border-white/10 p-2 text-slate-300 transition hover:border-white/20 hover:text-white lg:hidden"
+                  className={`rounded-lg border ${mutedBorder} p-2 ${subtleText} transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)] lg:hidden`}
                 >
                   <Menu className="h-5 w-5" />
                 </button>
@@ -441,8 +499,17 @@ export default function LiveDocsPage() {
 
               <div className="flex items-center gap-3">
                 <button
+                  onClick={handleSearchClick}
+                  className={`rounded-lg border ${mutedBorder} px-3 py-2 text-xs font-medium transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)]`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Search className="h-4 w-4" />
+                    <span>Search</span>
+                  </div>
+                </button>
+                <button
                   onClick={handleCopyLink}
-                  className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-white/20 hover:text-white"
+                  className={`rounded-lg border ${mutedBorder} px-3 py-2 text-xs font-medium transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)]`}
                 >
                   <div className="flex items-center gap-2">
                     <Link2 className="h-4 w-4" />
@@ -451,27 +518,22 @@ export default function LiveDocsPage() {
                 </button>
                 <button
                   onClick={handleThemeToggle}
-                  className="rounded-lg border border-white/10 p-2 text-slate-200 transition hover:border-white/20 hover:text-white"
+                  className={`rounded-lg border ${mutedBorder} p-2 transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)]`}
                 >
-                  {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                  {isLight ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
                 </button>
               </div>
             </div>
           </header>
 
-          <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-10">
-            <section className="rounded-3xl border border-white/10 bg-white/5 px-8 py-10 shadow-lg backdrop-blur">
-              <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <main className="relative mx-auto flex w-full max-w-5xl flex-1 flex-col gap-10 px-6 py-10">
+            <section className={`rounded-3xl border ${mutedBorder} ${panelBg} px-8 py-10 ${panelShadow} backdrop-blur-md transition-colors`}>
+              <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-[var(--live-secondary)]">
-                    <span>Live Documentation</span>
-                    <span className="h-1 w-1 rounded-full bg-[var(--live-secondary)]"></span>
-                    <span>{manifest?.stats?.page_count ?? 0} pages</span>
-                  </div>
-                  <h1 className="mt-4 text-3xl font-semibold text-white sm:text-4xl">
+                  <h1 className="text-2xl font-semibold sm:text-3xl">
                     {pageTitle || manifest?.title}
                   </h1>
-                  <p className="mt-3 max-w-2xl text-sm text-slate-300">
+                  <p className={`mt-2 max-w-2xl text-sm ${subtleText}`}>
                     {manifest?.description}
                   </p>
                 </div>
@@ -480,7 +542,7 @@ export default function LiveDocsPage() {
                     href={manifest?.live_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-xl border border-white/10 px-4 py-2 text-xs font-medium text-slate-200 transition hover:border-white/20 hover:text-white"
+                    className={`rounded-xl border ${mutedBorder} px-4 py-2 text-xs font-medium transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)]`}
                   >
                     Open in GitHub
                   </a>
@@ -493,16 +555,16 @@ export default function LiveDocsPage() {
                     <Loader2 className="h-8 w-8 animate-spin text-[var(--live-primary)]" />
                   </div>
                 ) : (
-                  <article className="prose prose-invert max-w-none">
+                  <article className={`prose max-w-none ${isLight ? "prose-slate" : "prose-invert"}`}>
                     <MarkdownRenderer content={content} />
                   </article>
                 )}
               </div>
 
-              <footer className="mt-10 flex flex-col gap-4 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3 text-xs text-slate-400">
+              <footer className={`mt-10 flex flex-col gap-4 border-t ${mutedBorder} pt-6 lg:flex-row lg:items-center lg:justify-between`}>
+                <div className={`flex flex-wrap items-center gap-3 text-xs ${subtleText}`}>
                   <span>Commit</span>
-                  <span className="rounded bg-white/10 px-2 py-1 font-mono text-[10px] uppercase tracking-wider">
+                  <span className={`rounded bg-[var(--live-primary)]/10 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-[color:var(--live-foreground)]`}>
                     {manifest?.commit_sha.slice(0, 7)}
                   </span>
                   {manifest?.stats?.last_published_at && (
@@ -511,25 +573,41 @@ export default function LiveDocsPage() {
                     </span>
                   )}
                 </div>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
                   {neighbors.previous && (
                     <button
-                      onClick={() => fetchContentByPath(neighbors.previous!.path)}
-                      className="group flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-white/20 hover:text-white"
+                      onClick={() =>
+                        fetchContentByPath(
+                          neighbors.previous!.path,
+                          true,
+                          neighbors.previous!.source_path ?? neighbors.previous!.path,
+                        )
+                      }
+                      className={`group flex w-full min-w-[210px] items-center justify-between rounded-2xl border ${mutedBorder} px-4 py-3 text-sm font-medium transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)] sm:w-auto`}
                     >
-                      <ArrowLeft className="h-4 w-4 transition group-hover:-translate-x-1" />
-                      <span className="uppercase tracking-wide text-slate-400">Previous</span>
-                      <span className="text-slate-200">{neighbors.previous.name}</span>
+                      <div className="flex items-center gap-2">
+                        <ArrowLeft className="h-4 w-4 transition group-hover:-translate-x-1" />
+                        <span className={`text-xs uppercase tracking-wide ${subtleText}`}>Previous</span>
+                      </div>
+                      <span className="truncate text-right">{neighbors.previous.name}</span>
                     </button>
                   )}
                   {neighbors.next && (
                     <button
-                      onClick={() => fetchContentByPath(neighbors.next!.path)}
-                      className="group flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-white/20 hover:text-white"
+                      onClick={() =>
+                        fetchContentByPath(
+                          neighbors.next!.path,
+                          true,
+                          neighbors.next!.source_path ?? neighbors.next!.path,
+                        )
+                      }
+                      className={`group flex w-full min-w-[210px] items-center justify-between rounded-2xl border ${mutedBorder} px-4 py-3 text-sm font-medium transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)] sm:w-auto`}
                     >
-                      <span className="text-slate-200">{neighbors.next.name}</span>
-                      <span className="uppercase tracking-wide text-slate-400">Next</span>
-                      <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+                      <span className="truncate">{neighbors.next.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs uppercase tracking-wide ${subtleText}`}>Next</span>
+                        <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+                      </div>
                     </button>
                   )}
                 </div>
@@ -545,6 +623,63 @@ export default function LiveDocsPage() {
           />
         )}
       </div>
+
+      {searchOpen && (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/60 backdrop-blur-sm">
+          <div className={`mt-32 w-full max-w-xl rounded-2xl border ${mutedBorder} ${panelBg} p-6 ${panelShadow}`}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Search documentation</h2>
+              <button
+                onClick={() => {
+                  setSearchOpen(false);
+                  setSearchQuery("");
+                }}
+                className={`rounded-full border ${mutedBorder} p-1 transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)]`}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-4">
+              <div className={`flex items-center gap-3 rounded-xl border ${mutedBorder} bg-white/5 px-4 py-3 transition focus-within:border-[var(--live-primary)]/40`}>
+                <Search className="h-4 w-4" />
+                <input
+                  ref={searchInputRef}
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search pages..."
+                  className="h-8 flex-1 bg-transparent text-sm outline-none"
+                />
+                <kbd className={`hidden rounded border ${mutedBorder} px-2 py-0.5 text-xs ${subtleText} sm:inline`}>
+                  Esc
+                </kbd>
+              </div>
+            </div>
+            <div className="mt-4 max-h-64 overflow-y-auto pr-1">
+              {filteredResults.length === 0 ? (
+                <p className={`py-6 text-center text-sm ${subtleText}`}>No pages match “{searchQuery}”.</p>
+              ) : (
+                <ul className="space-y-2 text-sm">
+                  {filteredResults.map((item) => (
+                    <li key={item.path}>
+                      <button
+                        onClick={() => {
+                          fetchContentByPath(item.path, true, item.source_path);
+                          setSearchOpen(false);
+                          setSearchQuery("");
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl border ${mutedBorder} px-4 py-3 text-left transition hover:border-[var(--live-primary)]/40 hover:text-[var(--live-primary)]`}
+                      >
+                        <span className="truncate capitalize">{item.name.replace(/-/g, " ")}</span>
+                        <span className={`text-xs ${subtleText}`}>{item.path.replace(`/${repo}/`, "")}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
