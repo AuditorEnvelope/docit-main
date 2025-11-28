@@ -123,12 +123,55 @@ export async function middleware(request: NextRequest) {
       // REWRITE TO DOCS PAGE
       const url = request.nextUrl.clone();
       const originalPath = pathname === "/" ? "" : pathname;
-
+      
+      // Parse path to extract repo and possibly persona
+      const pathSegments = originalPath.split("/").filter(Boolean);
+      const repoName = pathSegments[0] || ""; // First segment is repo name
+      let personaName = pathSegments[1] || ""; // Second segment might be persona
+      const remainingPath = pathSegments.slice(personaName ? 2 : 1).join("/");
+      
+      // Check if the second segment is a valid persona, otherwise it's part of the path
+      const validPersonas = ["internal", "dev"];
+      if (!validPersonas.includes(personaName)) {
+        // If persona is not valid, it's part of the path
+        personaName = "dev"; // Default to dev persona
+      }
+      
+      // Check for auth when accessing internal persona
+      if (personaName === "internal") {
+        // Get auth token from cookies or headers
+        const authToken = request.cookies.get("pustak_access_token")?.value || 
+                         request.headers.get("authorization")?.replace("Bearer ", "");
+        
+        if (!authToken) {
+          console.log(`[Middleware] ⚠️ Unauthorized access attempt to internal docs for ${repoName}`);
+          
+          // Redirect to login page
+          const loginUrl = request.nextUrl.clone();
+          loginUrl.pathname = "/login";
+          loginUrl.searchParams.set("redirect", request.url);
+          
+          return NextResponse.redirect(loginUrl);
+        }
+        
+        // Here we could also validate the token with the backend
+        // For now, we just check if it exists
+        console.log(`[Middleware] ✅ Authorized access to internal docs for ${repoName}`);
+      }
+      
+      console.log(`[Middleware] Path Analysis: repo=${repoName}, persona=${personaName}, remaining=${remainingPath}`);
+      
       if (!originalPath && liveUrlPath) {
+        // Homepage with live URL path
         url.pathname = `/docs/${org}${liveUrlPath}`;
       } else if (!originalPath) {
+        // Homepage without live URL path
         url.pathname = `/docs/${org}`;
+      } else if (repoName && !personaName) {
+        // Repo without persona specified - default to dev
+        url.pathname = `/docs/${org}/${repoName}/dev${remainingPath ? "/" + remainingPath : ""}`;
       } else {
+        // Path with repo and persona already specified
         url.pathname = `/docs/${org}${originalPath}`;
       }
 

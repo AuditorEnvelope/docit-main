@@ -560,10 +560,42 @@ class DocbookPublisher:
         )
 
     def _sync_docs(self, repo_dir: Path, source_repo_name: str, docs_dir: Path) -> None:
+        # Create target repo directory
         target_dir = repo_dir / source_repo_name
         if target_dir.exists():
             shutil.rmtree(target_dir)
-        shutil.copytree(docs_dir, target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create docs directory inside target repo directory
+        target_docs_dir = target_dir / "docs"
+        target_docs_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Check if we're dealing with legacy structure (no internal/dev folders)
+        is_legacy = not any((docs_dir / persona).exists() for persona in ["internal", "dev"])
+        
+        if is_legacy:
+            # Legacy mode: Copy everything to internal folder
+            internal_target_dir = target_docs_dir / "internal"
+            internal_target_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Copy all files from docs_dir to internal_target_dir
+            for item in docs_dir.glob("**/*"):
+                if item.is_file():
+                    rel_path = item.relative_to(docs_dir)
+                    dest_path = internal_target_dir / rel_path
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(item, dest_path)
+                    
+            # Create minimal dev folder with README
+            dev_target_dir = target_docs_dir / "dev"
+            dev_target_dir.mkdir(parents=True, exist_ok=True)
+            with open(dev_target_dir / "README.md", "w") as f:
+                f.write(f"# {source_repo_name}\n\nPublic documentation is not available for this repository.")
+        else:
+            # New structure: Copy persona folders directly
+            shutil.copytree(docs_dir, target_docs_dir, dirs_exist_ok=True)
+        
+        # Add all changes
         self._run_git(["git", "add", f"{source_repo_name}/"], cwd=repo_dir)
 
     def _has_changes(self, repo_dir: Path) -> bool:

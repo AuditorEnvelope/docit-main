@@ -441,19 +441,31 @@ def _normalize_sidebar_items(
     contents: List[Dict[str, Any]],
     repo_id: str,
     base_path: str = "",
+    persona: str = "dev",
 ) -> List[Dict[str, Any]]:
     """Convert GitHub API content listing into a hierarchical sidebar."""
 
     sidebar: List[Dict[str, Any]] = []
     for item in contents:
         current_path = f"{base_path}/{item['name']}" if base_path else item["name"]
-        normalized_path = f"/{repo_id}/{current_path}".replace("//", "/")
+        
+        # Extract the path after the persona folder
+        if "docs/" in current_path and f"/{persona}/" in current_path:
+            parts = current_path.split(f"docs/{persona}/", 1)
+            if len(parts) > 1:
+                display_path = parts[1]
+                normalized_path = f"/{repo_id}/{persona}/{display_path}".replace("//", "/")
+            else:
+                normalized_path = f"/{repo_id}/{persona}/{current_path}".replace("//", "/")
+        else:
+            normalized_path = f"/{repo_id}/{persona}/{current_path}".replace("//", "/")
 
         if item["type"] == "folder":
             children = _normalize_sidebar_items(
                 item.get("files", []),
                 repo_id,
                 current_path,
+                persona,
             )
             sidebar.append(
                 {
@@ -1119,6 +1131,7 @@ async def _build_live_manifest(
     org_id: str,
     repo_id: str,
     user: Optional[User],
+    persona: str = "dev",
 ) -> Dict[str, Any]:
     user_uuid = user.id if user else None
     docbook_repo = await _resolve_docbook_repo(db=db, org_id=org_id, user_id=user_uuid)
@@ -1130,22 +1143,59 @@ async def _build_live_manifest(
 
     docbook_full_name = docbook_repo.docbook_full_name
     commit_sha = docbook_repo.last_published_commit
+    
+    # Include persona in the path
+    repo_path = f"{repo_id}/docs/{persona}"
+    print(f"📚 Accessing manifest for path: {repo_path} with persona: {persona}")
 
-    contents_url = f"https://api.github.com/repos/{docbook_full_name}/contents/{repo_id}?ref={commit_sha}"
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
         "User-Agent": "Pustak-AI",
     }
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        folder_tree = await _fetch_folder_contents(
-            client,
-            docbook_full_name,
-            repo_id,
-            commit_sha,
-            token,
-        )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # First check if the persona folder exists
+            try:
+                await _fetch_github_file(
+                    client=client,
+                    repo_full_name=docbook_full_name,
+                    path=repo_path,
+                    ref=commit_sha,
+                    token=token,
+                )
+            except HTTPException as e:
+                if e.status_code == 404:
+                    # Persona folder doesn't exist
+                    if persona == "internal":
+                        # For internal persona, suggest trying dev
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Internal documentation not available for {repo_id}. Try accessing the dev documentation instead."
+                        )
+                    else:
+                        # For dev persona
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Documentation not available for {repo_id}."
+                        )
+                else:
+                    # Other error
+                    raise e
+                    
+            # If we get here, the persona folder exists, fetch its contents
+            folder_tree = await _fetch_folder_contents(
+                client,
+                docbook_full_name,
+                repo_path,
+                commit_sha,
+                token,
+            )
+    except Exception as e:
+        if not isinstance(e, HTTPException):
+            print(f"❌ Error fetching folder contents: {e}")
+        raise
 
     if not folder_tree:
         raise HTTPException(
@@ -1153,7 +1203,7 @@ async def _build_live_manifest(
             detail=f"No published documentation found for repo {repo_id}",
         )
 
-    sidebar_items = _normalize_sidebar_items(folder_tree, repo_id)
+    sidebar_items = _normalize_sidebar_items(folder_tree, repo_id, persona=persona)
 
     def flatten_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         flat: List[Dict[str, Any]] = []
@@ -1189,8 +1239,9 @@ async def _build_live_manifest(
     manifest = {
         "org_id": org_id,
         "repo_id": repo_id,
+        "persona": persona,
         "title": repo_id.replace("-", " ").replace("_", " ").title(),
-        "description": f"Documentation for {repo_id}",
+        "description": f"{persona.capitalize()} documentation for {repo_id}",
         "commit_sha": commit_sha,
         "published_at": docbook_repo.last_published_at.isoformat()
         if docbook_repo.last_published_at
@@ -1207,9 +1258,14 @@ async def _build_live_manifest(
                 "label": repo_id,
                 "path": f"/docs/{org_id}/{repo_id}",
             },
+            {
+                "label": persona.capitalize(),
+                "path": f"/docs/{org_id}/{repo_id}/{persona}",
+            },
         ],
         "stats": {
             "page_count": len(flat_sidebar),
+            "persona": persona,
             "last_published_at": docbook_repo.last_published_at.isoformat()
             if docbook_repo.last_published_at
             else None,
@@ -1272,6 +1328,7 @@ async def _fetch_live_page(
     repo_id: str,
     slug: List[str],
     user: Optional[User],
+    persona: str = "dev",
 ) -> Dict[str, Any]:
     docbook_repo = await _resolve_docbook_repo(
         db=db,
@@ -1291,16 +1348,59 @@ async def _fetch_live_page(
     if not relative_path.lower().endswith(".md"):
         relative_path = f"{relative_path}.md"
 
-    repo_path = f"{repo_id}/{relative_path}" if repo_id else relative_path
+    # Include persona in the path
+    repo_path = f"{repo_id}/docs/{persona}/{relative_path}" if repo_id else f"docs/{persona}/{relative_path}"
+    
+    print(f"📄 Accessing content at path: {repo_path} with persona: {persona}")
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        file_data = await _fetch_github_file(
-            client=client,
-            repo_full_name=docbook_repo.docbook_full_name,
-            path=repo_path,
-            ref=docbook_repo.last_published_commit,
-            token=token,
-        )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            file_data = await _fetch_github_file(
+                client=client,
+                repo_full_name=docbook_repo.docbook_full_name,
+                path=repo_path,
+                ref=docbook_repo.last_published_commit,
+                token=token,
+            )
+    except HTTPException as e:
+        if e.status_code == 404:
+            # Check if the persona folder exists
+            try:
+                # Try to check if the persona folder exists
+                persona_path = f"{repo_id}/docs/{persona}"
+                await _fetch_github_file(
+                    client=httpx.AsyncClient(timeout=10.0),
+                    repo_full_name=docbook_repo.docbook_full_name,
+                    path=persona_path,
+                    ref=docbook_repo.last_published_commit,
+                    token=token,
+                )
+                # Persona folder exists, but the specific file doesn't
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Content not found: {relative_path}"
+                )
+            except HTTPException as persona_error:
+                if persona_error.status_code == 404:
+                    # Persona folder doesn't exist
+                    if persona == "internal":
+                        # For internal persona, suggest trying dev
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Internal documentation not available for {repo_id}. Try accessing the dev documentation instead."
+                        )
+                    else:
+                        # For dev persona
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Documentation not available for {repo_id}."
+                        )
+                else:
+                    # Other error
+                    raise persona_error
+        else:
+            # Other error
+            raise e
 
     content = file_data.get("content", "")
     if file_data.get("encoding") == "base64" and content:
@@ -1327,6 +1427,7 @@ async def _fetch_live_page(
 async def get_live_manifest(
     org_id: str = Query(...),
     repo_id: str = Query(...),
+    persona: str = Query("dev", description="Documentation persona (internal or dev)"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1341,11 +1442,18 @@ async def get_live_manifest(
     print(f"📋 Fetching live manifest for {org_id}/{repo_id}")
     
     try:
+        # Check if persona is valid
+        if persona not in ["internal", "dev"]:
+            persona = "dev"  # Default to dev if invalid
+            
+        print(f"📋 Using persona: {persona}")
+        
         return await _build_live_manifest(
             db=db,
             org_id=org_id,
             repo_id=repo_id,
             user=user,
+            persona=persona,
         )
     except HTTPException:
         raise
@@ -1384,6 +1492,7 @@ async def get_live_org_status(
 async def get_live_manifest_public(
     org_id: str = Query(...),
     repo_id: str = Query(...),
+    persona: str = Query("dev", description="Documentation persona (internal or dev)"),
     db: AsyncSession = Depends(get_db),
 ):
     """Public manifest endpoint without authentication."""
@@ -1391,11 +1500,24 @@ async def get_live_manifest_public(
     print(f"🌐 Fetching PUBLIC live manifest for {org_id}/{repo_id}")
 
     try:
+        # Check if persona is valid
+        if persona not in ["internal", "dev"]:
+            persona = "dev"  # Default to dev if invalid
+            
+        print(f"📋 Using persona: {persona} for public access")
+        
+        # For public access, force dev persona for internal requests
+        if persona == "internal":
+            # Check if user is authenticated
+            print(f"⚠️ Forcing dev persona for public access to internal docs")
+            persona = "dev"
+        
         return await _build_live_manifest(
             db=db,
             org_id=org_id,
             repo_id=repo_id,
             user=None,
+            persona=persona,
         )
     except HTTPException:
         raise
@@ -1410,6 +1532,7 @@ async def get_live_manifest_public(
 async def get_live_content(
     org_id: str = Query(...),
     repo_id: str = Query(...),
+    persona: str = Query("dev", description="Documentation persona (internal or dev)"),
     slug: List[str] = Query([], description="Path segments inside the published repo"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -1419,12 +1542,19 @@ async def get_live_content(
     print(f"📄 Fetching live content for {org_id}/{repo_id} slug={slug}")
 
     try:
+        # Check if persona is valid
+        if persona not in ["internal", "dev"]:
+            persona = "dev"  # Default to dev if invalid
+            
+        print(f"📋 Using persona: {persona}")
+        
         return await _fetch_live_page(
             db=db,
             org_id=org_id,
             repo_id=repo_id,
             slug=slug,
             user=user,
+            persona=persona,
         )
     except HTTPException:
         raise
@@ -1439,6 +1569,7 @@ async def get_live_content(
 async def get_live_content_public(
     org_id: str = Query(...),
     repo_id: str = Query(...),
+    persona: str = Query("dev", description="Documentation persona (internal or dev)"),
     slug: List[str] = Query([], description="Path segments inside the published repo"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1447,12 +1578,25 @@ async def get_live_content_public(
     print(f"🌐 Fetching PUBLIC live content for {org_id}/{repo_id} slug={slug}")
 
     try:
+        # Check if persona is valid
+        if persona not in ["internal", "dev"]:
+            persona = "dev"  # Default to dev if invalid
+            
+        print(f"📋 Using persona: {persona} for public access")
+        
+        # For public access, force dev persona for internal requests
+        if persona == "internal":
+            # Check if user is authenticated
+            print(f"⚠️ Forcing dev persona for public access to internal docs")
+            persona = "dev"
+        
         return await _fetch_live_page(
             db=db,
             org_id=org_id,
             repo_id=repo_id,
             slug=slug,
             user=None,
+            persona=persona,
         )
     except HTTPException:
         raise
