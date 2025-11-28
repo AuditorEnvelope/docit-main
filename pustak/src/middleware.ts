@@ -127,6 +127,38 @@ export async function middleware(request: NextRequest) {
       // Parse path to extract repo and possibly persona
       const pathSegments = originalPath.split("/").filter(Boolean);
       const repoName = pathSegments[0] || ""; // First segment is repo name
+      
+      // Special case for settings path
+      if (repoName === "settings" || pathSegments.includes("settings")) {
+        console.log(`[Middleware] ⚠️ Settings path detected: ${originalPath}`);
+        
+        // Extract org and repo from the settings URL
+        // Format: /settings/org/repo or /repo/settings/org/repo
+        let orgName = "";
+        let repoName = "";
+        
+        if (pathSegments[0] === "settings" && pathSegments.length >= 3) {
+          // /settings/org/repo format
+          orgName = pathSegments[1];
+          repoName = pathSegments[2];
+        } else if (pathSegments.indexOf("settings") > 0 && pathSegments.length >= pathSegments.indexOf("settings") + 2) {
+          // /repo/settings/org/repo format
+          const settingsIndex = pathSegments.indexOf("settings");
+          orgName = pathSegments[settingsIndex + 1];
+          repoName = pathSegments[settingsIndex + 2];
+        }
+        
+        if (orgName && repoName) {
+          // Redirect to the admin panel settings URL
+          const settingsUrl = new URL(request.url);
+          settingsUrl.hostname = hostname.replace(/^[^.]+\./, ""); // Remove subdomain
+          settingsUrl.pathname = `/repo/settings/${orgName}/${repoName}`;
+          
+          console.log(`[Middleware] 🔄 Redirecting to admin settings: ${settingsUrl.toString()}`);
+          return NextResponse.redirect(settingsUrl);
+        }
+      }
+      
       let personaName = pathSegments[1] || ""; // Second segment might be persona
       const remainingPath = pathSegments.slice(personaName ? 2 : 1).join("/");
       
