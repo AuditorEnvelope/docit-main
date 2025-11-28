@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Zap, CheckCircle, AlertCircle, Loader2, RefreshCw } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 interface GenerateDocsButtonProps {
   repoName: string;
@@ -21,7 +23,7 @@ export function GenerateDocsButton({
   repoName,
   repoFullName,
   hasDocsFolder,
-  docPersona = "internal",
+  docPersona: propDocPersona = "internal",
   onGenerationStart,
   onGenerationComplete,
   disabled = false,
@@ -31,7 +33,46 @@ export function GenerateDocsButton({
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [docPersona, setDocPersona] = useState<string>(propDocPersona);
+  const [isLoadingPersona, setIsLoadingPersona] = useState(false);
   const { token } = useAuth();
+  
+  // Fetch the current doc_persona from the backend
+  useEffect(() => {
+    const fetchDocPersona = async () => {
+      if (!token || !repoFullName) return;
+      
+      setIsLoadingPersona(true);
+      try {
+        const apiBase = BACKEND_URL.endsWith("/api/v1") 
+          ? BACKEND_URL 
+          : `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
+          
+        const response = await fetch(
+          `${apiBase}/repositories/${encodeURIComponent(repoFullName)}/doc-persona`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`📋 Fetched doc_persona for ${repoFullName}:`, data.doc_persona);
+          setDocPersona(data.doc_persona || propDocPersona);
+        }
+      } catch (err) {
+        console.error("Error fetching doc_persona:", err);
+        // Fall back to prop value
+        setDocPersona(propDocPersona);
+      } finally {
+        setIsLoadingPersona(false);
+      }
+    };
+
+    fetchDocPersona();
+  }, [repoFullName, token, propDocPersona]);
 
   const handleGenerate = async () => {
     if (disabled) {
@@ -50,6 +91,7 @@ export function GenerateDocsButton({
     try {
       onGenerationStart?.();
 
+      console.log(`🚀 Generating docs for ${repoFullName} with persona: ${docPersona}`);
       const response = await fetch("/api/generate-docs", {
         method: "POST",
         headers: {

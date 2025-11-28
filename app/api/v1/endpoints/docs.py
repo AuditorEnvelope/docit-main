@@ -49,7 +49,45 @@ async def generate_documentation_v4(
 
     github_token = _require_github_token(user)
     org_id, source_repo = _parse_repo_full_name(repo_name)
+    
+    # Validate and normalize doc_persona
+    valid_personas = ["internal", "developer"]
+    
+    # Log the requested persona
+    print(f"🔍 Requested doc_persona: {doc_persona}")
+    
+    # Check if we need to fetch from database
+    if doc_persona not in valid_personas:
+        # Try to get the repository's doc_persona from database
+        try:
+            from sqlalchemy import select
+            from app.models.repository import Repository
+            
+            stmt = select(Repository.doc_persona).where(
+                (Repository.full_name == repo_name) | (Repository.repo_id == repo_name)
+            )
+            result = await db.execute(stmt)
+            db_persona = result.scalar_one_or_none()
+            
+            if db_persona and db_persona in valid_personas:
+                print(f"✅ Using database doc_persona: {db_persona}")
+                doc_persona = db_persona
+            else:
+                print(f"⚠️ Invalid doc_persona: {doc_persona}, falling back to 'internal'")
+                doc_persona = "internal"
+        except Exception as e:
+            print(f"⚠️ Error fetching doc_persona from database: {e}")
+            print(f"⚠️ Falling back to 'internal'")
+            doc_persona = "internal"
+    
+    # Map 'developer' to 'dev' for compatibility
+    if doc_persona == "developer":
+        doc_persona = "dev"
+        print(f"🔄 Mapped 'developer' to 'dev' for compatibility")
+    
+    print(f"📝 Using doc_persona: {doc_persona} for {repo_name}")
 
+    # Create generator with validated persona
     generator = ManualDocGenerator(doc_persona=doc_persona)
     dual_app_helper = GitHubDualAppHelper()
     publisher = DocbookPublisher(dual_app=dual_app_helper, db_session=db)
