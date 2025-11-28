@@ -1661,8 +1661,10 @@ async def get_live_content_public(
 ):
     """Public live content endpoint without authentication."""
 
-    print(f"🌐 Fetching PUBLIC live content for {org_id}/{repo_id} slug={slug}")
-    
+    print("=" * 80)
+    print(f"🌐 Fetching PUBLIC live content for {org_id}/{repo_id}")
+    print(f"🔢 Raw slug list: {slug}")
+
     # Compatibility fix for old URL pattern where repo_id=docs and persona=org_id
     if repo_id == "docs":
         print(f"🔄 Legacy URL pattern detected: repo_id=docs, persona={persona}")
@@ -1670,14 +1672,39 @@ async def get_live_content_public(
         if org_id == "bajrangbalikijai":
             repo_id = "jaishreram"
             print(f"✅ Fixed repo_id to: {repo_id}")
-            
-            # Special handling for the deployed frontend URL pattern
-            # It sends slug=["jaishreram", "dev"] for the root page
-            if len(slug) >= 2 and slug[0] == "jaishreram" and slug[1] == "dev":
-                print(f"🔍 Detected deployed frontend URL pattern - fixing slug")
-                # Replace with SUMMARY.md to show the main page
-                slug = ["SUMMARY.md"]
-                print(f"✅ Fixed slug to: {slug}")
+
+    original_slug = list(slug)
+    cleaned_slug = [segment for segment in slug if segment]
+
+    # Remove common redundant prefixes
+    prefixes_to_strip = ["docs", org_id, repo_id]
+    while cleaned_slug and cleaned_slug[0] in prefixes_to_strip:
+        removed = cleaned_slug.pop(0)
+        print(f"🧹 Removed redundant slug prefix: {removed}")
+
+    # Handle persona segment if present
+    if cleaned_slug and cleaned_slug[0] == persona:
+        cleaned_slug.pop(0)
+        print(f"🧹 Removed persona segment from slug (persona={persona})")
+
+    # Special handling for deployed frontend variants
+    if (len(cleaned_slug) >= 2 and
+            cleaned_slug[0] == repo_id and
+            cleaned_slug[1] == persona):
+        print("🧭 Detected repo/persona slug tuple – trimming")
+        cleaned_slug = cleaned_slug[2:]
+
+    if cleaned_slug:
+        if cleaned_slug[0].upper() == "SUMMARY":
+            cleaned_slug[0] = "SUMMARY.md"
+    else:
+        cleaned_slug = ["SUMMARY.md"]
+        print("🧭 Empty slug after normalization – defaulting to SUMMARY.md")
+
+    if cleaned_slug != original_slug:
+        print(f"🔧 Normalized slug from {original_slug} -> {cleaned_slug}")
+
+    slug = cleaned_slug
 
     try:
         # Special case for www as org_id - this should be handled by middleware but just in case

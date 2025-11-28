@@ -658,8 +658,7 @@ export default function LiveDocsPage() {
         <br />
         org={org}, repo={repo}, persona={persona}, slug={JSON.stringify(slug)}
       </div> */}
-      <div className="h-16"></div>{" "}
-      {/* Spacer to prevent content from being hidden under banner */}
+
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div
