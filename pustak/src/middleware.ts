@@ -188,52 +188,14 @@ export async function middleware(request: NextRequest) {
         }
       }
       
-      // Check if the second segment is a valid persona, otherwise it's part of the path
-      const validPersonas = ["internal", "dev"];
-      let personaName = pathSegments[1] || "";
-      let remainingPath = "";
-      
-      if (validPersonas.includes(personaName)) {
-        // Second segment is a valid persona
-        remainingPath = pathSegments.slice(2).join("/");
-        console.log(`[Middleware] 🔍 Valid persona found: ${personaName}, remaining path: ${remainingPath}`);
-      } else {
-        // Second segment is not a valid persona, so it's part of the path
-        personaName = "dev"; // Default to dev persona
-        remainingPath = pathSegments.slice(1).join("/");
-        console.log(`[Middleware] 🔍 No valid persona found, using default: ${personaName}, remaining path: ${remainingPath}`);
-      }
-      
-      // Check for auth when accessing internal persona
-      if (personaName === "internal") {
-        // Get auth token from cookies or headers
-        const authToken = request.cookies.get("pustak_access_token")?.value || 
-                         request.headers.get("authorization")?.replace("Bearer ", "");
-        
-        if (!authToken) {
-          console.log(`[Middleware] ⚠️ Unauthorized access attempt to internal docs for ${repoName}`);
-          
-          // Redirect to login page
-          const loginUrl = request.nextUrl.clone();
-          loginUrl.pathname = "/login";
-          loginUrl.searchParams.set("redirect", request.url);
-          
-          return NextResponse.redirect(loginUrl);
-        }
-        
-        // Here we could also validate the token with the backend
-        // For now, we just check if it exists
-        console.log(`[Middleware] ✅ Authorized access to internal docs for ${repoName}`);
-      }
-      
-      console.log(`[Middleware] Path Analysis: repo=${repoName}, persona=${personaName}, remaining=${remainingPath}`);
-      
       // CRITICAL FIX: For subdomain access, we must ensure:
       // 1. repo_id is ALWAYS the first path segment (not 'docs')
       // 2. persona is ALWAYS a valid value (not the org name)
       
       console.log(`[DOCS_DEBUG] 📚 Starting URL rewriting logic`);
       console.log(`[DOCS_DEBUG] 📚 originalPath=${originalPath}, liveUrlPath=${liveUrlPath}, repoName=${repoName}`);
+      
+      const validPersonas = ["internal", "dev"];
       
       if (!originalPath && liveUrlPath) {
         // Homepage with live URL path
@@ -255,6 +217,22 @@ export async function middleware(request: NextRequest) {
         console.log(`[DOCS_DEBUG] 📚 Checking if second segment is valid persona. pathSegments[1]=${pathSegments[1]}`);
         if (validPersonas.includes(pathSegments[1] || "")) {
           persona = pathSegments[1];
+          
+          // Check for auth when accessing internal persona
+          if (persona === "internal") {
+            const authToken = request.cookies.get("pustak_access_token")?.value || 
+                             request.headers.get("authorization")?.replace("Bearer ", "");
+            
+            if (!authToken) {
+              console.log(`[Middleware] ⚠️ Unauthorized access attempt to internal docs for ${repoName}`);
+              const loginUrl = request.nextUrl.clone();
+              loginUrl.pathname = "/login";
+              loginUrl.searchParams.set("redirect", request.url);
+              return NextResponse.redirect(loginUrl);
+            }
+            console.log(`[Middleware] ✅ Authorized access to internal docs for ${repoName}`);
+          }
+          
           const remainingSegments = pathSegments.slice(2);
           
           // Use the old component pattern: /docs/[org]/[...slug]
