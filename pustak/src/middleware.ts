@@ -117,9 +117,22 @@ export async function middleware(request: NextRequest) {
 
       console.log(`[Middleware] ✅ Org '${org}' is valid. Serving docs.`);
 
+      const alreadyDocsPath =
+        pathname === `/docs/${org}` || pathname.startsWith(`/docs/${org}/`);
+
+      if (alreadyDocsPath) {
+        console.log(
+          `[Middleware] ✅ Path already rewritten (${pathname}). Passing through.`
+        );
+        const response = NextResponse.next({ request });
+        response.headers.set("x-middleware-cache", "no-cache");
+        response.headers.set("x-org-id", org);
+        return response;
+      }
+
       let liveUrlPath = "";
       try {
-        const parsed = (await validationResponse.json()) as {
+        const parsed = (await validationResponse.json()) as { 
           live_url?: string;
         };
         if (parsed?.live_url) {
