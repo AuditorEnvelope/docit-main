@@ -12,11 +12,26 @@ export async function middleware(request: NextRequest) {
   // 1. GET HOSTNAME SAFELY
   // Prefer the "Host" header which is more reliable behind proxies like Render/Cloudflare
   const hostHeader = request.headers.get("host") || "";
-  const nextUrlHostname = request.nextUrl.hostname;
+  const hostname = hostHeader.split(":")[0] || request.nextUrl.hostname;
+  const pathname = request.nextUrl.pathname || "/";
+  const method = request.method;
+  const acceptHeader = request.headers.get("accept") || "";
 
-  // Use the Host header if available, otherwise fall back to nextUrl
-  // We remove the port number if present (e.g. localhost:3000 -> localhost)
-  const hostname = hostHeader.split(":")[0] || nextUrlHostname;
+  const isPrefetch = request.headers.get("purpose") === "prefetch";
+  const isStaticAssetRequest =
+    pathname.startsWith("/_next/") ||
+    pathname.startsWith("/favicon") ||
+    pathname.startsWith("/robots") ||
+    pathname.startsWith("/manifest") ||
+    pathname.startsWith("/sitemap") ||
+    pathname.startsWith("/404") ||
+    /\.(?:css|js|mjs|json|ico|png|jpg|jpeg|gif|svg|webp|avif|txt|xml|woff|woff2|ttf|map)$/i.test(
+      pathname
+    );
+
+  if (method === "OPTIONS" || isPrefetch || isStaticAssetRequest) {
+    return NextResponse.next();
+  }
 
   // 🔍 DEBUG LOGS (Check Render logs to see these!)
   console.log(`[Middleware] Processing: ${request.url}`);
@@ -47,7 +62,11 @@ export async function middleware(request: NextRequest) {
   console.log(`[Middleware] Extracted Org: ${org}`);
 
   // 3. VALIDATION LOGIC
-  if (org) {
+  const isHtmlRequest =
+    method === "GET" &&
+    (acceptHeader.includes("text/html") || acceptHeader === "*/*");
+
+  if (org && isHtmlRequest) {
     // Check if this is a request for the root path or docs path
     // We generally want to intercept EVERYTHING on this subdomain
 
@@ -77,15 +96,40 @@ export async function middleware(request: NextRequest) {
 
         // We rewrite, not redirect, to keep the URL the same but show 404 content
         const response = NextResponse.rewrite(notFoundUrl);
+        response.status = 404;
         response.headers.set("x-middleware-cache", "no-cache");
         return response;
       }
 
       console.log(`[Middleware] ✅ Org '${org}' is valid. Serving docs.`);
 
+      let liveUrlPath = "";
+      try {
+        const parsed = (await validationResponse.json()) as {
+          live_url?: string;
+        };
+        if (parsed?.live_url) {
+          const liveUrl = new URL(parsed.live_url);
+          liveUrlPath = liveUrl.pathname === "/" ? "" : liveUrl.pathname;
+        }
+      } catch (error) {
+        console.warn(
+          `[Middleware] Warning: unable to parse live status response for org '${org}':`,
+          error
+        );
+      }
+
       // REWRITE TO DOCS PAGE
       const url = request.nextUrl.clone();
-      url.pathname = `/docs/${org}${request.nextUrl.pathname}`;
+      const originalPath = pathname === "/" ? "" : pathname;
+
+      if (!originalPath && liveUrlPath) {
+        url.pathname = `/docs/${org}${liveUrlPath}`;
+      } else if (!originalPath) {
+        url.pathname = `/docs/${org}`;
+      } else {
+        url.pathname = `/docs/${org}${originalPath}`;
+      }
 
       const response = NextResponse.rewrite(url);
       response.headers.set("x-middleware-cache", "no-cache");
