@@ -83,6 +83,18 @@ export default function LiveDocsPage() {
   const org = params.org as string;
   const slug = (params.slug as string[]) || [];
 
+  const validPersonas = ["internal", "dev"] as const;
+
+  const repo = slug[0] || "";
+  const hasExplicitPersona = validPersonas.includes((slug[1] as (typeof validPersonas)[number]) || "" as any);
+  const persona = hasExplicitPersona ? (slug[1] as string) : "dev";
+
+  const docSegments = useMemo(
+    () => (hasExplicitPersona ? slug.slice(2) : slug.slice(1)),
+    [slug, hasExplicitPersona]
+  );
+  const docSegmentsKey = useMemo(() => docSegments.join("/"), [docSegments]);
+
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [content, setContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -98,11 +110,6 @@ export default function LiveDocsPage() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [headings, setHeadings] = useState<HeadingItem[]>([]);
-
-  // Extract repo from slug (first segment)
-  const repo = slug[0] || "";
-  const docSegments = useMemo(() => slug.slice(1), [slug]);
-  const docSegmentsKey = useMemo(() => docSegments.join("/"), [docSegments]);
 
   // Use resolvedTheme to avoid hydration issues
   const isLight = mounted ? resolvedTheme === "light" : true; // Default to light theme
@@ -133,8 +140,8 @@ export default function LiveDocsPage() {
   }, [isLight, mounted]);
 
   useEffect(() => {
-    if (!org || !repo) {
-      setError("Invalid URL: organization or repository not specified");
+    if (!org || !repo || repo === "docs") {
+      setError("Invalid documentation URL");
       setLoading(false);
       return;
     }
@@ -150,13 +157,10 @@ export default function LiveDocsPage() {
     try {
       setLoading(true);
       setError(null);
-      // Determine the persona based on the URL structure
-      // If the second segment is a valid persona, use it, otherwise default to "dev"
-      const validPersonas = ["internal", "dev"];
-      const persona = validPersonas.includes(slug[1] || "") ? slug[1] : "dev";
-      
-      console.log(`🔍 Fetching manifest with: org=${org}, repo=${repo}, persona=${persona}, slug=${JSON.stringify(slug)}`);
-      
+      console.log(
+        `🔍 Fetching manifest with: org=${org}, repo=${repo}, persona=${persona}, slug=${JSON.stringify(slug)}`
+      );
+
       const response = await fetch(
         `${apiBase}/docbook/live-manifest/public?org_id=${encodeURIComponent(
           org
@@ -204,13 +208,12 @@ export default function LiveDocsPage() {
     setError(null);
 
     try {
-      // Determine the persona based on the URL structure
-      // If the second segment is a valid persona, use it, otherwise default to "dev"
-      const validPersonas = ["internal", "dev"];
-      const persona = validPersonas.includes(slug[1] || "") ? slug[1] : "dev";
-      
-      console.log(`🔍 Fetching content with: org=${org}, repo=${repo}, persona=${persona}, slugSegments=${JSON.stringify(slugSegments)}`);
-      
+      console.log(
+        `🔍 Fetching content with: org=${org}, repo=${repo}, persona=${persona}, slugSegments=${JSON.stringify(
+          slugSegments
+        )}`
+      );
+
       const params = new URLSearchParams({
         org_id: org,
         repo_id: repo,
