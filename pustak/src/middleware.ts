@@ -142,6 +142,7 @@ export async function middleware(request: NextRequest) {
       const repoName = pathSegments[0] || ""; // First segment is repo name
       
       console.log(`[Middleware] 🔍 Path segments: ${JSON.stringify(pathSegments)}, repoName: ${repoName}`);
+      console.log(`[Middleware] 🔍 Original URL: ${request.url}`);
       
       // Special case for settings path or any path with "settings" in it
       if (originalPath.includes("/settings") || repoName === "settings" || pathSegments.includes("settings")) {
@@ -161,14 +162,20 @@ export async function middleware(request: NextRequest) {
         }
       }
       
-      let personaName = pathSegments[1] || ""; // Second segment might be persona
-      const remainingPath = pathSegments.slice(personaName ? 2 : 1).join("/");
-      
       // Check if the second segment is a valid persona, otherwise it's part of the path
       const validPersonas = ["internal", "dev"];
-      if (!validPersonas.includes(personaName)) {
-        // If persona is not valid, it's part of the path
+      let personaName = pathSegments[1] || "";
+      let remainingPath = "";
+      
+      if (validPersonas.includes(personaName)) {
+        // Second segment is a valid persona
+        remainingPath = pathSegments.slice(2).join("/");
+        console.log(`[Middleware] 🔍 Valid persona found: ${personaName}, remaining path: ${remainingPath}`);
+      } else {
+        // Second segment is not a valid persona, so it's part of the path
         personaName = "dev"; // Default to dev persona
+        remainingPath = pathSegments.slice(1).join("/");
+        console.log(`[Middleware] 🔍 No valid persona found, using default: ${personaName}, remaining path: ${remainingPath}`);
       }
       
       // Check for auth when accessing internal persona

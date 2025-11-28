@@ -150,10 +150,17 @@ export default function LiveDocsPage() {
     try {
       setLoading(true);
       setError(null);
+      // Determine the persona based on the URL structure
+      // If the second segment is a valid persona, use it, otherwise default to "dev"
+      const validPersonas = ["internal", "dev"];
+      const persona = validPersonas.includes(slug[1] || "") ? slug[1] : "dev";
+      
+      console.log(`🔍 Fetching manifest with: org=${org}, repo=${repo}, persona=${persona}, slug=${JSON.stringify(slug)}`);
+      
       const response = await fetch(
         `${apiBase}/docbook/live-manifest/public?org_id=${encodeURIComponent(
           org
-        )}&repo_id=${encodeURIComponent(repo)}`
+        )}&repo_id=${encodeURIComponent(repo)}&persona=${encodeURIComponent(persona)}`
       );
 
       if (!response.ok) {
@@ -197,9 +204,17 @@ export default function LiveDocsPage() {
     setError(null);
 
     try {
+      // Determine the persona based on the URL structure
+      // If the second segment is a valid persona, use it, otherwise default to "dev"
+      const validPersonas = ["internal", "dev"];
+      const persona = validPersonas.includes(slug[1] || "") ? slug[1] : "dev";
+      
+      console.log(`🔍 Fetching content with: org=${org}, repo=${repo}, persona=${persona}, slugSegments=${JSON.stringify(slugSegments)}`);
+      
       const params = new URLSearchParams({
         org_id: org,
         repo_id: repo,
+        persona: persona,
       });
 
       const segmentsToUse =
