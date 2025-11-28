@@ -948,7 +948,31 @@ export default function DashboardPage() {
                                     // Extract org and repo from fullName (format: org/repo)
                                     const [org, repo] = fullName.split('/');
                                     if (org && repo) {
-                                      router.push(`/repo/settings/${org}/${repo}`);
+                                      // Check if we're on a subdomain
+                                      const hostname = window.location.hostname;
+                                      const isSubdomain = hostname.split('.').length > 2 && 
+                                                        !hostname.startsWith('www.') && 
+                                                        !hostname.startsWith('localhost');
+                                      
+                                      console.log(`🔍 Settings button clicked for ${org}/${repo}`);
+                                      console.log(`🔍 Current hostname: ${hostname}, isSubdomain: ${isSubdomain}`);
+                                      
+                                      if (isSubdomain) {
+                                        // If on a subdomain, we need to go to the main domain
+                                        // Extract the main domain (e.g., docbook.site from org.docbook.site)
+                                        const domainParts = hostname.split('.');
+                                        const mainDomain = domainParts.slice(1).join('.');
+                                        
+                                        // Construct the full URL to the main domain
+                                        const protocol = window.location.protocol;
+                                        const settingsUrl = `${protocol}//${mainDomain}/repo/settings/${org}/${repo}`;
+                                        
+                                        console.log(`🔍 Redirecting to main domain: ${settingsUrl}`);
+                                        window.location.href = settingsUrl;
+                                      } else {
+                                        // On main domain, just use router
+                                        router.push(`/repo/settings/${org}/${repo}`);
+                                      }
                                     } else {
                                       console.error('Invalid repository name format:', fullName);
                                     }

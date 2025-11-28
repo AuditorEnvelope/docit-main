@@ -221,6 +221,14 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // Special handling for /repo/settings path on www subdomain or localhost
+  if ((hostname.startsWith('www.') || hostname === 'www.localhost' || hostname === 'www.127.0.0.1') && 
+      pathname.startsWith('/repo/settings')) {
+    console.log(`[Middleware] 🔍 Settings path detected on www domain: ${pathname}`);
+    // This is already on the main domain, so just pass through
+    return NextResponse.next();
+  }
+  
   // 4. LANDING PAGE FALLBACK
   // If no org subdomain, serve the landing page normally.
   console.log(
