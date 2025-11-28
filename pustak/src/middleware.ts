@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const RAW_BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_BACKEND_URL || " https://cd17ff078a8e.ngrok-free.app";
 const API_BASE = RAW_BACKEND_URL.endsWith("/api/v1")
   ? RAW_BACKEND_URL
   : `${RAW_BACKEND_URL.replace(/\/$/, "")}/api/v1`;
