@@ -14,17 +14,29 @@ export async function middleware(request: NextRequest) {
   console.log(`[DOCS_DEBUG] 🚀 MIDDLEWARE START - URL: ${request.url}`);
   
   // 1. GET HOSTNAME AND PATHNAME SAFELY
-  // Prefer the "Host" header which is more reliable behind proxies like Render/Cloudflare
+  // Check multiple headers for hostname (Render/Cloudflare proxies may use different headers)
   const hostHeader = request.headers.get("host") || "";
-  const hostname = hostHeader.split(":")[0] || request.nextUrl.hostname;
+  const xForwardedHost = request.headers.get("x-forwarded-host") || "";
+  const xOriginalHost = request.headers.get("x-original-host") || "";
+  
+  // Try headers in order of preference
+  let hostname = xOriginalHost || xForwardedHost || hostHeader || request.nextUrl.hostname;
+  hostname = hostname.split(":")[0]; // Remove port if present
+  
   const pathname = request.nextUrl.pathname || "/";
   const method = request.method;
   const acceptHeader = request.headers.get("accept") || "";
   
-  console.log(`[DOCS_DEBUG] 📌 Pathname: ${pathname}, Hostname: ${hostname}`);
+  console.log(`[DOCS_DEBUG] 📌 Pathname: ${pathname}`);
+  console.log(`[DOCS_DEBUG] 🔍 Host header: ${hostHeader}`);
+  console.log(`[DOCS_DEBUG] 🔍 X-Forwarded-Host: ${xForwardedHost}`);
+  console.log(`[DOCS_DEBUG] 🔍 X-Original-Host: ${xOriginalHost}`);
+  console.log(`[DOCS_DEBUG] 🔍 request.nextUrl.hostname: ${request.nextUrl.hostname}`);
+  console.log(`[DOCS_DEBUG] 🔍 request.url: ${request.url}`);
+  console.log(`[DOCS_DEBUG] 🔍 Final hostname: ${hostname}`);
   console.log(`[DOCS_DEBUG] 🔍 Search params: ${search}`);
   console.log(`[DOCS_DEBUG] 🌐 Origin: ${origin}`);
-  console.log(`[DOCS_DEBUG] 📦 Headers: ${JSON.stringify(Object.fromEntries(request.headers))}`);
+  console.log(`[DOCS_DEBUG] 🔍 All headers:`, JSON.stringify(Object.fromEntries(request.headers)));
 
   const isPrefetch = request.headers.get("purpose") === "prefetch";
   const isStaticAssetRequest =
