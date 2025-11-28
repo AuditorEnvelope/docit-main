@@ -286,11 +286,18 @@ export default function LiveDocsPage({ params: pageParams }: any) {
             ? sanitizedSourceSegments
             : sanitizedSlugSegments;
 
-        segmentsToUse.forEach((segment) => {
-          if (segment) {
-            params.append("slug", segment);
-          }
-        });
+        // If we have segments, use them
+        if (segmentsToUse.length > 0) {
+          segmentsToUse.forEach((segment) => {
+            if (segment) {
+              params.append("slug", segment);
+            }
+          });
+        } else {
+          // If no segments provided, request SUMMARY.md as a fallback
+          console.log('[DOCS_DEBUG] 🚨 No content segments found, using SUMMARY.md as fallback');
+          params.append("slug", "SUMMARY.md");
+        }
       }
       
       const url = `${apiBase}/docbook/live-content/public?${params.toString()}`;

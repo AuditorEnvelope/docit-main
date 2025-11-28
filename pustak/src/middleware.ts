@@ -256,19 +256,38 @@ export async function middleware(request: NextRequest) {
         if (validPersonas.includes(pathSegments[1] || "")) {
           persona = pathSegments[1];
           const remainingSegments = pathSegments.slice(2).join("/");
-          url.pathname = `/docs/${org}/${repoName}/${persona}${remainingSegments ? "/" + remainingSegments : ""}`;
+          
+          // CRITICAL CHANGE: Instead of using the dynamic route pattern, use a query string approach
+          // This ensures Next.js will extract the correct parameters
+          url.pathname = `/api/docs-proxy`;
+          url.searchParams.set("org", org);
+          url.searchParams.set("repo", repoName);
+          url.searchParams.set("persona", persona);
+          if (remainingSegments) {
+            url.searchParams.set("path", remainingSegments);
+          }
+          
           console.log(`[DOCS_DEBUG] 📚 Case 3.1: Valid persona found: ${persona}, remainingSegments=${remainingSegments}`);
-          console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}`);
+          console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}${url.search}`);
         } else {
           // No valid persona specified - use default
           const remainingSegments = pathSegments.slice(1).join("/");
-          url.pathname = `/docs/${org}/${repoName}/${persona}${remainingSegments ? "/" + remainingSegments : ""}`;
+          
+          // CRITICAL CHANGE: Instead of using the dynamic route pattern, use a query string approach
+          url.pathname = `/api/docs-proxy`;
+          url.searchParams.set("org", org);
+          url.searchParams.set("repo", repoName);
+          url.searchParams.set("persona", persona);
+          if (remainingSegments) {
+            url.searchParams.set("path", remainingSegments);
+          }
+          
           console.log(`[DOCS_DEBUG] 📚 Case 3.2: Using default persona: ${persona}, remainingSegments=${remainingSegments}`);
-          console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}`);
+          console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}${url.search}`);
         }
         
         // Add debug info
-        console.log(`[DOCS_DEBUG] 🔑 FINAL REWRITE: org=${org}, repo=${repoName}, persona=${persona}, path=${url.pathname}`);
+        console.log(`[DOCS_DEBUG] 🔑 FINAL REWRITE: org=${org}, repo=${repoName}, persona=${persona}, path=${url.pathname}${url.search}`);
       } else {
         // Fallback - just rewrite to docs page
         url.pathname = `/docs/${org}${originalPath}`;
