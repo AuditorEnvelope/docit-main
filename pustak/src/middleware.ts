@@ -230,27 +230,30 @@ export async function middleware(request: NextRequest) {
         );
 
         if (!liveRepo) {
+          // Default to a generic docs page for the org
           url.pathname = `/docs/${org}`;
           console.log(
             `[DOCS_DEBUG] 📚 Case 1: Live URL path missing repo. Falling back to ${url.pathname}`
           );
         } else {
-          const slugParts = [liveRepo, livePersona, ...remainingSegments].filter(Boolean);
-          url.pathname = `/docs/${org}/${slugParts.join("/")}`;
+          // FIXED: Use the new component pattern: /docs/[org]/[repo]/[persona]/[...slug]
+          url.pathname = `/docs/${org}/${liveRepo}/${livePersona}/${remainingSegments.join("/")}`;
           console.log(
             `[DOCS_DEBUG] 📚 Case 1: Homepage with live URL path -> ${url.pathname}`
           );
         }
       } else if (!originalPath) {
-        // Homepage without live URL path
-        url.pathname = `/docs/${org}`;
+        // Homepage without live URL path - redirect to dashboard
+        // Since we need repo and persona for the new route pattern, we can't just go to /docs/${org}
+        // Instead, we'll redirect to the dashboard where the user can select a repo
+        url.pathname = `/dashboard`;
         console.log(`[DOCS_DEBUG] 📚 Case 2: Homepage without live URL path -> ${url.pathname}`);
       } else if (repoName) {
         // We have a repo name from the first path segment
         console.log(`[DOCS_DEBUG] 📚 Case 3: We have a repo name: ${repoName}`);
         
-        // IMPORTANT: For subdomain access, NEVER use the org as persona
-        // ALWAYS use a valid persona (dev or internal) or default to dev
+        // CRITICAL FIX: For subdomain access, ALWAYS use a valid persona
+        // Default to 'dev' persona for public access
         let persona = "dev"; // Default persona
         
         // Check if second segment is a valid persona
@@ -275,23 +278,19 @@ export async function middleware(request: NextRequest) {
           
           const remainingSegments = pathSegments.slice(2);
           
-          // Use the old component pattern: /docs/[org]/[...slug]
-          // Build slug array: [repo, persona, ...remainingSegments]
-          const slugParts = [repoName, persona, ...remainingSegments].filter(Boolean);
-          url.pathname = `/docs/${org}/${slugParts.join("/")}`;
+          // FIXED: Use the new component pattern: /docs/[org]/[repo]/[persona]/[...slug]
+          url.pathname = `/docs/${org}/${repoName}/${persona}/${remainingSegments.join("/")}`;
           
-          console.log(`[DOCS_DEBUG] 📚 Case 3.1: Valid persona found: ${persona}, slugParts=${JSON.stringify(slugParts)}`);
+          console.log(`[DOCS_DEBUG] 📚 Case 3.1: Valid persona found: ${persona}, remainingSegments=${JSON.stringify(remainingSegments)}`);
           console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}`);
         } else {
           // No valid persona specified - use default
           const remainingSegments = pathSegments.slice(1);
           
-          // Use the old component pattern: /docs/[org]/[...slug]
-          // Build slug array: [repo, persona, ...remainingSegments]
-          const slugParts = [repoName, persona, ...remainingSegments].filter(Boolean);
-          url.pathname = `/docs/${org}/${slugParts.join("/")}`;
+          // FIXED: Use the new component pattern: /docs/[org]/[repo]/[persona]/[...slug]
+          url.pathname = `/docs/${org}/${repoName}/${persona}/${remainingSegments.join("/")}`;
           
-          console.log(`[DOCS_DEBUG] 📚 Case 3.2: Using default persona: ${persona}, slugParts=${JSON.stringify(slugParts)}`);
+          console.log(`[DOCS_DEBUG] 📚 Case 3.2: Using default persona: ${persona}, remainingSegments=${JSON.stringify(remainingSegments)}`);
           console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}`);
         }
         
