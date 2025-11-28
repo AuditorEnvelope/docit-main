@@ -1472,8 +1472,14 @@ async def get_live_manifest(
     print(f"📋 Fetching live manifest for {org_id}/{repo_id}")
     
     try:
+        # Special case for settings persona - redirect to dev persona
+        if persona == "settings":
+            print(f"⚠️ Settings persona requested - using dev instead")
+            persona = "dev"  # Use dev persona instead of failing
+            
         # Check if persona is valid
         if persona not in ["internal", "dev"]:
+            print(f"⚠️ Invalid persona '{persona}' requested - using dev instead")
             persona = "dev"  # Default to dev if invalid
             
         print(f"📋 Using persona: {persona}")
@@ -1530,15 +1536,14 @@ async def get_live_manifest_public(
     print(f"🌐 Fetching PUBLIC live manifest for {org_id}/{repo_id}")
 
     try:
-        # Check if persona is valid
+        # Special case for settings persona - redirect to dev persona
         if persona == "settings":
-            print(f"⚠️ Invalid persona 'settings' requested for {org_id}/{repo_id}")
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid persona 'settings'. Valid values are 'internal' or 'dev'."
-            )
+            print(f"⚠️ Settings persona requested for {org_id}/{repo_id} - using dev instead")
+            persona = "dev"  # Use dev persona instead of failing
             
+        # Check if persona is valid
         if persona not in ["internal", "dev"]:
+            print(f"⚠️ Invalid persona '{persona}' requested - using dev instead")
             persona = "dev"  # Default to dev if invalid
             
         print(f"📋 Using persona: {persona} for public access")
@@ -1576,11 +1581,17 @@ async def get_live_content(
 ):
     """Fetch rendered markdown content for authenticated viewers."""
 
-    print(f"📄 Fetching live content for {org_id}/{repo_id} slug={slug}")
+    print(f"📔 Fetching live content for {org_id}/{repo_id} slug={slug}")
 
     try:
+        # Special case for settings persona - redirect to dev persona
+        if persona == "settings":
+            print(f"⚠️ Settings persona requested - using dev instead")
+            persona = "dev"  # Use dev persona instead of failing
+            
         # Check if persona is valid
         if persona not in ["internal", "dev"]:
+            print(f"⚠️ Invalid persona '{persona}' requested - using dev instead")
             persona = "dev"  # Default to dev if invalid
             
         print(f"📋 Using persona: {persona}")
@@ -1615,8 +1626,14 @@ async def get_live_content_public(
     print(f"🌐 Fetching PUBLIC live content for {org_id}/{repo_id} slug={slug}")
 
     try:
+        # Special case for settings persona - redirect to dev persona
+        if persona == "settings":
+            print(f"⚠️ Settings persona requested for public content - using dev instead")
+            persona = "dev"  # Use dev persona instead of failing
+            
         # Check if persona is valid
         if persona not in ["internal", "dev"]:
+            print(f"⚠️ Invalid persona '{persona}' requested - using dev instead")
             persona = "dev"  # Default to dev if invalid
             
         print(f"📋 Using persona: {persona} for public access")

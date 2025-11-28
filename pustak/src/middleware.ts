@@ -128,33 +128,20 @@ export async function middleware(request: NextRequest) {
       const pathSegments = originalPath.split("/").filter(Boolean);
       const repoName = pathSegments[0] || ""; // First segment is repo name
       
-      // Special case for settings path
-      if (repoName === "settings" || pathSegments.includes("settings")) {
+      // Special case for settings path or any path with "settings" in it
+      if (originalPath.includes("/settings") || repoName === "settings" || pathSegments.includes("settings")) {
         console.log(`[Middleware] ⚠️ Settings path detected: ${originalPath}`);
         
-        // Extract org and repo from the settings URL
-        // Format: /settings/org/repo or /repo/settings/org/repo
-        let orgName = "";
-        let repoName = "";
+        // For any settings path, redirect to the main app domain
+        // This is a safety measure to prevent settings paths from being processed as documentation
+        const settingsUrl = new URL(request.url);
         
-        if (pathSegments[0] === "settings" && pathSegments.length >= 3) {
-          // /settings/org/repo format
-          orgName = pathSegments[1];
-          repoName = pathSegments[2];
-        } else if (pathSegments.indexOf("settings") > 0 && pathSegments.length >= pathSegments.indexOf("settings") + 2) {
-          // /repo/settings/org/repo format
-          const settingsIndex = pathSegments.indexOf("settings");
-          orgName = pathSegments[settingsIndex + 1];
-          repoName = pathSegments[settingsIndex + 2];
-        }
-        
-        if (orgName && repoName) {
-          // Redirect to the admin panel settings URL
-          const settingsUrl = new URL(request.url);
+        // Remove the subdomain to get back to the main app domain
+        if (hostname.includes(".")) {
           settingsUrl.hostname = hostname.replace(/^[^.]+\./, ""); // Remove subdomain
-          settingsUrl.pathname = `/repo/settings/${orgName}/${repoName}`;
           
-          console.log(`[Middleware] 🔄 Redirecting to admin settings: ${settingsUrl.toString()}`);
+          // Keep the original path - the main app will handle it correctly
+          console.log(`[Middleware] 🔄 Redirecting settings path to main app: ${settingsUrl.toString()}`);
           return NextResponse.redirect(settingsUrl);
         }
       }
