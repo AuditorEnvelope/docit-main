@@ -95,8 +95,9 @@ export async function middleware(request: NextRequest) {
         notFoundUrl.pathname = "/404";
 
         // We rewrite, not redirect, to keep the URL the same but show 404 content
-        const response = NextResponse.rewrite(notFoundUrl);
-        response.status = 404;
+        const response = NextResponse.rewrite(notFoundUrl, {
+          status: 404,
+        });
         response.headers.set("x-middleware-cache", "no-cache");
         return response;
       }
