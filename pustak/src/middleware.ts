@@ -257,33 +257,27 @@ export async function middleware(request: NextRequest) {
           persona = pathSegments[1];
           const remainingSegments = pathSegments.slice(2).join("/");
           
-          // CRITICAL CHANGE: Instead of using the dynamic route pattern, use a query string approach
-          // This ensures Next.js will extract the correct parameters
-          url.pathname = `/api/docs-proxy`;
-          url.searchParams.set("org", org);
-          url.searchParams.set("repo", repoName);
-          url.searchParams.set("persona", persona);
+          // SIMPLER APPROACH: Just use the dynamic route pattern directly
+          // This is more reliable and easier to debug
+          url.pathname = `/docs/${org}/${repoName}/${persona}`;
           if (remainingSegments) {
-            url.searchParams.set("path", remainingSegments);
+            url.pathname += `/${remainingSegments}`;
           }
           
           console.log(`[DOCS_DEBUG] 📚 Case 3.1: Valid persona found: ${persona}, remainingSegments=${remainingSegments}`);
-          console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}${url.search}`);
+          console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}`);
         } else {
           // No valid persona specified - use default
           const remainingSegments = pathSegments.slice(1).join("/");
           
-          // CRITICAL CHANGE: Instead of using the dynamic route pattern, use a query string approach
-          url.pathname = `/api/docs-proxy`;
-          url.searchParams.set("org", org);
-          url.searchParams.set("repo", repoName);
-          url.searchParams.set("persona", persona);
+          // SIMPLER APPROACH: Just use the dynamic route pattern directly
+          url.pathname = `/docs/${org}/${repoName}/${persona}`;
           if (remainingSegments) {
-            url.searchParams.set("path", remainingSegments);
+            url.pathname += `/${remainingSegments}`;
           }
           
           console.log(`[DOCS_DEBUG] 📚 Case 3.2: Using default persona: ${persona}, remainingSegments=${remainingSegments}`);
-          console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}${url.search}`);
+          console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}`);
         }
         
         // Add debug info

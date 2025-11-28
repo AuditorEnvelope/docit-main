@@ -99,13 +99,28 @@ export default function LiveDocsPage({ params: pageParams }: any) {
   
   console.log('[DOCS_DEBUG] 📚 Original params:', { org, repo, persona, slug });
   
-  // If repo is 'docs' and persona is the org name, fix the parameters
+  // ROBUST PARAMETER HANDLING
+  // There are multiple ways the parameters could be incorrect, handle all cases
+  
+  // Case 1: If repo is 'docs' and persona is the org name (most common case)
   if (repo === 'docs' && persona === org && slug.length >= 1) {
     // First slug segment should be the actual repo
     repo = slug[0];
     // Use 'dev' as the default persona
     persona = 'dev';
-    console.log('[DOCS_DEBUG] 🔄 FIXED PARAMETERS: repo=' + repo + ', persona=' + persona);
+    console.log('[DOCS_DEBUG] 🔄 FIXED PARAMETERS (Case 1): repo=' + repo + ', persona=' + persona);
+  }
+  // Case 2: If persona is the org name but repo is correct
+  else if (persona === org) {
+    // Use 'dev' as the default persona
+    persona = 'dev';
+    console.log('[DOCS_DEBUG] 🔄 FIXED PARAMETERS (Case 2): persona=' + persona);
+  }
+  // Case 3: If persona is not a valid value
+  else if (!['dev', 'internal'].includes(persona)) {
+    // Use 'dev' as the default persona
+    persona = 'dev';
+    console.log('[DOCS_DEBUG] 🔄 FIXED PARAMETERS (Case 3): persona=' + persona);
   }
   
   console.log('[DOCS_DEBUG] 📚 Final params:', { org, repo, persona, slug });
