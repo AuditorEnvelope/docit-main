@@ -255,28 +255,25 @@ export async function middleware(request: NextRequest) {
         console.log(`[DOCS_DEBUG] 📚 Checking if second segment is valid persona. pathSegments[1]=${pathSegments[1]}`);
         if (validPersonas.includes(pathSegments[1] || "")) {
           persona = pathSegments[1];
-          const remainingSegments = pathSegments.slice(2).join("/");
+          const remainingSegments = pathSegments.slice(2);
           
-          // SIMPLER APPROACH: Just use the dynamic route pattern directly
-          // This is more reliable and easier to debug
-          url.pathname = `/docs/${org}/${repoName}/${persona}`;
-          if (remainingSegments) {
-            url.pathname += `/${remainingSegments}`;
-          }
+          // Use the old component pattern: /docs/[org]/[...slug]
+          // Build slug array: [repo, persona, ...remainingSegments]
+          const slugParts = [repoName, persona, ...remainingSegments].filter(Boolean);
+          url.pathname = `/docs/${org}/${slugParts.join("/")}`;
           
-          console.log(`[DOCS_DEBUG] 📚 Case 3.1: Valid persona found: ${persona}, remainingSegments=${remainingSegments}`);
+          console.log(`[DOCS_DEBUG] 📚 Case 3.1: Valid persona found: ${persona}, slugParts=${JSON.stringify(slugParts)}`);
           console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}`);
         } else {
           // No valid persona specified - use default
-          const remainingSegments = pathSegments.slice(1).join("/");
+          const remainingSegments = pathSegments.slice(1);
           
-          // SIMPLER APPROACH: Just use the dynamic route pattern directly
-          url.pathname = `/docs/${org}/${repoName}/${persona}`;
-          if (remainingSegments) {
-            url.pathname += `/${remainingSegments}`;
-          }
+          // Use the old component pattern: /docs/[org]/[...slug]
+          // Build slug array: [repo, persona, ...remainingSegments]
+          const slugParts = [repoName, persona, ...remainingSegments].filter(Boolean);
+          url.pathname = `/docs/${org}/${slugParts.join("/")}`;
           
-          console.log(`[DOCS_DEBUG] 📚 Case 3.2: Using default persona: ${persona}, remainingSegments=${remainingSegments}`);
+          console.log(`[DOCS_DEBUG] 📚 Case 3.2: Using default persona: ${persona}, slugParts=${JSON.stringify(slugParts)}`);
           console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}`);
         }
         
