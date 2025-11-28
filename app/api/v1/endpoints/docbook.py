@@ -1472,6 +1472,14 @@ async def get_live_manifest(
     print(f"📋 Fetching live manifest for {org_id}/{repo_id}")
     
     try:
+        # Special case for www as org_id - this should be handled by middleware but just in case
+        if org_id.lower() == "www":
+            print(f"⚠️ 'www' detected as org_id - this is likely a middleware routing issue")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid organization ID 'www'. This appears to be a routing issue. Please access this content through the main application."
+            )
+            
         # Special case for settings persona - redirect to dev persona
         if persona == "settings":
             print(f"⚠️ Settings persona requested - using dev instead")
@@ -1536,6 +1544,14 @@ async def get_live_manifest_public(
     print(f"🌐 Fetching PUBLIC live manifest for {org_id}/{repo_id}")
 
     try:
+        # Special case for www as org_id - this should be handled by middleware but just in case
+        if org_id.lower() == "www":
+            print(f"⚠️ 'www' detected as org_id - this is likely a middleware routing issue")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid organization ID 'www'. This appears to be a routing issue. Please access this content through the main application."
+            )
+            
         # Special case for settings persona - redirect to dev persona
         if persona == "settings":
             print(f"⚠️ Settings persona requested for {org_id}/{repo_id} - using dev instead")
@@ -1584,6 +1600,14 @@ async def get_live_content(
     print(f"📔 Fetching live content for {org_id}/{repo_id} slug={slug}")
 
     try:
+        # Special case for www as org_id - this should be handled by middleware but just in case
+        if org_id.lower() == "www":
+            print(f"⚠️ 'www' detected as org_id - this is likely a middleware routing issue")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid organization ID 'www'. This appears to be a routing issue. Please access this content through the main application."
+            )
+            
         # Special case for settings persona - redirect to dev persona
         if persona == "settings":
             print(f"⚠️ Settings persona requested - using dev instead")
@@ -1626,6 +1650,14 @@ async def get_live_content_public(
     print(f"🌐 Fetching PUBLIC live content for {org_id}/{repo_id} slug={slug}")
 
     try:
+        # Special case for www as org_id - this should be handled by middleware but just in case
+        if org_id.lower() == "www":
+            print(f"⚠️ 'www' detected as org_id - this is likely a middleware routing issue")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid organization ID 'www'. This appears to be a routing issue. Please access this content through the main application."
+            )
+            
         # Special case for settings persona - redirect to dev persona
         if persona == "settings":
             print(f"⚠️ Settings persona requested for public content - using dev instead")

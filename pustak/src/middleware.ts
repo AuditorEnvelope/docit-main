@@ -44,18 +44,31 @@ export async function middleware(request: NextRequest) {
   if (hostname.includes("docbook.site")) {
     // Production: fakeorg.docbook.site -> ["fakeorg", "docbook", "site"]
     // We want to verify we actually HAVE a subdomain (length >= 3)
+    // Special case: www subdomain should be treated as the main portal, not an org
     if (hostParts.length >= 3 && hostParts[0] !== "www") {
       org = hostParts[0];
+    } else if (hostParts.length >= 3 && hostParts[0] === "www") {
+      // www subdomain - treat as main portal
+      console.log(`[Middleware] 🌐 www subdomain detected - treating as main portal`);
+      // No org extraction needed - this is the main portal
     }
   } else if (hostname.includes("localhost") || hostname.includes("127.0.0.1")) {
     // Local: org.localhost -> ["org", "localhost"]
     if (hostParts.length >= 2 && hostParts[0] !== "www") {
       org = hostParts[0];
+    } else if (hostParts.length >= 2 && hostParts[0] === "www") {
+      // www subdomain - treat as main portal
+      console.log(`[Middleware] 🌐 www subdomain detected on localhost - treating as main portal`);
+      // No org extraction needed - this is the main portal
     }
   } else {
     // Custom domain handling (future proofing)
     if (hostParts.length >= 2 && hostParts[0] !== "www") {
       org = hostParts[0];
+    } else if (hostParts.length >= 2 && hostParts[0] === "www") {
+      // www subdomain - treat as main portal
+      console.log(`[Middleware] 🌐 www subdomain detected on custom domain - treating as main portal`);
+      // No org extraction needed - this is the main portal
     }
   }
 
