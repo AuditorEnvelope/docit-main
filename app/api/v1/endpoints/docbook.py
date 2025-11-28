@@ -1548,6 +1548,14 @@ async def get_live_manifest_public(
     """Public manifest endpoint without authentication."""
 
     print(f"🌐 Fetching PUBLIC live manifest for {org_id}/{repo_id}")
+    
+    # Compatibility fix for old URL pattern where repo_id=docs and persona=org_id
+    if repo_id == "docs":
+        print(f"🔄 Legacy URL pattern detected: repo_id=docs, persona={persona}")
+        # For bajrangbalikijai, we know the repo should be jaishreram
+        if org_id == "bajrangbalikijai":
+            repo_id = "jaishreram"
+            print(f"✅ Fixed repo_id to: {repo_id}")
 
     try:
         # Special case for www as org_id - this should be handled by middleware but just in case
@@ -1654,6 +1662,22 @@ async def get_live_content_public(
     """Public live content endpoint without authentication."""
 
     print(f"🌐 Fetching PUBLIC live content for {org_id}/{repo_id} slug={slug}")
+    
+    # Compatibility fix for old URL pattern where repo_id=docs and persona=org_id
+    if repo_id == "docs":
+        print(f"🔄 Legacy URL pattern detected: repo_id=docs, persona={persona}")
+        # For bajrangbalikijai, we know the repo should be jaishreram
+        if org_id == "bajrangbalikijai":
+            repo_id = "jaishreram"
+            print(f"✅ Fixed repo_id to: {repo_id}")
+            
+            # Special handling for the deployed frontend URL pattern
+            # It sends slug=["jaishreram", "dev"] for the root page
+            if len(slug) >= 2 and slug[0] == "jaishreram" and slug[1] == "dev":
+                print(f"🔍 Detected deployed frontend URL pattern - fixing slug")
+                # Replace with SUMMARY.md to show the main page
+                slug = ["SUMMARY.md"]
+                print(f"✅ Fixed slug to: {slug}")
 
     try:
         # Special case for www as org_id - this should be handled by middleware but just in case

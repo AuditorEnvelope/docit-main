@@ -152,10 +152,14 @@ export async function middleware(request: NextRequest) {
       
       // Parse path to extract repo and possibly persona
       const pathSegments = originalPath.split("/").filter(Boolean);
+      
+      // IMPORTANT: First segment is ALWAYS the repo name in the subdomain pattern
+      // bajrangbalikijai.docbook.site/jaishreram -> repo=jaishreram
       const repoName = pathSegments[0] || ""; // First segment is repo name
       
       console.log(`[Middleware] 🔍 Path segments: ${JSON.stringify(pathSegments)}, repoName: ${repoName}`);
       console.log(`[Middleware] 🔍 Original URL: ${request.url}`);
+      console.log(`[Middleware] 🔍 Subdomain org: ${org}, repo: ${repoName}`);
       
       // Special case for settings path or any path with "settings" in it
       if (originalPath.includes("/settings") || repoName === "settings" || pathSegments.includes("settings")) {
@@ -215,6 +219,10 @@ export async function middleware(request: NextRequest) {
       
       console.log(`[Middleware] Path Analysis: repo=${repoName}, persona=${personaName}, remaining=${remainingPath}`);
       
+      // CRITICAL FIX: For subdomain access, we must ensure:
+      // 1. repo_id is ALWAYS the first path segment (not 'docs')
+      // 2. persona is ALWAYS a valid value (not the org name)
+      
       if (!originalPath && liveUrlPath) {
         // Homepage with live URL path
         url.pathname = `/docs/${org}${liveUrlPath}`;
@@ -222,19 +230,27 @@ export async function middleware(request: NextRequest) {
         // Homepage without live URL path
         url.pathname = `/docs/${org}`;
       } else if (repoName) {
-        // We have a repo name
+        // We have a repo name from the first path segment
+        
+        // IMPORTANT: For subdomain access, NEVER use the org as persona
+        // ALWAYS use a valid persona (dev or internal) or default to dev
+        let persona = "dev"; // Default persona
+        
+        // Check if second segment is a valid persona
         if (validPersonas.includes(pathSegments[1] || "")) {
-          // Second segment is a valid persona
-          const persona = pathSegments[1];
+          persona = pathSegments[1];
           const remainingSegments = pathSegments.slice(2).join("/");
           url.pathname = `/docs/${org}/${repoName}/${persona}${remainingSegments ? "/" + remainingSegments : ""}`;
           console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}`);
         } else {
-          // No valid persona specified - default to dev
+          // No valid persona specified - use default
           const remainingSegments = pathSegments.slice(1).join("/");
-          url.pathname = `/docs/${org}/${repoName}/dev${remainingSegments ? "/" + remainingSegments : ""}`;
+          url.pathname = `/docs/${org}/${repoName}/${persona}${remainingSegments ? "/" + remainingSegments : ""}`;
           console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}`);
         }
+        
+        // Add debug info
+        console.log(`[Middleware] 🔑 Final rewrite: org=${org}, repo=${repoName}, persona=${persona}`);
       } else {
         // Fallback - just rewrite to docs page
         url.pathname = `/docs/${org}${originalPath}`;
