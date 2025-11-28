@@ -91,11 +91,24 @@ export default function LiveDocsPage({ params: pageParams }: any) {
   
   // Use either the props params (for server component) or useParams (for client component)
   const org = (pageParams?.org || params?.org) as string;
-  const repo = (pageParams?.repo || params?.repo) as string;
-  const persona = (pageParams?.persona || params?.persona) as string;
+  
+  // CRITICAL FIX: Handle the case where repo=docs and persona=org
+  let repo = (pageParams?.repo || params?.repo) as string;
+  let persona = (pageParams?.persona || params?.persona) as string;
   const slug = ((pageParams?.slug || params?.slug) as string[]) || [];
   
-  console.log('[DOCS_DEBUG] 📚 Extracted params:', { org, repo, persona, slug });
+  console.log('[DOCS_DEBUG] 📚 Original params:', { org, repo, persona, slug });
+  
+  // If repo is 'docs' and persona is the org name, fix the parameters
+  if (repo === 'docs' && persona === org && slug.length >= 1) {
+    // First slug segment should be the actual repo
+    repo = slug[0];
+    // Use 'dev' as the default persona
+    persona = 'dev';
+    console.log('[DOCS_DEBUG] 🔄 FIXED PARAMETERS: repo=' + repo + ', persona=' + persona);
+  }
+  
+  console.log('[DOCS_DEBUG] 📚 Final params:', { org, repo, persona, slug });
 
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [content, setContent] = useState<string>("");
@@ -160,13 +173,21 @@ export default function LiveDocsPage({ params: pageParams }: any) {
       setLoading(true);
       setError(null);
       
+      const url = `${apiBase}/docbook/live-manifest/public?org_id=${encodeURIComponent(
+        org
+      )}&repo_id=${encodeURIComponent(repo)}&persona=${encodeURIComponent(persona)}`;
+      
+      console.log('[DOCS_DEBUG] 📡 MANIFEST API CALL');
+      console.log('[DOCS_DEBUG] 📡 URL:', url);
+      console.log('[DOCS_DEBUG] 📡 Parameters:', {
+        org_id: org,
+        repo_id: repo,
+        persona: persona
+      });
+      
       console.log(`🔍 Fetching manifest with: org=${org}, repo=${repo}, persona=${persona}`);
       
-      const response = await fetch(
-        `${apiBase}/docbook/live-manifest/public?org_id=${encodeURIComponent(
-          org
-        )}&repo_id=${encodeURIComponent(repo)}&persona=${encodeURIComponent(persona)}`
-      );
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error(`Failed to load manifest: ${response.statusText}`);
@@ -232,6 +253,17 @@ export default function LiveDocsPage({ params: pageParams }: any) {
           ? sanitizeSegments(sourceSegments)
           : undefined;
       
+      console.log('[DOCS_DEBUG] 📡 CONTENT API CALL');
+      console.log('[DOCS_DEBUG] 📡 Parameters:', {
+        org_id: org,
+        repo_id: repo,
+        persona: persona,
+        slugSegments,
+        sanitizedSlugSegments,
+        sanitizedSourceSegments,
+        isSummary
+      });
+      
       console.log(
         `🔍 Fetching content with: org=${org}, repo=${repo}, persona=${persona}, slugSegments=${JSON.stringify(
           slugSegments
@@ -260,10 +292,12 @@ export default function LiveDocsPage({ params: pageParams }: any) {
           }
         });
       }
+      
+      const url = `${apiBase}/docbook/live-content/public?${params.toString()}`;
+      console.log('[DOCS_DEBUG] 📡 CONTENT URL:', url);
+      console.log('[DOCS_DEBUG] 📡 Final params:', params.toString());
 
-      const response = await fetch(
-        `${apiBase}/docbook/live-content/public?${params.toString()}`
-      );
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error(`Failed to load content: ${response.statusText}`);
