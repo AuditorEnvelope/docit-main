@@ -1549,13 +1549,8 @@ async def get_live_manifest_public(
 
     print(f"🌐 Fetching PUBLIC live manifest for {org_id}/{repo_id}")
     
-    # Compatibility fix for old URL pattern where repo_id=docs and persona=org_id
-    if repo_id == "docs":
-        print(f"🔄 Legacy URL pattern detected: repo_id=docs, persona={persona}")
-        # For bajrangbalikijai, we know the repo should be jaishreram
-        if org_id == "bajrangbalikijai":
-            repo_id = "jaishreram"
-            print(f"✅ Fixed repo_id to: {repo_id}")
+    # No compatibility fixes - trust the frontend's repo_id parameter
+    print(f"✅ Using repo_id directly from frontend: {repo_id}")
 
     try:
         # Special case for www as org_id - this should be handled by middleware but just in case
@@ -1665,13 +1660,8 @@ async def get_live_content_public(
     print(f"🌐 Fetching PUBLIC live content for {org_id}/{repo_id}")
     print(f"🔢 Raw slug list: {slug}")
 
-    # Compatibility fix for old URL pattern where repo_id=docs and persona=org_id
-    if repo_id == "docs":
-        print(f"🔄 Legacy URL pattern detected: repo_id=docs, persona={persona}")
-        # For bajrangbalikijai, we know the repo should be jaishreram
-        if org_id == "bajrangbalikijai":
-            repo_id = "jaishreram"
-            print(f"✅ Fixed repo_id to: {repo_id}")
+    # No compatibility fixes - trust the frontend's repo_id parameter
+    print(f"✅ Using repo_id directly from frontend: {repo_id}")
 
     original_slug = list(slug)
     cleaned_slug = [segment for segment in slug if segment]

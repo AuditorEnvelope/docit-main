@@ -85,33 +85,26 @@ interface Manifest {
 const TOC_INDENT_CLASSES = ["pl-0", "pl-3", "pl-6", "pl-9", "pl-12"];
 
 export default function LiveDocsPage() {
-  console.log("[DOCS_DEBUG] 🚀 OLD PAGE COMPONENT EXECUTED");
-  console.log("[DOCS_DEBUG] 🔍 URL Path Pattern: /docs/[org]/[...slug]");
+  console.log("[DOCS_DEBUG] 🚀 NEW PAGE COMPONENT EXECUTED");
+  console.log("[DOCS_DEBUG] 🔍 URL Path Pattern: /docs/[org]/[repo]/[persona]/[...slug]");
   console.log(
-    "[DOCS_DEBUG] 📚 Component: LiveDocsPage in [org]/[...slug]/page.tsx"
+    "[DOCS_DEBUG] 📚 Component: LiveDocsPage in [org]/[repo]/[persona]/[...slug]/page.tsx"
   );
 
   const params = useParams();
   console.log("[DOCS_DEBUG] 🔍 useParams() result:", params);
 
+  // Correctly extract parameters from the route
   const org = params.org as string;
+  const repo = params.repo as string;
+  const persona = params.persona as string;
   const slug = (params.slug as string[]) || [];
-  console.log("[DOCS_DEBUG] 📚 Initial params:", { org, slug });
 
-  const validPersonas = ["internal", "dev"] as const;
-
-  const repo = slug[0] || "";
-  const hasExplicitPersona = validPersonas.includes(
-    (slug[1] as (typeof validPersonas)[number]) || ("" as any)
-  );
-  const persona = hasExplicitPersona ? (slug[1] as string) : "dev";
-
-  console.log("[DOCS_DEBUG] 📚 Extracted params from slug:", {
+  console.log("[DOCS_DEBUG] 📚 Extracted params from route:", {
     org,
     repo,
-    hasExplicitPersona,
     persona,
-    remainingSlug: hasExplicitPersona ? slug.slice(2) : slug.slice(1),
+    slug
   });
 
   console.log(
@@ -125,17 +118,14 @@ export default function LiveDocsPage() {
 
   // Additional validation logging
   if (!repo) {
-    console.log("[DOCS_DEBUG] ❌ ERROR: repo is empty! slug:", slug);
+    console.log("[DOCS_DEBUG] ❌ ERROR: repo is empty! params:", params);
   }
   if (!org) {
     console.log("[DOCS_DEBUG] ❌ ERROR: org is empty! params:", params);
   }
-
-  const docSegments = useMemo(
-    () => (hasExplicitPersona ? slug.slice(2) : slug.slice(1)),
-    [slug, hasExplicitPersona]
-  );
-  const docSegmentsKey = useMemo(() => docSegments.join("/"), [docSegments]);
+  if (!persona) {
+    console.log("[DOCS_DEBUG] ❌ ERROR: persona is empty! params:", params);
+  }
 
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [content, setContent] = useState<string>("");
@@ -182,7 +172,7 @@ export default function LiveDocsPage() {
   }, [isLight, mounted]);
 
   useEffect(() => {
-    if (!org || !repo) {
+    if (!org || !repo || !persona) {
       setError("Invalid documentation URL");
       setLoading(false);
       return;
@@ -193,7 +183,7 @@ export default function LiveDocsPage() {
       { org, repo, persona }
     );
     fetchManifest();
-  }, [org, repo]);
+  }, [org, repo, persona]);
 
   const apiBase = BACKEND_URL.endsWith("/api/v1")
     ? BACKEND_URL
@@ -324,36 +314,11 @@ export default function LiveDocsPage() {
     }
   };
 
-  const fetchContentByPath = async (
-    path: string,
-    pushHistory = true,
-    sourcePath?: string
-  ) => {
-    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    const segments = normalizedPath.split("/").filter(Boolean);
-    const slugSegments = segments.slice(1);
-
-    const sourceNormalized = sourcePath
-      ? sourcePath.startsWith("/")
-        ? sourcePath
-        : `/${sourcePath}`
-      : normalizedPath;
-    const sourceSegments = sourceNormalized.split("/").filter(Boolean).slice(1);
-
-    if (pushHistory) {
-      const nextUrl = `/docs/${org}${normalizedPath}`;
-      window.history.pushState({}, "", nextUrl);
-    }
-
-    await fetchContent(slugSegments, normalizedPath, sourceSegments);
-  };
-
   useEffect(() => {
     if (!manifest) return;
 
-    if (docSegments.length) {
-      const currentPath = `/${[repo, ...docSegments].join("/")}`;
-      fetchContent(docSegments, currentPath);
+    if (slug.length) {
+      fetchContent(slug);
     } else {
       const flatten = (items: SidebarItem[]): SidebarItem[] =>
         items.flatMap((entry) =>
@@ -365,87 +330,12 @@ export default function LiveDocsPage() {
         (item) => item.type === "file"
       );
       if (firstDoc) {
-        fetchContentByPath(firstDoc.path, true, firstDoc.source_path);
+        fetchContent(["SUMMARY.md"], firstDoc.path, ["SUMMARY.md"]);
       } else {
         setError("No published documentation found.");
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manifest, docSegmentsKey, repo]);
-
-  const allFiles = useMemo(() => {
-    if (!manifest) return [] as SidebarItem[];
-    const flatten = (items: SidebarItem[]): SidebarItem[] => {
-      return items.flatMap((item) =>
-        item.type === "folder" && item.children
-          ? [item, ...flatten(item.children)]
-          : [item]
-      );
-    };
-    return flatten(manifest.sidebar).filter((item) => item.type === "file");
-  }, [manifest]);
-
-  const neighbors = useMemo(() => {
-    if (!manifest || !activePath) return { previous: null, next: null };
-    return manifest.navigation?.[activePath] ?? { previous: null, next: null };
-  }, [manifest, activePath]);
-
-  const dynamicBreadcrumbs = useMemo(() => {
-    if (!manifest) return [];
-    const base = manifest.breadcrumbs || [];
-    if (!activePath) return base;
-    const segments = activePath.replace(/^\//, "").split("/").slice(1);
-    const crumbs = segments.map((segment, idx) => ({
-      label: segment.replace(/-/g, " ").replace(/_/g, " "),
-      path: `/docs/${org}/${[repo, ...segments.slice(0, idx + 1)].join("/")}`,
-      uniquePath: `/docs/${org}/${[repo, ...segments.slice(0, idx + 1)].join(
-        "/"
-      )}__${idx}`,
-    }));
-    return [...base, ...crumbs];
-  }, [manifest, activePath, org, repo]);
-
-  useEffect(() => {
-    if (copied) {
-      const timeout = setTimeout(() => setCopied(false), 2000);
-      return () => clearTimeout(timeout);
-    }
-  }, [copied]);
-
-  useEffect(() => {
-    if (searchOpen) {
-      const timeout = setTimeout(() => searchInputRef.current?.focus(), 120);
-      return () => clearTimeout(timeout);
-    }
-  }, [searchOpen]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && searchOpen) {
-        setSearchOpen(false);
-        setSearchQuery("");
-      }
-      // CMD+K or CTRL+K to open search
-      if ((event.metaKey || event.ctrlKey) && event.key === "k") {
-        event.preventDefault();
-        setSearchOpen(true);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [searchOpen]);
-
-  const toggleNode = (id: string) => {
-    setExpandedNodes((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
+  }, [manifest, repo, slug]);
 
   const renderSidebarItems = (items: SidebarItem[], depth = 0) => {
     return items.map((item, index) => {
@@ -532,55 +422,88 @@ export default function LiveDocsPage() {
     });
   };
 
+  const toggleNode = (id: string) => {
+    setExpandedNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   const handleCopyLink = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url);
     setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleThemeToggle = () => {
     setTheme(resolvedTheme === "dark" ? "light" : "dark");
   };
 
+  const fetchContentByPath = async (
+    path: string,
+    pushHistory = true,
+    sourcePath?: string
+  ) => {
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const segments = normalizedPath.split("/").filter(Boolean);
+    const slugSegments = segments.slice(1);
+
+    const sourceNormalized = sourcePath
+      ? sourcePath.startsWith("/")
+        ? sourcePath
+        : `/${sourcePath}`
+      : normalizedPath;
+    const sourceSegments = sourceNormalized.split("/").filter(Boolean).slice(1);
+
+    if (pushHistory) {
+      const nextUrl = `/docs/${org}/${repo}/${persona}${normalizedPath}`;
+      window.history.pushState({}, "", nextUrl);
+    }
+
+    await fetchContent(slugSegments, normalizedPath, sourceSegments);
+  };
+
+  const allFiles = useMemo(() => {
+    if (!manifest) return [] as SidebarItem[];
+    const flatten = (items: SidebarItem[]): SidebarItem[] => {
+      return items.flatMap((item) =>
+        item.type === "folder" && item.children
+          ? [item, ...flatten(item.children)]
+          : [item]
+      );
+    };
+    return flatten(manifest.sidebar).filter((item) => item.type === "file");
+  }, [manifest]);
+
+  const neighbors = useMemo(() => {
+    if (!manifest || !activePath) return { previous: null, next: null };
+    return manifest.navigation?.[activePath] ?? { previous: null, next: null };
+  }, [manifest, activePath]);
+
+  const dynamicBreadcrumbs = useMemo(() => {
+    if (!manifest) return [];
+    const base = manifest.breadcrumbs || [];
+    if (!activePath) return base;
+    const segments = activePath.replace(/^\//, "").split("/").slice(1);
+    const crumbs = segments.map((segment, idx) => ({
+      label: segment.replace(/-/g, " ").replace(/_/g, " "),
+      path: `/docs/${org}/${repo}/${persona}/${segments.slice(0, idx + 1).join("/")}`,
+      uniquePath: `/docs/${org}/${repo}/${persona}/${segments.slice(0, idx + 1).join("/")}__${idx}`,
+    }));
+    return [...base, ...crumbs];
+  }, [manifest, activePath, org, repo, persona]);
+
   const filteredResults = useMemo(() => {
     if (!searchQuery.trim()) return allFiles;
     const query = searchQuery.toLowerCase();
     return allFiles.filter((item) => item.name.toLowerCase().includes(query));
   }, [allFiles, searchQuery]);
-
-  const tocHeadings = useMemo(() => {
-    const seen = new Set<string>();
-    return headings
-      .filter((heading) => heading.level <= 4)
-      .filter((heading) => {
-        const key = heading.text.trim().toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .map((heading) => ({
-        ...heading,
-        indentClass:
-          TOC_INDENT_CLASSES[
-            Math.min(heading.level - 1, TOC_INDENT_CLASSES.length - 1)
-          ],
-      }));
-  }, [headings]);
-
-  const lastUpdatedDisplay = useMemo(() => {
-    const timestamp =
-      manifest?.stats?.last_published_at ?? manifest?.published_at;
-    if (!timestamp) return null;
-    const date = new Date(timestamp);
-    if (Number.isNaN(date.getTime())) return null;
-    return date.toLocaleString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }, [manifest]);
 
   if (!mounted) {
     return null;
@@ -600,8 +523,6 @@ export default function LiveDocsPage() {
             }`}
           />
           <p className={isLight ? "text-slate-700" : "text-slate-400"}>
-            {" "}
-            {/* Improved contrast */}
             Loading documentation...
           </p>
         </div>
@@ -634,8 +555,6 @@ export default function LiveDocsPage() {
             Error
           </h1>
           <p className={isLight ? "text-slate-700" : "text-slate-400"}>
-            {" "}
-            {/* Improved contrast */}
             {error}
           </p>
         </div>
@@ -652,12 +571,6 @@ export default function LiveDocsPage() {
         color: isLight ? "#000000" : "#e2e8f0",
       }}
     >
-      {/* Debug Banner */}
-      {/* <div className="fixed top-0 left-0 right-0 z-50 bg-red-500 text-white p-2 text-center font-bold">
-        OLD PAGE COMPONENT: /docs/[org]/[...slug]/page.tsx
-        <br />
-        org={org}, repo={repo}, persona={persona}, slug={JSON.stringify(slug)}
-      </div> */}
 
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
@@ -673,7 +586,7 @@ export default function LiveDocsPage() {
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           } ${
             isLight
-              ? "border-slate-300 bg-white" // Improved border contrast
+              ? "border-slate-300 bg-white" 
               : "border-slate-800 bg-slate-900"
           }`}
         >
@@ -682,7 +595,6 @@ export default function LiveDocsPage() {
             <div
               className={`flex items-center justify-between border-b px-6 py-4 ${
                 isLight ? "border-slate-300" : "border-slate-800"
-              } // Improved border contrast
               }`}
             >
               <div className="flex items-center gap-3">
@@ -700,7 +612,6 @@ export default function LiveDocsPage() {
                   <p
                     className={`text-xs ${
                       isLight ? "text-slate-700" : "text-slate-400"
-                    } // Improved contrast
                     }`}
                   >
                     {org}
@@ -711,7 +622,7 @@ export default function LiveDocsPage() {
                 onClick={() => setSidebarOpen(false)}
                 className={`rounded-lg p-1.5 transition-colors lg:hidden ${
                   isLight
-                    ? "text-slate-700 hover:bg-slate-100" // Improved contrast
+                    ? "text-slate-700 hover:bg-slate-100"
                     : "text-slate-400 hover:bg-slate-800"
                 }`}
               >
@@ -781,7 +692,7 @@ export default function LiveDocsPage() {
                   onClick={() => setSidebarOpen(true)}
                   className={`rounded-lg p-2 transition-colors lg:hidden ${
                     isLight
-                      ? "text-slate-700 hover:bg-slate-100" // Improved contrast
+                      ? "text-slate-700 hover:bg-slate-100"
                       : "text-slate-400 hover:bg-slate-800"
                   }`}
                 >
@@ -893,7 +804,7 @@ export default function LiveDocsPage() {
             </div>
           </header>
 
-          {/* Content - UPDATED SECTION */}
+          {/* Content */}
           <div className="flex-1 overflow-y-visible lg:overflow-y-auto">
             <div className="mx-auto max-w-10xl px-6 py-6 sm:px-8 lg:ml-8 lg:mr-4 lg:px-6">
               {loading ? (
@@ -929,14 +840,13 @@ export default function LiveDocsPage() {
                               }
                               className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
                                 isLight
-                                  ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
+                                  ? "border-slate-300 hover:bg-slate-50"
                                   : "border-slate-800 hover:bg-slate-800"
                               }`}
                             >
                               <div
                                 className={`flex items-center gap-1 text-sm ${
                                   isLight ? "text-slate-600" : "text-slate-400"
-                                } // Improved contrast
                                 }`}
                               >
                                 <ArrowLeft className="h-3 w-3" />
@@ -951,6 +861,7 @@ export default function LiveDocsPage() {
                               </span>
                             </button>
                           )}
+
                           {neighbors.next && (
                             <button
                               onClick={() =>
@@ -962,14 +873,13 @@ export default function LiveDocsPage() {
                               }
                               className={`flex flex-col items-end gap-1 rounded-lg border p-3 text-right transition-colors ${
                                 isLight
-                                  ? "border-slate-300 hover:bg-slate-50" // Improved border contrast
+                                  ? "border-slate-300 hover:bg-slate-50"
                                   : "border-slate-800 hover:bg-slate-800"
-                              } ${!neighbors.previous ? "sm:col-start-2" : ""}`}
+                              }`}
                             >
                               <div
                                 className={`flex items-center gap-1 text-sm ${
                                   isLight ? "text-slate-600" : "text-slate-400"
-                                } // Improved contrast
                                 }`}
                               >
                                 <span>Next</span>
@@ -986,46 +896,7 @@ export default function LiveDocsPage() {
                           )}
                         </div>
                       )}
-
-                      {lastUpdatedDisplay && (
-                        <p
-                          className={`mt-12 text-sm ${
-                            isLight ? "text-slate-500" : "text-slate-500"
-                          }`}
-                        >
-                          Last updated {lastUpdatedDisplay}
-                        </p>
-                      )}
                     </article>
-
-                    {tocHeadings.length > 0 && (
-                      <aside className="hidden w-64 shrink-0 lg:ml-12 lg:block">
-                        <div className="sticky top-12 text-sm">
-                          <p
-                            className={`text-xs font-semibold uppercase tracking-[0.35em] ${
-                              isLight ? "text-slate-500" : "text-slate-500"
-                            }`}
-                          >
-                            On this page
-                          </p>
-                          <nav className="mt-3 space-y-1.5">
-                            {tocHeadings.map((heading) => (
-                              <a
-                                key={heading.id}
-                                href={`#${heading.id}`}
-                                className={`block rounded-full py-1 text-sm transition-colors ${
-                                  isLight
-                                    ? "text-slate-500 hover:text-slate-900"
-                                    : "text-slate-400 hover:text-slate-100"
-                                } ${heading.indentClass}`}
-                              >
-                                {heading.text}
-                              </a>
-                            ))}
-                          </nav>
-                        </div>
-                      </aside>
-                    )}
                   </div>
                 </>
               )}
@@ -1033,94 +904,78 @@ export default function LiveDocsPage() {
           </div>
         </main>
       </div>
+
       {/* Search Modal */}
       {searchOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-24 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24">
           <div
-            className={`w-full max-w-2xl rounded-xl border shadow-2xl ${
-              isLight
-                ? "border-slate-300 bg-white" // Improved border contrast
-                : "border-slate-700 bg-slate-900"
-            }`}
+            className="fixed inset-0 bg-black/20 backdrop-blur-sm dark:bg-slate-900/80"
+            onClick={() => setSearchOpen(false)}
+          />
+          <div
+            className={`relative w-full max-w-2xl rounded-lg shadow-2xl ${isLight ? "bg-white" : "bg-slate-900"}`}
           >
-            <div
-              className={`flex items-center gap-3 border-b px-4 py-3 ${
-                isLight ? "border-slate-300" : "border-slate-800"
-              } // Improved border contrast
-              }`}
-            >
+            <div className="flex items-center border-b px-4 py-3">
               <Search
-                className={`h-5 w-5 ${
-                  isLight ? "text-slate-500" : "text-slate-500"
-                } // Improved contrast
-                }`}
+                className={`mr-3 h-5 w-5 ${isLight ? "text-slate-500" : "text-slate-400"}`}
               />
               <input
                 ref={searchInputRef}
                 type="text"
                 placeholder="Search documentation..."
+                className={`flex-1 bg-transparent text-sm outline-none ${isLight ? "text-slate-900" : "text-white"}`}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className={`flex-1 bg-transparent text-base outline-none placeholder:${
-                  isLight ? "text-slate-500" : "text-slate-500"
-                } ${isLight ? "text-slate-900" : "text-white"}`}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setSearchOpen(false);
+                    setSearchQuery("");
+                  }
+                }}
               />
-              <kbd
-                className={`rounded border px-2 py-1 text-xs ${
-                  isLight
-                    ? "border-slate-400 bg-slate-100 text-slate-600" // Improved contrast
-                    : "border-slate-700 bg-slate-800 text-slate-400"
-                }`}
+              <button
+                onClick={() => {
+                  setSearchOpen(false);
+                  setSearchQuery("");
+                }}
+                className={`ml-2 rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-800`}
               >
-                ESC
-              </kbd>
+                <X className="h-4 w-4" />
+              </button>
             </div>
-
-            <div className="max-h-96 overflow-y-auto p-2">
-              {filteredResults.length === 0 ? (
-                <p
-                  className={`py-8 text-center text-sm ${
-                    isLight ? "text-slate-600" : "text-slate-400"
-                  } // Improved contrast
-                  }`}
-                >
-                  {searchQuery
-                    ? `No results found for "${searchQuery}"`
-                    : "Type to search..."}
-                </p>
-              ) : (
-                <div className="space-y-1">
+            <div className="max-h-[60vh] overflow-y-auto p-4">
+              {filteredResults.length > 0 ? (
+                <div className="space-y-2">
                   {filteredResults.map((item) => (
                     <button
-                      key={item.path}
+                      key={item.id}
                       onClick={() => {
                         fetchContentByPath(item.path, true, item.source_path);
                         setSearchOpen(false);
                         setSearchQuery("");
                       }}
-                      className={`flex w-full items-center justify-between rounded-lg px-4 py-3 text-left transition-colors ${
-                        isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
-                      }`}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"}`}
                     >
+                      <FileText
+                        className={`h-4 w-4 shrink-0 ${isLight ? "text-slate-500" : "text-slate-400"}`}
+                      />
                       <span
-                        className={`truncate capitalize ${
-                          isLight ? "text-slate-900" : "text-white"
-                        }`}
+                        className={`text-sm ${isLight ? "text-slate-700" : "text-slate-300"}`}
                       >
-                        {item.name.replace(/-/g, " ")}
-                      </span>
-                      <span
-                        className={`ml-4 text-xs ${
-                          isLight ? "text-slate-500" : "text-slate-500"
-                        } // Improved contrast
-                        }`}
-                      >
-                        {item.path.replace(`/${repo}/`, "")}
+                        {item.name.replace(/-/g, " ").replace(/_/g, " ")}
                       </span>
                     </button>
                   ))}
                 </div>
-              )}
+              ) : searchQuery ? (
+                <div className="py-8 text-center">
+                  <p
+                    className={`text-sm ${isLight ? "text-slate-500" : "text-slate-400"}`}
+                  >
+                    No results found for "{searchQuery}"
+                  </p>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

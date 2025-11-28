@@ -175,7 +175,6 @@ export async function middleware(request: NextRequest) {
       const pathSegments = originalPath.split("/").filter(Boolean);
       
       // IMPORTANT: First segment is ALWAYS the repo name in the subdomain pattern
-      // bajrangbalikijai.docbook.site/jaishreram -> repo=jaishreram
       const repoName = pathSegments[0] || ""; // First segment is repo name
       
       console.log(`[Middleware] 🔍 Path segments: ${JSON.stringify(pathSegments)}, repoName: ${repoName}`);
