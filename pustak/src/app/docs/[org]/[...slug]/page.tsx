@@ -36,6 +36,12 @@ interface SidebarItem {
   children?: SidebarItem[];
 }
 
+interface BreadcrumbItem {
+  label: string;
+  path: string;
+  uniquePath?: string;
+}
+
 interface HeadingItem {
   id: string;
   level: number;
@@ -65,7 +71,7 @@ interface Manifest {
       next: { path: string; source_path?: string; name: string } | null;
     }
   >;
-  breadcrumbs: { label: string; path: string }[];
+  breadcrumbs: BreadcrumbItem[];
   stats: {
     page_count: number;
     last_published_at: string | null;
@@ -327,6 +333,7 @@ export default function LiveDocsPage() {
     const crumbs = segments.map((segment, idx) => ({
       label: segment.replace(/-/g, " ").replace(/_/g, " "),
       path: `/docs/${org}/${[repo, ...segments.slice(0, idx + 1)].join("/")}`,
+      uniquePath: `/docs/${org}/${[repo, ...segments.slice(0, idx + 1)].join("/")}__${idx}`
     }));
     return [...base, ...crumbs];
   }, [manifest, activePath, org, repo]);
@@ -716,7 +723,7 @@ export default function LiveDocsPage() {
                     const isLast = index === dynamicBreadcrumbs.length - 1;
                     return (
                       <span
-                        key={crumb.path}
+                        key={crumb.uniquePath || crumb.path}
                         className="flex items-center gap-2"
                       >
                         {index > 0 && (

@@ -1371,7 +1371,12 @@ async def _fetch_live_page(
         token = _require_github_token(user)
     else:
         token = await _resolve_app_installation_token(db=db, org_id=org_id)
-
+    
+    # Special case for persona/file.md pattern - remove redundant persona prefix
+    if len(slug) >= 2 and slug[0] == persona:
+        print(f"🔍 Detected persona/{slug[1]} pattern - fixing path by removing redundant persona")
+        slug = slug[1:] # Remove the persona prefix
+    
     relative_path = "/".join(part.strip("/") for part in slug if part)
     if not relative_path:
         relative_path = "README.md"

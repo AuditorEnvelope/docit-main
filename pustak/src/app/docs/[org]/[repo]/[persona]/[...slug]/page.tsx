@@ -190,6 +190,17 @@ export default function LiveDocsPage() {
     }
   };
 
+  const sanitizeSegments = (segments: string[]): string[] => {
+    const normalized = [...segments].filter(Boolean);
+    const removable = new Set(["docs", org, repo, persona]);
+
+    while (normalized.length && removable.has(normalized[0])) {
+      normalized.shift();
+    }
+
+    return normalized;
+  };
+
   const fetchContent = async (
     slugSegments: string[],
     displayPath?: string,
@@ -199,20 +210,46 @@ export default function LiveDocsPage() {
     setError(null);
 
     try {
+      // Special case for SUMMARY.md which is at the root of persona folder
+      const isSummary = slugSegments.length === 1 && slugSegments[0] === "SUMMARY" || 
+                       (slugSegments.length === 2 && slugSegments[0] === persona && slugSegments[1] === "SUMMARY") ||
+                       (slugSegments.length >= 1 && slugSegments[slugSegments.length-1] === "SUMMARY.md");
+      
+      // Always sanitize slug segments for path display, even if we don't use them for the API call
+      const sanitizedSlugSegments = sanitizeSegments(slugSegments);
+      const sanitizedSourceSegments =
+        sourceSegments && sourceSegments.length
+          ? sanitizeSegments(sourceSegments)
+          : undefined;
+      
+      console.log(
+        `🔍 Fetching content with: org=${org}, repo=${repo}, persona=${persona}, slugSegments=${JSON.stringify(
+          slugSegments
+        )}, isSummary=${isSummary}`
+      );
+
       const params = new URLSearchParams({
         org_id: org,
         repo_id: repo,
         persona: persona,
       });
+      
+      // For SUMMARY.md, just request it directly without any extra path segments
+      if (isSummary) {
+        params.append("slug", "SUMMARY.md");
+      } else {
+        // Normal case - use the sanitized segments
+        const segmentsToUse =
+          sanitizedSourceSegments && sanitizedSourceSegments.length
+            ? sanitizedSourceSegments
+            : sanitizedSlugSegments;
 
-      const segmentsToUse =
-        sourceSegments && sourceSegments.length ? sourceSegments : slugSegments;
-
-      segmentsToUse.forEach((segment) => {
-        if (segment) {
-          params.append("slug", segment);
-        }
-      });
+        segmentsToUse.forEach((segment) => {
+          if (segment) {
+            params.append("slug", segment);
+          }
+        });
+      }
 
       const response = await fetch(
         `${apiBase}/docbook/live-content/public?${params.toString()}`
@@ -225,7 +262,7 @@ export default function LiveDocsPage() {
       const data = await response.json();
       setContent(data.content || "");
       const normalizedPath =
-        displayPath || `/${[repo, persona, ...slugSegments].join("/")}`;
+        displayPath || `/${[repo, persona, ...sanitizedSlugSegments].join("/")}`;
       setActivePath(normalizedPath);
       const activeName = normalizedPath.split("/").pop() || repo;
       setPageTitle(activeName.replace(/-/g, " ").replace(/_/g, " "));
@@ -245,21 +282,24 @@ export default function LiveDocsPage() {
   ) => {
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     const segments = normalizedPath.split("/").filter(Boolean);
-    const slugSegments = segments.slice(2); // Skip repo and persona
+    const slugSegments = sanitizeSegments(segments);
 
     const sourceNormalized = sourcePath
       ? sourcePath.startsWith("/")
         ? sourcePath
         : `/${sourcePath}`
       : normalizedPath;
-    const sourceSegments = sourceNormalized.split("/").filter(Boolean).slice(2);
+    const sourceSegmentsRaw = sourceNormalized.split("/").filter(Boolean);
+    const sourceSegments = sanitizeSegments(sourceSegmentsRaw);
 
     if (pushHistory) {
       const nextUrl = `/docs/${org}${normalizedPath}`;
       window.history.pushState({}, "", nextUrl);
     }
 
-    await fetchContent(slugSegments, normalizedPath, sourceSegments);
+    const displayPath = `/${[repo, persona, ...slugSegments].join("/")}`;
+
+    await fetchContent(slugSegments, displayPath, sourceSegments);
   };
 
   useEffect(() => {
