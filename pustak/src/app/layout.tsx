@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -42,15 +43,29 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const headersList = await headers();
+  const hostHeader = headersList.get("host")?.toLowerCase() || "";
+  const normalizedHost = hostHeader.replace(/:\d+$/, "");
+  const docbookSuffix = (
+    process.env.NEXT_PUBLIC_DOCBOOK_DOMAIN || "docbook.site"
+  )
+    .toLowerCase()
+    .replace(/^\.+/, "");
+  const isDocbookHost = Boolean(
+    docbookSuffix &&
+      (normalizedHost === docbookSuffix ||
+        normalizedHost.endsWith(`.${docbookSuffix}`))
+  );
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <Providers>{children}</Providers>
+        <Providers isDocbookHost={isDocbookHost}>{children}</Providers>
       </body>
     </html>
   );

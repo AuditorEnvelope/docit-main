@@ -103,13 +103,19 @@ async function markOnboardingCompleteRemotely(token: string): Promise<boolean> {
   }
 }
 
-function OnboardingRedirect({ children }: { children: ReactNode }) {
+function OnboardingRedirect({
+  children,
+  isDocbookHost,
+}: {
+  children: ReactNode;
+  isDocbookHost: boolean;
+}) {
   const { loading, isAuthenticated, user, token, markOnboardingComplete } =
     useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [status, setStatus] = useState<"checking" | "redirecting" | "ready">(
-    "checking"
+    () => (isDocbookHost ? "ready" : "checking")
   );
   const [progressIndex, setProgressIndex] = useState(0);
   const completionAttemptedRef = useRef(false);
@@ -138,6 +144,11 @@ function OnboardingRedirect({ children }: { children: ReactNode }) {
     }, [pathname]);
 
   useEffect(() => {
+    if (isDocbookHost) {
+      setStatus("ready");
+      return;
+    }
+
     if (isDocsRoute || isNotFoundRoute) {
       setStatus("ready");
       return;
@@ -219,6 +230,7 @@ function OnboardingRedirect({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [
+    isDocbookHost,
     isAuthenticated,
     isOnboardingRoute,
     isPublicRoute,
@@ -230,7 +242,11 @@ function OnboardingRedirect({ children }: { children: ReactNode }) {
   ]);
 
   const showSplash =
-    status !== "ready" && !isOnboardingRoute && !isDocsRoute && !isNotFoundRoute;
+    status !== "ready" &&
+    !isOnboardingRoute &&
+    !isDocsRoute &&
+    !isNotFoundRoute &&
+    !isDocbookHost;
 
   useEffect(() => {
     if (!showSplash) return;
@@ -254,7 +270,13 @@ function OnboardingRedirect({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({
+  children,
+  isDocbookHost = false,
+}: {
+  children: ReactNode;
+  isDocbookHost?: boolean;
+}) {
   return (
     <ThemeProvider
       attribute="class"
@@ -263,7 +285,9 @@ export function Providers({ children }: { children: ReactNode }) {
       disableTransitionOnChange
     >
       <AuthProvider>
-        <OnboardingRedirect>{children}</OnboardingRedirect>
+        <OnboardingRedirect isDocbookHost={isDocbookHost}>
+          {children}
+        </OnboardingRedirect>
       </AuthProvider>
     </ThemeProvider>
   );
