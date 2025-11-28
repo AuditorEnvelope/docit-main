@@ -80,12 +80,22 @@ interface Manifest {
 
 const TOC_INDENT_CLASSES = ["pl-0", "pl-3", "pl-6", "pl-9", "pl-12"];
 
-export default function LiveDocsPage() {
+export default function LiveDocsPage({ params: pageParams }: any) {
+  console.log('[DOCS_DEBUG] 🚀 NEW PAGE COMPONENT EXECUTED', { pageParams });
+  console.log('[DOCS_DEBUG] 🔍 URL Path Pattern: /docs/[org]/[repo]/[persona]/[...slug]');
+  console.log('[DOCS_DEBUG] 📚 Component: LiveDocsPage in [org]/[repo]/[persona]/[...slug]/page.tsx');
+  
+  // Get params from useParams hook for client components
   const params = useParams();
-  const org = params.org as string;
-  const repo = params.repo as string;
-  const persona = params.persona as string;
-  const slug = (params.slug as string[]) || [];
+  console.log('[DOCS_DEBUG] 🔍 useParams() result:', params);
+  
+  // Use either the props params (for server component) or useParams (for client component)
+  const org = (pageParams?.org || params?.org) as string;
+  const repo = (pageParams?.repo || params?.repo) as string;
+  const persona = (pageParams?.persona || params?.persona) as string;
+  const slug = ((pageParams?.slug || params?.slug) as string[]) || [];
+  
+  console.log('[DOCS_DEBUG] 📚 Extracted params:', { org, repo, persona, slug });
 
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [content, setContent] = useState<string>("");
@@ -340,6 +350,13 @@ export default function LiveDocsPage() {
         color: isLight ? "#000000" : "#e2e8f0",
       }}
     >
+      {/* Debug Banner */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-green-500 text-white p-2 text-center font-bold">
+        NEW PAGE COMPONENT: /docs/[org]/[repo]/[persona]/[...slug]/page.tsx
+        <br />
+        org={org}, repo={repo}, persona={persona}, slug={JSON.stringify(slug)}
+      </div>
+      <div className="h-16"></div> {/* Spacer to prevent content from being hidden under banner */}
       {/* Persona Indicator */}
       <div className={`fixed top-0 right-0 z-50 px-4 py-2 m-4 rounded-full text-sm font-medium ${
         persona === "internal" 

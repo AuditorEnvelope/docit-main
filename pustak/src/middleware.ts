@@ -9,13 +9,22 @@ const API_BASE = RAW_BACKEND_URL.endsWith("/api/v1")
   : `${RAW_BACKEND_URL.replace(/\/$/, "")}/api/v1`;
 
 export async function middleware(request: NextRequest) {
-  // 1. GET HOSTNAME SAFELY
+  const { search, origin } = request.nextUrl;
+  
+  console.log(`[DOCS_DEBUG] 🚀 MIDDLEWARE START - URL: ${request.url}`);
+  
+  // 1. GET HOSTNAME AND PATHNAME SAFELY
   // Prefer the "Host" header which is more reliable behind proxies like Render/Cloudflare
   const hostHeader = request.headers.get("host") || "";
   const hostname = hostHeader.split(":")[0] || request.nextUrl.hostname;
   const pathname = request.nextUrl.pathname || "/";
   const method = request.method;
   const acceptHeader = request.headers.get("accept") || "";
+  
+  console.log(`[DOCS_DEBUG] 📌 Pathname: ${pathname}, Hostname: ${hostname}`);
+  console.log(`[DOCS_DEBUG] 🔍 Search params: ${search}`);
+  console.log(`[DOCS_DEBUG] 🌐 Origin: ${origin}`);
+  console.log(`[DOCS_DEBUG] 📦 Headers: ${JSON.stringify(Object.fromEntries(request.headers))}`);
 
   const isPrefetch = request.headers.get("purpose") === "prefetch";
   const isStaticAssetRequest =
@@ -223,38 +232,47 @@ export async function middleware(request: NextRequest) {
       // 1. repo_id is ALWAYS the first path segment (not 'docs')
       // 2. persona is ALWAYS a valid value (not the org name)
       
+      console.log(`[DOCS_DEBUG] 📚 Starting URL rewriting logic`);
+      console.log(`[DOCS_DEBUG] 📚 originalPath=${originalPath}, liveUrlPath=${liveUrlPath}, repoName=${repoName}`);
+      
       if (!originalPath && liveUrlPath) {
         // Homepage with live URL path
         url.pathname = `/docs/${org}${liveUrlPath}`;
+        console.log(`[DOCS_DEBUG] 📚 Case 1: Homepage with live URL path -> ${url.pathname}`);
       } else if (!originalPath) {
         // Homepage without live URL path
         url.pathname = `/docs/${org}`;
+        console.log(`[DOCS_DEBUG] 📚 Case 2: Homepage without live URL path -> ${url.pathname}`);
       } else if (repoName) {
         // We have a repo name from the first path segment
+        console.log(`[DOCS_DEBUG] 📚 Case 3: We have a repo name: ${repoName}`);
         
         // IMPORTANT: For subdomain access, NEVER use the org as persona
         // ALWAYS use a valid persona (dev or internal) or default to dev
         let persona = "dev"; // Default persona
         
         // Check if second segment is a valid persona
+        console.log(`[DOCS_DEBUG] 📚 Checking if second segment is valid persona. pathSegments[1]=${pathSegments[1]}`);
         if (validPersonas.includes(pathSegments[1] || "")) {
           persona = pathSegments[1];
           const remainingSegments = pathSegments.slice(2).join("/");
           url.pathname = `/docs/${org}/${repoName}/${persona}${remainingSegments ? "/" + remainingSegments : ""}`;
+          console.log(`[DOCS_DEBUG] 📚 Case 3.1: Valid persona found: ${persona}, remainingSegments=${remainingSegments}`);
           console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}`);
         } else {
           // No valid persona specified - use default
           const remainingSegments = pathSegments.slice(1).join("/");
           url.pathname = `/docs/${org}/${repoName}/${persona}${remainingSegments ? "/" + remainingSegments : ""}`;
+          console.log(`[DOCS_DEBUG] 📚 Case 3.2: Using default persona: ${persona}, remainingSegments=${remainingSegments}`);
           console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}`);
         }
         
         // Add debug info
-        console.log(`[Middleware] 🔑 Final rewrite: org=${org}, repo=${repoName}, persona=${persona}`);
+        console.log(`[DOCS_DEBUG] 🔑 FINAL REWRITE: org=${org}, repo=${repoName}, persona=${persona}, path=${url.pathname}`);
       } else {
         // Fallback - just rewrite to docs page
         url.pathname = `/docs/${org}${originalPath}`;
-        console.log(`[Middleware] 📝 Fallback rewriting: ${url.pathname}`);
+        console.log(`[DOCS_DEBUG] 📚 Case 4: Fallback rewriting: ${url.pathname}`);
       }
 
       const response = NextResponse.rewrite(url);

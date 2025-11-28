@@ -85,15 +85,32 @@ interface Manifest {
 const TOC_INDENT_CLASSES = ["pl-0", "pl-3", "pl-6", "pl-9", "pl-12"];
 
 export default function LiveDocsPage() {
+  console.log('[DOCS_DEBUG] 🚀 OLD PAGE COMPONENT EXECUTED');
+  console.log('[DOCS_DEBUG] 🔍 URL Path Pattern: /docs/[org]/[...slug]');
+  console.log('[DOCS_DEBUG] 📚 Component: LiveDocsPage in [org]/[...slug]/page.tsx');
+  
   const params = useParams();
+  console.log('[DOCS_DEBUG] 🔍 useParams() result:', params);
+  
   const org = params.org as string;
   const slug = (params.slug as string[]) || [];
+  console.log('[DOCS_DEBUG] 📚 Initial params:', { org, slug });
 
   const validPersonas = ["internal", "dev"] as const;
 
   const repo = slug[0] || "";
   const hasExplicitPersona = validPersonas.includes((slug[1] as (typeof validPersonas)[number]) || "" as any);
   const persona = hasExplicitPersona ? (slug[1] as string) : "dev";
+  
+  console.log('[DOCS_DEBUG] 📚 Extracted params from slug:', { 
+    org, 
+    repo, 
+    hasExplicitPersona, 
+    persona, 
+    remainingSlug: hasExplicitPersona ? slug.slice(2) : slug.slice(1)
+  });
+  console.log('[DOCS_DEBUG] ⚠️ WARNING: Using OLD page component! This should be replaced by the new one.');
+  console.log('[DOCS_DEBUG] 📢 API calls will use: org_id=' + org + ', repo_id=' + repo + ', persona=' + persona);
 
   const docSegments = useMemo(
     () => (hasExplicitPersona ? slug.slice(2) : slug.slice(1)),
@@ -163,15 +180,24 @@ export default function LiveDocsPage() {
     try {
       setLoading(true);
       setError(null);
+      
+      const url = `${apiBase}/docbook/live-manifest/public?org_id=${encodeURIComponent(
+        org
+      )}&repo_id=${encodeURIComponent(repo)}&persona=${encodeURIComponent(persona)}`;
+      
+      console.log('[DOCS_DEBUG] 📡 MANIFEST API CALL');
+      console.log('[DOCS_DEBUG] 📡 URL:', url);
+      console.log('[DOCS_DEBUG] 📡 Parameters:', {
+        org_id: org,
+        repo_id: repo,
+        persona: persona
+      });
+      
       console.log(
         `🔍 Fetching manifest with: org=${org}, repo=${repo}, persona=${persona}, slug=${JSON.stringify(slug)}`
       );
 
-      const response = await fetch(
-        `${apiBase}/docbook/live-manifest/public?org_id=${encodeURIComponent(
-          org
-        )}&repo_id=${encodeURIComponent(repo)}&persona=${encodeURIComponent(persona)}`
-      );
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error(`Failed to load manifest: ${response.statusText}`);
@@ -214,6 +240,16 @@ export default function LiveDocsPage() {
     setError(null);
 
     try {
+      console.log('[DOCS_DEBUG] 📡 CONTENT API CALL');
+      console.log('[DOCS_DEBUG] 📡 Parameters:', {
+        org_id: org,
+        repo_id: repo,
+        persona: persona,
+        slugSegments,
+        displayPath,
+        sourceSegments
+      });
+      
       console.log(
         `🔍 Fetching content with: org=${org}, repo=${repo}, persona=${persona}, slugSegments=${JSON.stringify(
           slugSegments
@@ -234,10 +270,12 @@ export default function LiveDocsPage() {
           params.append("slug", segment);
         }
       });
+      
+      const url = `${apiBase}/docbook/live-content/public?${params.toString()}`;
+      console.log('[DOCS_DEBUG] 📡 CONTENT URL:', url);
+      console.log('[DOCS_DEBUG] 📡 Slug parameters:', segmentsToUse);
 
-      const response = await fetch(
-        `${apiBase}/docbook/live-content/public?${params.toString()}`
-      );
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error(`Failed to load content: ${response.statusText}`);
@@ -584,6 +622,13 @@ export default function LiveDocsPage() {
         color: isLight ? "#000000" : "#e2e8f0",
       }}
     >
+      {/* Debug Banner */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-red-500 text-white p-2 text-center font-bold">
+        OLD PAGE COMPONENT: /docs/[org]/[...slug]/page.tsx
+        <br />
+        org={org}, repo={repo}, persona={persona}, slug={JSON.stringify(slug)}
+      </div>
+      <div className="h-16"></div> {/* Spacer to prevent content from being hidden under banner */}
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div
