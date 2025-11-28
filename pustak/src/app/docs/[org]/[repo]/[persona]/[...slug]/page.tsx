@@ -170,12 +170,13 @@ export default function LiveDocsPage({ params: pageParams }: any) {
   }, [isLight, mounted]);
 
   useEffect(() => {
-    if (!org || !repo || !persona) {
-      setError("Invalid URL: organization, repository, or persona not specified");
+    if (!org || !repo) {
+      setError("Invalid documentation URL");
       setLoading(false);
       return;
     }
 
+    console.log('[DOCS_DEBUG] 💾 Fetching manifest with params:', { org, repo, persona });
     fetchManifest();
   }, [org, repo, persona]);
 
@@ -291,8 +292,10 @@ export default function LiveDocsPage({ params: pageParams }: any) {
         persona: persona,
       });
       
-      // For SUMMARY.md, just request it directly without any extra path segments
-      if (isSummary) {
+      // CRITICAL FIX: Always request SUMMARY.md if no specific content is requested
+      // This ensures we always have something to show
+      if (isSummary || slugSegments.length === 0) {
+        console.log('[DOCS_DEBUG] 🚨 Using SUMMARY.md as content target');
         params.append("slug", "SUMMARY.md");
       } else {
         // Normal case - use the sanitized segments
@@ -303,6 +306,7 @@ export default function LiveDocsPage({ params: pageParams }: any) {
 
         // If we have segments, use them
         if (segmentsToUse.length > 0) {
+          console.log('[DOCS_DEBUG] 🚨 Using segments for content:', segmentsToUse);
           segmentsToUse.forEach((segment) => {
             if (segment) {
               params.append("slug", segment);
@@ -371,27 +375,23 @@ export default function LiveDocsPage({ params: pageParams }: any) {
   useEffect(() => {
     if (!manifest) return;
 
-    if (slug.length) {
+    console.log('[DOCS_DEBUG] 💾 Manifest loaded, fetching content with:', { slug });
+    
+    if (slug && slug.length) {
+      console.log('[DOCS_DEBUG] 💾 Using slug from URL:', slug);
       const currentPath = `/${[repo, persona, ...slug].join("/")}`;
       fetchContent(slug, currentPath);
     } else {
-      const flatten = (items: SidebarItem[]): SidebarItem[] =>
-        items.flatMap((entry) =>
-          entry.type === "folder" && entry.children
-            ? flatten(entry.children)
-            : [entry]
-        );
-      const firstDoc = flatten(manifest.sidebar).find(
-        (item) => item.type === "file"
-      );
-      if (firstDoc) {
-        fetchContentByPath(firstDoc.path, true, firstDoc.source_path);
-      } else {
-        setError("No published documentation found.");
-      }
+      console.log('[DOCS_DEBUG] 💾 No slug provided, looking for first document in sidebar');
+      // Try to find SUMMARY.md first
+      const summaryPath = `${repo}/${persona}/SUMMARY`;
+      console.log('[DOCS_DEBUG] 💾 Trying to fetch SUMMARY.md at path:', summaryPath);
+      
+      // First try SUMMARY.md
+      fetchContent(['SUMMARY.md'], `/${summaryPath}`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manifest, repo, persona, slug.join("/")]);
+  }, [manifest, slug, repo, persona]);
 
   // Rest of the component remains the same, with minor modifications to include persona in paths
 
