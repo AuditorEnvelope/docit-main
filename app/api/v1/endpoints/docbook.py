@@ -532,7 +532,37 @@ async def check_docbook_exists(
         return {
             "exists": False,
             "org_id": org_id,
-            "message": f"No docbook linked for {org_id}. Create lekhak-docbook-org-{{ORG_ID}} and link it.",
+            "message": f"No docbook linked for {org_id}. Create pustak-docbook-{org_id.lower()} and link it.",
+        }
+    
+    # Verify the repository actually exists on GitHub
+    token = _require_github_token(user)
+    
+    # Extract org and repo name from full name
+    if repo.docbook_full_name and "/" in repo.docbook_full_name:
+        repo_org, repo_name = repo.docbook_full_name.split("/", 1)
+    else:
+        repo_org = org_id
+        repo_name = repo.docbook_repo_name
+    
+    # Check if repo exists on GitHub
+    repo_data = await _fetch_repo_data(repo_org, repo_name, token)
+    
+    if not repo_data:
+        logger.warning(
+            "🚨 Docbook repo in database but not found on GitHub",
+            extra={
+                "org_id": org_id,
+                "repo_full_name": repo.docbook_full_name,
+                "user_id": str(user.id),
+            },
+        )
+        return {
+            "exists": False,
+            "org_id": org_id,
+            "docbook_repo": repo.docbook_full_name,
+            "docbook_url": repo.docbook_url,
+            "message": f"Repository {repo.docbook_full_name} not found on GitHub. Please create it or link a different repository.",
         }
 
     return {
@@ -1501,6 +1531,13 @@ async def get_live_manifest_public(
 
     try:
         # Check if persona is valid
+        if persona == "settings":
+            print(f"⚠️ Invalid persona 'settings' requested for {org_id}/{repo_id}")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid persona 'settings'. Valid values are 'internal' or 'dev'."
+            )
+            
         if persona not in ["internal", "dev"]:
             persona = "dev"  # Default to dev if invalid
             

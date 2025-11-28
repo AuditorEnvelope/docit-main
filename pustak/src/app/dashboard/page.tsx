@@ -944,7 +944,15 @@ export default function DashboardPage() {
                                   View docs
                                 </button>
                                 <button
-                                  onClick={() => router.push(`/repo/settings/${fullName}`)}
+                                  onClick={() => {
+                                    // Extract org and repo from fullName (format: org/repo)
+                                    const [org, repo] = fullName.split('/');
+                                    if (org && repo) {
+                                      router.push(`/repo/settings/${org}/${repo}`);
+                                    } else {
+                                      console.error('Invalid repository name format:', fullName);
+                                    }
+                                  }}
                                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-blue-400 hover:text-white cursor-pointer"
                                 >
                                   <Settings className="h-4 w-4" />
