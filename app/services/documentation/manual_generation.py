@@ -59,20 +59,46 @@ class ManualDocGenerator:
             workflow = generated_docs.get("workflow", "")
             api_doc = generated_docs.get("api", "")
 
-            # Persist artefacts
-            self._write_text(docs_dir / "SUMMARY.md", summary)
-            architecture_dir = docs_dir / "architecture"
+            # Create the proper folder structure based on doc_persona
+            # Map 'dev' to 'developer' for folder naming
+            persona_folder_name = "dev" if self.doc_persona == "dev" else "internal"
+            print(f"📚 Creating documentation in {persona_folder_name} folder")
+            
+            # Create the current persona folder
+            persona_dir = docs_dir / persona_folder_name
+            persona_dir.mkdir(exist_ok=True)
+            
+            # Create the other persona folder if it doesn't exist
+            # But don't modify its contents if it already exists
+            other_persona = "internal" if persona_folder_name == "dev" else "dev"
+            other_persona_dir = docs_dir / other_persona
+            other_persona_dir.mkdir(exist_ok=True)
+            
+            # Only add a placeholder README if the other persona folder is empty
+            if not any(other_persona_dir.iterdir()):
+                print(f"📝 Creating placeholder README in {other_persona} folder")
+                self._write_text(other_persona_dir / "README.md", f"# Documentation for {other_persona}\n\nThis persona documentation is not available.")
+            
+            # Persist artefacts in the correct persona folder
+            self._write_text(persona_dir / "SUMMARY.md", summary)
+            
+            # Create architecture folder inside the persona folder
+            architecture_dir = persona_dir / "architecture"
             architecture_dir.mkdir(exist_ok=True)
             self._write_text(architecture_dir / "v1.0-architecture.md", architecture)
             self._write_text(architecture_dir / "current.md", architecture)
 
-            workflow_dir = docs_dir / "workflow"
+            # Create workflow folder inside the persona folder
+            workflow_dir = persona_dir / "workflow"
             workflow_dir.mkdir(exist_ok=True)
             self._write_text(workflow_dir / "v1.0-workflow.md", workflow)
             self._write_text(workflow_dir / "current.md", workflow)
 
-            self._write_text(docs_dir / "api.md", api_doc)
-            (docs_dir / "changes").mkdir(exist_ok=True)
+            # Add API doc inside the persona folder
+            self._write_text(persona_dir / "api.md", api_doc)
+            
+            # Create changes folder inside the persona folder
+            (persona_dir / "changes").mkdir(exist_ok=True)
 
             # Update root README & changelog for traceability
             self._write_text(workspace / "README.md", summary)

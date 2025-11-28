@@ -104,9 +104,37 @@ class DocbookPublisher:
 
         tmp_dir = Path(tempfile.mkdtemp(prefix="docai_docbook_"))
         print(f"📁 Working directory: {tmp_dir}")
+        
+        # Check if repository exists
+        repo_exists = await self._check_repo_exists(org_id, f"pustak-docbook-{org_id}", writer_token)
+        if not repo_exists:
+            print(f"❌ Error publishing to docbook: Repository {docbook_full_name} not found")
+            print("ℹ️ You may need to create this repository first or check the organization name")
+            print(f"ℹ️ Expected repository name: {docbook_full_name}")
+            return {
+                "status": "error",
+                "message": f"Repository {docbook_full_name} not found. Please create it first.",
+                "docbook_repo": docbook_full_name,
+                "branch": staging_branch,
+            }
 
         try:
-            self._clone_repo(docbook_full_name, writer_token, tmp_dir)
+            try:
+                self._clone_repo(docbook_full_name, writer_token, tmp_dir)
+            except RuntimeError as e:
+                error_msg = str(e)
+                if "Repository not found" in error_msg:
+                    print(f"❌ Error publishing to docbook: Repository {docbook_full_name} not found")
+                    print("ℹ️ You may need to create this repository first or check the organization name")
+                    return {
+                        "status": "error",
+                        "message": f"Repository {docbook_full_name} not found. Please create it first.",
+                        "docbook_repo": docbook_full_name,
+                        "branch": staging_branch,
+                    }
+                else:
+                    raise
+                    
             self._configure_git_identity(tmp_dir)
             self._checkout_staging(tmp_dir, staging_branch, main_branch, writer_token, docbook_full_name)
             self._sync_docs(tmp_dir, source_repo_name, docs_dir)
@@ -394,21 +422,7 @@ class DocbookPublisher:
     async def _get_writer_token(self, installation_id: int) -> Optional[str]:
         helper = self._get_dual_app_helper()
         token = await helper.get_writer_token(installation_id)
-        if token:
-            preview = f"{token[:4]}...{token[-4:]}" if len(token) > 8 else "<short>"
-            print(f"🔐 Writer token acquired ({preview})")
         return token
-
-    def _clone_repo(self, repo_full_name: str, writer_token: str, destination: Path) -> None:
-        clone_url, masked_url = self._tokenized_urls(repo_full_name, writer_token)
-        print(f"📚 Cloning docbook repository: {masked_url}")
-        # Don't use --depth 1 to ensure we can see all branches (like old codebase)
-        self._run_git([
-            "git",
-            "clone",
-            clone_url,
-            str(destination),
-        ], mask_tokens=[writer_token])
 
     def _configure_git_identity(self, repo_dir: Path) -> None:
         name, email = self._writer_identity()
@@ -560,10 +574,8 @@ class DocbookPublisher:
         )
 
     def _sync_docs(self, repo_dir: Path, source_repo_name: str, docs_dir: Path) -> None:
-        # Create target repo directory
+        # Create target repo directory if it doesn't exist
         target_dir = repo_dir / source_repo_name
-        if target_dir.exists():
-            shutil.rmtree(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
         
         # Create docs directory inside target repo directory
@@ -592,8 +604,36 @@ class DocbookPublisher:
             with open(dev_target_dir / "README.md", "w") as f:
                 f.write(f"# {source_repo_name}\n\nPublic documentation is not available for this repository.")
         else:
-            # New structure: Copy persona folders directly
-            shutil.copytree(docs_dir, target_docs_dir, dirs_exist_ok=True)
+            # New structure: Find which persona folder has been modified
+            # We'll determine this by looking for a SUMMARY.md file
+            modified_personas = []
+            for persona in ["internal", "dev"]:
+                source_persona_dir = docs_dir / persona
+                if source_persona_dir.exists() and (source_persona_dir / "SUMMARY.md").exists():
+                    modified_personas.append(persona)
+            
+            print(f"📝 Modified personas: {', '.join(modified_personas) or 'none'}")
+            
+            # Only copy the modified persona folders
+            for persona in modified_personas:
+                source_persona_dir = docs_dir / persona
+                print(f"📋 Copying {persona} documentation")
+                target_persona_dir = target_docs_dir / persona
+                
+                # Remove existing content in this persona folder
+                if target_persona_dir.exists():
+                    shutil.rmtree(target_persona_dir)
+                    
+                # Copy the updated persona folder
+                shutil.copytree(source_persona_dir, target_persona_dir)
+                
+            # Ensure both persona folders exist in the target
+            for persona in ["internal", "dev"]:
+                target_persona_dir = target_docs_dir / persona
+                if not target_persona_dir.exists():
+                    target_persona_dir.mkdir(exist_ok=True)
+                    with open(target_persona_dir / "README.md", "w") as f:
+                        f.write(f"# {source_repo_name} {persona.capitalize()} Documentation\n\nThis persona documentation is not available yet.")
         
         # Add all changes
         self._run_git(["git", "add", f"{source_repo_name}/"], cwd=repo_dir)
@@ -721,6 +761,22 @@ class DocbookPublisher:
         url = f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
         masked = f"https://x-access-token:***MASKED***@github.com/{repo_full_name}.git"
         return url, masked
+        
+    def _clone_repo(self, repo_full_name: str, token: str, target_dir: Path) -> None:
+        clone_url, masked_url = self._tokenized_urls(repo_full_name, token)
+        print(f"📚 Cloning docbook repository: {masked_url}")
+        try:
+            self._run_git(["git", "clone", clone_url, str(target_dir)])
+        except RuntimeError as e:
+            error_msg = str(e)
+            if "Repository not found" in error_msg:
+                print(f"❌ Repository not found: {repo_full_name}")
+                print("👉 Please check that:")
+                print("   1. The repository exists on GitHub")
+                print("   2. The GitHub token has access to the repository")
+                print("   3. The repository name is spelled correctly")
+                print("   4. The organization name is correct")
+            raise
 
     def _run_git(
         self,
@@ -760,3 +816,19 @@ class DocbookPublisher:
         if not self._dual_app:
             self._dual_app = GitHubDualAppHelper()
         return self._dual_app
+        
+    async def _check_repo_exists(self, org_id: str, repo_name: str, token: str) -> bool:
+        """Check if a repository exists on GitHub."""
+        try:
+            import httpx
+            url = f"https://api.github.com/repos/{org_id}/{repo_name}"
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=headers)
+                return response.status_code == 200
+        except Exception as e:
+            print(f"⚠️ Error checking if repository exists: {e}")
+            return False

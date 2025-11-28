@@ -1177,6 +1177,7 @@ async def _build_live_manifest(
     # Include persona in the path
     repo_path = f"{repo_id}/docs/{persona}"
     print(f"📚 Accessing manifest for path: {repo_path} with persona: {persona}")
+    print(f"📝 Debug: org_id={org_id}, repo_id={repo_id}, persona={persona}")
 
     headers = {
         "Authorization": f"token {token}",

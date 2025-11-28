@@ -141,6 +141,8 @@ export async function middleware(request: NextRequest) {
       const pathSegments = originalPath.split("/").filter(Boolean);
       const repoName = pathSegments[0] || ""; // First segment is repo name
       
+      console.log(`[Middleware] 🔍 Path segments: ${JSON.stringify(pathSegments)}, repoName: ${repoName}`);
+      
       // Special case for settings path or any path with "settings" in it
       if (originalPath.includes("/settings") || repoName === "settings" || pathSegments.includes("settings")) {
         console.log(`[Middleware] ⚠️ Settings path detected: ${originalPath}`);
@@ -199,12 +201,24 @@ export async function middleware(request: NextRequest) {
       } else if (!originalPath) {
         // Homepage without live URL path
         url.pathname = `/docs/${org}`;
-      } else if (repoName && !personaName) {
-        // Repo without persona specified - default to dev
-        url.pathname = `/docs/${org}/${repoName}/dev${remainingPath ? "/" + remainingPath : ""}`;
+      } else if (repoName) {
+        // We have a repo name
+        if (validPersonas.includes(pathSegments[1] || "")) {
+          // Second segment is a valid persona
+          const persona = pathSegments[1];
+          const remainingSegments = pathSegments.slice(2).join("/");
+          url.pathname = `/docs/${org}/${repoName}/${persona}${remainingSegments ? "/" + remainingSegments : ""}`;
+          console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}`);
+        } else {
+          // No valid persona specified - default to dev
+          const remainingSegments = pathSegments.slice(1).join("/");
+          url.pathname = `/docs/${org}/${repoName}/dev${remainingSegments ? "/" + remainingSegments : ""}`;
+          console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}`);
+        }
       } else {
-        // Path with repo and persona already specified
+        // Fallback - just rewrite to docs page
         url.pathname = `/docs/${org}${originalPath}`;
+        console.log(`[Middleware] 📝 Fallback rewriting: ${url.pathname}`);
       }
 
       const response = NextResponse.rewrite(url);

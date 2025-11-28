@@ -149,6 +149,9 @@ export default function LiveDocsPage() {
     try {
       setLoading(true);
       setError(null);
+      
+      console.log(`🔍 Fetching manifest with: org=${org}, repo=${repo}, persona=${persona}`);
+      
       const response = await fetch(
         `${apiBase}/docbook/live-manifest/public?org_id=${encodeURIComponent(
           org
