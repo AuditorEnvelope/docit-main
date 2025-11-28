@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
@@ -9,6 +9,7 @@ import { PublishToLiveButton } from "@/components/PublishToLiveButton";
 import PendingReviewsTab from "@/components/PendingReviewsTab";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePendingReviews } from "@/hooks/usePendingReviews";
+import { OnboardingSplash, ONBOARDING_PROGRESS_MESSAGES } from "@/components/OnboardingSplash";
 import {
   BookOpen,
   Calendar,
@@ -37,6 +38,240 @@ interface RepositorySummary {
   last_documented_at?: string | null;
   pending_reviews?: number | null;
   html_url?: string | null;
+}
+
+// Onboarding Guard component that checks if all required components are set up
+function OnboardingGuard({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const { user, loading: authLoading, token } = useAuth();
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+  const [progressIndex, setProgressIndex] = useState(0);
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
+  
+  // Track organization and installation status
+  const [orgs, setOrgs] = useState<string[]>([]);
+  const [selectedOrg, setSelectedOrg] = useState<string>("");
+  const [orgSummaries, setOrgSummaries] = useState<Record<string, {
+    org: string;
+    reader_app_installed?: boolean;
+    writer_app_installed?: boolean;
+    docbook_repo?: string;
+    writer_app_has_access?: boolean;
+  }>>({});
+  
+  // Polling for writer app installation
+  const writerPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const writerPollAttempts = useRef(0);
+  const MAX_WRITER_POLL_ATTEMPTS = 12; // roughly 1 minute at 5s interval
+  const [pollingWriterApp, setPollingWriterApp] = useState(false);
+  
+  // API base URL
+  const apiBase = useMemo(() => {
+    const normalized = BACKEND_URL.replace(/\/$/, "");
+    const hasApiSuffix = /\/api(\/v\d+)?$/i.test(normalized);
+    return hasApiSuffix ? normalized : `${normalized}/api/v1`;
+  }, []);
+  
+  // Progress message animation
+  useEffect(() => {
+    if (!checkingOnboarding) return;
+    
+    const interval = setInterval(() => {
+      setProgressIndex((prev) => (prev + 1) % ONBOARDING_PROGRESS_MESSAGES.length);
+    }, 1800);
+    
+    return () => clearInterval(interval);
+  }, [checkingOnboarding]);
+  
+  // Stop writer app polling
+  const stopWriterPolling = useCallback(() => {
+    if (writerPollRef.current) {
+      clearInterval(writerPollRef.current);
+      writerPollRef.current = null;
+    }
+    writerPollAttempts.current = 0;
+    setPollingWriterApp(false);
+  }, []);
+  
+  // Load onboarding state
+  const loadOnboardingState = useCallback(async (options?: { silent?: boolean }) => {
+    if (!token) return;
+    
+    try {
+      if (!options?.silent) {
+        setCheckingOnboarding(true);
+      }
+      
+      // 1. Fetch organizations
+      const orgsRes = await fetch(`${apiBase}/user/organizations`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!orgsRes.ok) {
+        throw new Error("Failed to fetch organizations");
+      }
+      
+      const data = await orgsRes.json();
+      const orgIds: string[] = (data.organizations || []).map(
+        (org: any) => typeof org === "string" ? org : org?.login || org?.org || org?.name || ""
+      ).filter(Boolean);
+      
+      setOrgs(orgIds);
+      
+      // If no orgs, we can't continue onboarding
+      if (orgIds.length === 0) {
+        setOnboardingComplete(false);
+        if (!options?.silent) setCheckingOnboarding(false);
+        return;
+      }
+      
+      // Select first org if none selected
+      const primaryOrg = orgIds[0] || "";
+      setSelectedOrg((prev) => prev || primaryOrg);
+      
+      // 2. Check each organization's setup status
+      const summaries: Record<string, any> = {};
+      await Promise.all(
+        orgIds.map(async (orgId) => {
+          const summary: any = { org: orgId };
+          
+          // 2.1 Check GitHub Apps installation
+          const appsRes = await fetch(`${apiBase}/org/${orgId}/verify-apps`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          
+          if (appsRes.ok) {
+            const appData = await appsRes.json();
+            summary.reader_app_installed = appData.reader_app?.installed ?? false;
+            summary.writer_app_installed = appData.writer_app?.installed ?? false;
+          }
+          
+          // 2.2 Check docbook repository
+          const docbookRes = await fetch(
+            `${apiBase}/docbook/check-exists?org_id=${orgId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+          
+          if (docbookRes.ok) {
+            const docbookData = await docbookRes.json();
+            if (docbookData.exists) {
+              summary.docbook_repo = docbookData.docbook_repo;
+            }
+          }
+          
+          // 2.3 Check writer app access to docbook repo
+          if (summary.docbook_repo) {
+            const accessRes = await fetch(
+              `${apiBase}/org/${orgId}/verify-writer-app-access?repo=${encodeURIComponent(
+                summary.docbook_repo
+              )}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              }
+            );
+            
+            if (accessRes.ok) {
+              const accessData = await accessRes.json();
+              summary.writer_app_has_access = accessData.has_access ?? false;
+            }
+          }
+          
+          summaries[orgId] = summary;
+        })
+      );
+      
+      setOrgSummaries(summaries);
+      
+      // 3. Check if primary org has all requirements met
+      const primaryOrgSummary = summaries[primaryOrg];
+      const hasReaderApp = primaryOrgSummary?.reader_app_installed === true;
+      const hasDocbookRepo = !!primaryOrgSummary?.docbook_repo;
+      const hasWriterAppAccess = primaryOrgSummary?.writer_app_has_access === true;
+      
+      const isComplete = hasReaderApp && hasDocbookRepo && hasWriterAppAccess;
+      
+      console.log('🔍 Onboarding check results:', {
+        org: primaryOrg,
+        hasReaderApp,
+        hasDocbookRepo,
+        hasWriterAppAccess,
+        isComplete,
+        docbookRepo: primaryOrgSummary?.docbook_repo,
+      });
+      
+      setOnboardingComplete(isComplete);
+      
+    } catch (error) {
+      console.error("Error checking onboarding status:", error);
+      setOnboardingComplete(false);
+    } finally {
+      if (!options?.silent) {
+        setCheckingOnboarding(false);
+      }
+    }
+  }, [apiBase, token]);
+  
+  // Initial check when component mounts
+  useEffect(() => {
+    if (user?.is_onboarding_complete) {
+      // If user object already has onboarding complete flag, skip checks
+      setOnboardingComplete(true);
+      setCheckingOnboarding(false);
+      return;
+    }
+    
+    if (token) {
+      loadOnboardingState();
+    }
+  }, [token, user, loadOnboardingState]);
+  
+  // Redirect to onboarding if checks fail
+  useEffect(() => {
+    if (!authLoading && !checkingOnboarding && !onboardingComplete) {
+      console.log('🔎 Onboarding incomplete, redirecting to /onboarding', {
+        authLoading,
+        checkingOnboarding,
+        onboardingComplete,
+        user: user?.id,
+      });
+      router.replace("/onboarding");
+    }
+  }, [authLoading, checkingOnboarding, onboardingComplete, router, user?.id]);
+  
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      stopWriterPolling();
+    };
+  }, [stopWriterPolling]);
+  
+  if (authLoading || checkingOnboarding) {
+    return (
+      <Layout>
+        <OnboardingSplash
+          messages={ONBOARDING_PROGRESS_MESSAGES}
+          activeIndex={progressIndex}
+        />
+      </Layout>
+    );
+  }
+  
+  if (!onboardingComplete) {
+    return null; // Will redirect to onboarding
+  }
+  
+  console.log('✅ Onboarding complete, showing dashboard');
+  return <>{children}</>;
 }
 
 export default function DashboardPage() {
@@ -271,8 +506,9 @@ export default function DashboardPage() {
   }
 
   return (
-    <Layout>
-      <div className="min-h-screen bg-slate-950">
+    <OnboardingGuard>
+      <Layout>
+        <div className="min-h-screen bg-slate-950">
         <div className="container mx-auto px-4 py-12 space-y-10">
           <section className="relative overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/80 px-8 py-10 shadow-[0_35px_80px_-45px_rgba(59,130,246,0.6)]">
             <div className="absolute inset-0 -translate-x-1/3 translate-y-1/4 scale-125 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.35),_transparent_55%)] blur-3xl opacity-70" aria-hidden />
@@ -774,5 +1010,6 @@ export default function DashboardPage() {
         </div>
       </div>
     </Layout>
+    </OnboardingGuard>
   );
 }
