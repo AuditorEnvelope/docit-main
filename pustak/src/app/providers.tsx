@@ -114,19 +114,35 @@ function OnboardingRedirect({ children }: { children: ReactNode }) {
   const [progressIndex, setProgressIndex] = useState(0);
   const completionAttemptedRef = useRef(false);
 
-  const { isOnboardingRoute, isPublicRoute } = useMemo(() => {
-    const current = pathname || "";
-    return {
-      isOnboardingRoute: current.startsWith("/onboarding"),
-      isPublicRoute:
-        current === "" ||
-        current === "/" ||
-        current.startsWith("/auth/") ||
-        current === "/login",
-    };
-  }, [pathname]);
+  const { isOnboardingRoute, isPublicRoute, isDocsRoute, isNotFoundRoute } =
+    useMemo(() => {
+      const current = pathname || "";
+      const normalized = current.replace(/\/+$|^$/, (match) =>
+        match === "" ? "/" : ""
+      );
+      const docsRoute =
+        normalized === "/docs" || normalized.startsWith("/docs/");
+      const notFoundRoute = normalized === "/404";
+      return {
+        isOnboardingRoute: normalized.startsWith("/onboarding"),
+        isPublicRoute:
+          normalized === "" ||
+          normalized === "/" ||
+          normalized.startsWith("/auth/") ||
+          normalized === "/login" ||
+          docsRoute ||
+          notFoundRoute,
+        isDocsRoute: docsRoute,
+        isNotFoundRoute: notFoundRoute,
+      };
+    }, [pathname]);
 
   useEffect(() => {
+    if (isDocsRoute || isNotFoundRoute) {
+      setStatus("ready");
+      return;
+    }
+
     if (loading) {
       setStatus(isPublicRoute && !isAuthenticated ? "ready" : "checking");
       return;
@@ -213,7 +229,8 @@ function OnboardingRedirect({ children }: { children: ReactNode }) {
     markOnboardingComplete,
   ]);
 
-  const showSplash = status !== "ready" && !isOnboardingRoute;
+  const showSplash =
+    status !== "ready" && !isOnboardingRoute && !isDocsRoute && !isNotFoundRoute;
 
   useEffect(() => {
     if (!showSplash) return;
