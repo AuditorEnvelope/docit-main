@@ -111,6 +111,14 @@ export default function LiveDocsPage() {
   });
   console.log('[DOCS_DEBUG] ⚠️ WARNING: Using OLD page component! This should be replaced by the new one.');
   console.log('[DOCS_DEBUG] 📢 API calls will use: org_id=' + org + ', repo_id=' + repo + ', persona=' + persona);
+  
+  // Additional validation logging
+  if (!repo) {
+    console.log('[DOCS_DEBUG] ❌ ERROR: repo is empty! slug:', slug);
+  }
+  if (!org) {
+    console.log('[DOCS_DEBUG] ❌ ERROR: org is empty! params:', params);
+  }
 
   const docSegments = useMemo(
     () => (hasExplicitPersona ? slug.slice(2) : slug.slice(1)),
@@ -163,12 +171,13 @@ export default function LiveDocsPage() {
   }, [isLight, mounted]);
 
   useEffect(() => {
-    if (!org || !repo || repo === "docs") {
+    if (!org || !repo) {
       setError("Invalid documentation URL");
       setLoading(false);
       return;
     }
 
+    console.log('[DOCS_DEBUG] 📚 useEffect triggered, fetching manifest with:', { org, repo, persona });
     fetchManifest();
   }, [org, repo]);
 
