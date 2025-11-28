@@ -210,9 +210,38 @@ export async function middleware(request: NextRequest) {
       const validPersonas = ["internal", "dev"];
       
       if (!originalPath && liveUrlPath) {
-        // Homepage with live URL path
-        url.pathname = `/docs/${org}${liveUrlPath}`;
-        console.log(`[DOCS_DEBUG] 📚 Case 1: Homepage with live URL path -> ${url.pathname}`);
+        // Homepage with live URL path returned from backend
+        const normalizedPath = liveUrlPath.replace(/^\/+/, "");
+        const liveSegmentsRaw = normalizedPath.split("/").filter(Boolean);
+        if (liveSegmentsRaw[0] === "docs") {
+          liveSegmentsRaw.shift();
+        }
+
+        const liveRepo = liveSegmentsRaw[0] || "";
+        const livePersonaCandidate = liveSegmentsRaw[1] || "";
+        const livePersona = validPersonas.includes(livePersonaCandidate)
+          ? livePersonaCandidate
+          : "dev";
+        const remainingSegments = validPersonas.includes(livePersonaCandidate)
+          ? liveSegmentsRaw.slice(2)
+          : liveSegmentsRaw.slice(1);
+
+        console.log(
+          `[DOCS_DEBUG] 📚 Case 1: Normalized live URL path -> repo=${liveRepo}, persona=${livePersona}, remaining=${JSON.stringify(remainingSegments)}`
+        );
+
+        if (!liveRepo) {
+          url.pathname = `/docs/${org}`;
+          console.log(
+            `[DOCS_DEBUG] 📚 Case 1: Live URL path missing repo. Falling back to ${url.pathname}`
+          );
+        } else {
+          const slugParts = [liveRepo, livePersona, ...remainingSegments].filter(Boolean);
+          url.pathname = `/docs/${org}/${slugParts.join("/")}`;
+          console.log(
+            `[DOCS_DEBUG] 📚 Case 1: Homepage with live URL path -> ${url.pathname}`
+          );
+        }
       } else if (!originalPath) {
         // Homepage without live URL path
         url.pathname = `/docs/${org}`;

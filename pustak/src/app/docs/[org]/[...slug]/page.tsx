@@ -113,9 +113,7 @@ export default function LiveDocsPage() {
     persona,
     remainingSlug: hasExplicitPersona ? slug.slice(2) : slug.slice(1),
   });
-  console.log(
-    "[DOCS_DEBUG] ⚠️ WARNING: Using OLD page component! This should be replaced by the new one."
-  );
+
   console.log(
     "[DOCS_DEBUG] 📢 API calls will use: org_id=" +
       org +
