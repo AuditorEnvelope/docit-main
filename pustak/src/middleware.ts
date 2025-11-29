@@ -108,15 +108,13 @@ export async function middleware(request: NextRequest) {
       const liveStatusUrl = `${API_BASE}/docbook/live-org-status?org_id=${encodeURIComponent(
         org
       )}`;
-      console.log(`[Middleware] Validating against: ${liveStatusUrl}`);
+      console.log(`[Middleware] 🔍 Checking live status for org: ${org}`);
 
       const validationResponse = await fetch(liveStatusUrl, {
-        method: "GET",
         headers: {
-          "User-Agent": "pustak-docbook-middleware",
+          "Content-Type": "application/json",
         },
-        cache: "no-store",
-        // Add a timeout signal if possible to avoid hanging
+        next: { revalidate: 60 }, // Cache for 60 seconds
       });
 
       if (!validationResponse.ok) {
@@ -135,6 +133,9 @@ export async function middleware(request: NextRequest) {
         response.headers.set("x-middleware-cache", "no-cache");
         return response;
       }
+      
+      // Log the successful validation
+      console.log(`[Middleware] ✅ Org '${org}' is valid and live.`);
 
       console.log(`[Middleware] ✅ Org '${org}' is valid. Serving docs.`);
 
@@ -153,18 +154,37 @@ export async function middleware(request: NextRequest) {
       }
 
       let liveUrlPath = "";
+      let repoExists = false;
       try {
         const parsed = (await validationResponse.json()) as { 
           live_url?: string;
+          repos?: string[];
         };
+        
+        // Extract repo information from response
+        const availableRepos = parsed?.repos || [];
+        
+        // Check if the requested repo exists in the available repos
+        const pathSegments = pathname === "/" ? [] : pathname.split("/").filter(Boolean);
+        const requestedRepo = pathSegments[0] || "";
+        
+        if (requestedRepo && availableRepos.includes(requestedRepo)) {
+          repoExists = true;
+          console.log(`[Middleware] ✅ Repo '${requestedRepo}' exists for org '${org}'`);
+        } else if (requestedRepo) {
+          console.log(`[Middleware] ⚠️ Repo '${requestedRepo}' not found in available repos: ${JSON.stringify(availableRepos)}`);
+        }
+        
         if (parsed?.live_url) {
           const liveUrl = new URL(parsed.live_url);
           liveUrlPath = liveUrl.pathname === "/" ? "" : liveUrl.pathname;
+          console.log(`[Middleware] 🔍 Found live URL path: ${liveUrlPath}`);
+        } else {
+          console.log(`[Middleware] ⚠️ No live URL found in response`);
         }
       } catch (error) {
         console.warn(
-          `[Middleware] Warning: unable to parse live status response for org '${org}':`,
-          error
+          `[Middleware] ⚠️ Error parsing live URL: ${error}. Continuing with empty path.`
         );
       }
 
@@ -253,6 +273,19 @@ export async function middleware(request: NextRequest) {
         // We have a repo name from the first path segment
         console.log(`[DOCS_DEBUG] 📚 Case 3: We have a repo name: ${repoName}`);
         
+        // Check if this repo exists in the available repos list
+        if (pathSegments[0] && !repoExists) {
+          console.log(`[Middleware] ❌ Repo '${repoName}' not found or has no published docs. Showing 404.`);
+          
+          // Show 404 page for non-existent repos
+          const notFoundUrl = request.nextUrl.clone();
+          notFoundUrl.pathname = "/404";
+          const response = NextResponse.rewrite(notFoundUrl, { status: 404 });
+          response.headers.set("x-middleware-cache", "no-cache");
+          response.headers.set("x-middleware-rewrite-reason", "repo-not-found");
+          return response;
+        }
+        
         // CRITICAL FIX: For subdomain access, ALWAYS use a valid persona
         // Default to 'dev' persona for public access
         let persona = "dev"; // Default persona
@@ -303,9 +336,18 @@ export async function middleware(request: NextRequest) {
         console.log(`[DOCS_DEBUG] 📚 Case 4: Fallback redirecting to dashboard: ${url.pathname}`);
       }
 
+      // Add additional debugging headers to help diagnose issues
+      console.log(`[Middleware] 🚀 Final rewrite URL: ${url.toString()}`);
+      
+      // Check if the URL contains 'render-docs' to ensure we're using the new path
+      if (!url.pathname.includes('/render-docs/')) {
+        console.warn(`[Middleware] ⚠️ WARNING: URL does not contain /render-docs/ path: ${url.pathname}`);
+      }
+      
       const response = NextResponse.rewrite(url);
       response.headers.set("x-middleware-cache", "no-cache");
       response.headers.set("x-org-id", org);
+      response.headers.set("x-middleware-rewrite-path", url.pathname);
       return response;
     } catch (error) {
       console.error("[Middleware] 💥 Error validating org:", error);
