@@ -1,5 +1,8 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -52,9 +55,6 @@ interface HeadingItem {
   level: number;
   text: string;
 }
-
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 type ThemeColors = {
   primary: string;
@@ -111,6 +111,11 @@ export default function LiveDocsPage() {
     ? [rawSlug]
     : [];
   const slugKey = slug.join("/");
+
+  useEffect(() => {
+    console.log("🐛 [CLIENT DEBUG] Mounted. Params:", params);
+  }, [params]);
+
   const manifestKey = useMemo(
     () => `${org ?? ""}::${repo ?? ""}::${persona ?? ""}`,
     [org, repo, persona]
@@ -237,6 +242,11 @@ export default function LiveDocsPage() {
 
   useEffect(() => {
     if (!org || !repo || !persona) {
+      console.warn("[Page] 🟥 Missing route params", {
+        org,
+        repo,
+        persona,
+      });
       setError("Invalid documentation URL");
       setLoading(false);
       return;
