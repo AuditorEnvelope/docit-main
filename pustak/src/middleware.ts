@@ -8,6 +8,19 @@ const API_BASE = RAW_BACKEND_URL.endsWith("/api/v1")
   ? RAW_BACKEND_URL
   : `${RAW_BACKEND_URL.replace(/\/$/, "")}/api/v1`;
 
+const buildRenderDocsPath = (
+  org: string,
+  repo: string,
+  persona: string,
+  segments: string[] = []
+) => {
+  const sanitizedSegments = segments.filter((segment) => segment && segment.trim().length > 0);
+  if (sanitizedSegments.length === 0) {
+    return `/render-docs/${org}/${repo}/${persona}`;
+  }
+  return `/render-docs/${org}/${repo}/${persona}/${sanitizedSegments.join("/")}`;
+};
+
 export async function middleware(request: NextRequest) {
   const { search, origin } = request.nextUrl;
   
@@ -168,15 +181,15 @@ export async function middleware(request: NextRequest) {
         // Extract repo information from response
         const availableRepos = parsed?.repos || [];
         
-        // Check if the requested repo exists in the available repos
         const pathSegments = pathname === "/" ? [] : pathname.split("/").filter(Boolean);
         const requestedRepo = pathSegments[0] || "";
-        
-        if (requestedRepo && availableRepos.includes(requestedRepo)) {
-          repoExists = true;
-          console.log(`[Middleware] ✅ Repo '${requestedRepo}' exists for org '${org}'`);
-        } else if (requestedRepo) {
-          console.log(`[Middleware] ⚠️ Repo '${requestedRepo}' not found in available repos: ${JSON.stringify(availableRepos)}`);
+        if (requestedRepo) {
+          if (availableRepos.includes(requestedRepo)) {
+            repoExists = true;
+            console.log(`[Middleware] ✅ Repo '${requestedRepo}' listed for org '${org}'`);
+          } else {
+            console.log(`[Middleware] ⚠️ Repo '${requestedRepo}' not present in backend list. Proceeding anyway.`);
+          }
         }
         
         if (parsed?.live_url) {
@@ -262,7 +275,7 @@ export async function middleware(request: NextRequest) {
           );
         } else {
           // NUCLEAR FIX: Use the new component pattern: /render-docs/[org]/[repo]/[persona]/[...slug]
-          url.pathname = `/render-docs/${org}/${liveRepo}/${livePersona}/${remainingSegments.join("/")}`;
+          url.pathname = buildRenderDocsPath(org, liveRepo, livePersona, remainingSegments);
           console.log(
             `[DOCS_DEBUG] 📚 Case 1: Homepage with live URL path -> ${url.pathname}`
           );
@@ -279,23 +292,8 @@ export async function middleware(request: NextRequest) {
         
         // Check if this repo exists in the available repos list or matches the live URL path
         const liveUrlRepo = liveUrlPath ? liveUrlPath.split('/').filter(Boolean)[0] : null;
-        
-        // Consider the repo valid if it's in the available repos list OR it matches the live URL path
         const isValidRepo = repoExists || (liveUrlRepo && liveUrlRepo === repoName);
-        
-        console.log(`[Middleware] 🔍 Repo validation: repoName=${repoName}, liveUrlRepo=${liveUrlRepo}, isValidRepo=${isValidRepo}`);
-        
-        if (pathSegments[0] && !isValidRepo) {
-          console.log(`[Middleware] ❌ Repo '${repoName}' not found or has no published docs. Showing 404.`);
-          
-          // Show 404 page for non-existent repos
-          const notFoundUrl = request.nextUrl.clone();
-          notFoundUrl.pathname = "/404";
-          const response = NextResponse.rewrite(notFoundUrl, { status: 404 });
-          response.headers.set("x-middleware-cache", "no-cache");
-          response.headers.set("x-middleware-rewrite-reason", "repo-not-found");
-          return response;
-        }
+        console.log(`[Middleware] 🔍 Repo validation (non-blocking): repoName=${repoName}, liveUrlRepo=${liveUrlRepo}, isValidRepo=${isValidRepo}`);
         
         // CRITICAL FIX: For subdomain access, ALWAYS use a valid persona
         // Default to 'dev' persona for public access
@@ -324,7 +322,7 @@ export async function middleware(request: NextRequest) {
           const remainingSegments = pathSegments.slice(2);
           
           // NUCLEAR FIX: Use the new component pattern: /render-docs/[org]/[repo]/[persona]/[...slug]
-          url.pathname = `/render-docs/${org}/${repoName}/${persona}/${remainingSegments.join("/")}`;
+          url.pathname = buildRenderDocsPath(org, repoName, persona, remainingSegments);
           
           console.log(`[DOCS_DEBUG] 📚 Case 3.1: Valid persona found: ${persona}, remainingSegments=${JSON.stringify(remainingSegments)}`);
           console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}`);
@@ -333,7 +331,7 @@ export async function middleware(request: NextRequest) {
           const remainingSegments = pathSegments.slice(1);
           
           // NUCLEAR FIX: Use the new component pattern: /render-docs/[org]/[repo]/[persona]/[...slug]
-          url.pathname = `/render-docs/${org}/${repoName}/${persona}/${remainingSegments.join("/")}`;
+          url.pathname = buildRenderDocsPath(org, repoName, persona, remainingSegments);
           
           console.log(`[DOCS_DEBUG] 📚 Case 3.2: Using default persona: ${persona}, remainingSegments=${JSON.stringify(remainingSegments)}`);
           console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}`);
