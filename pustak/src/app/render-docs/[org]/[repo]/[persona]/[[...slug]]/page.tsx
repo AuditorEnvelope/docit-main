@@ -26,5 +26,7 @@ export default async function Page({
   // and passes control to the client component
   console.log("[SERVER] Route matched with params:", resolvedParams);
   
-  return <ClientPage />;
+  // Pass the params to the client component as props
+  // The client component will use these instead of useParams()
+  return <ClientPage initialParams={resolvedParams} />;
 }

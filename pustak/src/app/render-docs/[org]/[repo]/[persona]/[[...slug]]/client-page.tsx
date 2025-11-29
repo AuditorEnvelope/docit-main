@@ -92,12 +92,23 @@ interface Manifest {
 
 const TOC_INDENT_CLASSES = ["pl-0", "pl-3", "pl-6", "pl-9", "pl-12"];
 
-export default function LiveDocsPage() {
+interface LiveDocsPageProps {
+  initialParams?: {
+    org: string;
+    repo: string;
+    persona: string;
+    slug?: string[];
+  };
+}
+
+export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) {
   console.log("[Page] 🟢 RENDER-DOCS PAGE COMPONENT EXECUTED");
   console.log("[Page] 🟢 URL Path Pattern: /render-docs/[org]/[repo]/[persona]/[...slug]");
 
-  const params = useParams();
-  console.log("[Page] 🟢 useParams() result:", params);
+  // Use initialParams if provided (server-side), otherwise use useParams (client navigation)
+  const clientParams = useParams();
+  const params = initialParams || clientParams;
+  console.log("[Page] 🟢 Using params:", params, "from:", initialParams ? "server" : "client");
 
   // STRICT EXTRACTION - NO GUESSING
   const org = params.org as string;
