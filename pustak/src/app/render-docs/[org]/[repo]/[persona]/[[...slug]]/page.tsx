@@ -13,10 +13,18 @@ interface PageParams {
   slug?: string[];
 }
 
-export default function Page({ params }: { params: PageParams }) {
+// Next.js 15 requires params to be async
+export default async function Page({ 
+  params 
+}: { 
+  params: Promise<PageParams> 
+}) {
+  // Await the params since they're now async in Next.js 15
+  const resolvedParams = await params;
+  
   // Server component handles the route matching
   // and passes control to the client component
-  console.log("[SERVER] Route matched with params:", params);
+  console.log("[SERVER] Route matched with params:", resolvedParams);
   
   return <ClientPage />;
 }
