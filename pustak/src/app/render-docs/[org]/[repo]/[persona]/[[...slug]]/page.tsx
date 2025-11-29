@@ -21,7 +21,12 @@ import {
   Copy,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import nextDynamic from "next/dynamic";
+
+const MarkdownRenderer = nextDynamic(
+  () => import("@/components/MarkdownRenderer").then((mod) => mod.MarkdownRenderer),
+  { ssr: false }
+);
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
