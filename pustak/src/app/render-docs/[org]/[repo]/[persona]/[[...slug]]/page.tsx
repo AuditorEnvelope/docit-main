@@ -1,8 +1,7 @@
 "use client";
 
 // Deployment Sync: Force rebuild of route tree
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+// Note: Client components cannot use server-side exports like dynamic/revalidate
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
