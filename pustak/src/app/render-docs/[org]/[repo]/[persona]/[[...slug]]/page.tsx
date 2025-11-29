@@ -48,6 +48,9 @@ interface HeadingItem {
   text: string;
 }
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type ThemeColors = {
   primary: string;
   secondary: string;
