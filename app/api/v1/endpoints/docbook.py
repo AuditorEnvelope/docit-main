@@ -7,7 +7,7 @@ import aiohttp
 import httpx
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -875,6 +875,7 @@ class LiveOrgStatusResponse(BaseModel):
     org_id: str
     exists: bool
     live_url: Optional[str]
+    repos: List[str] = Field(default_factory=list, description="List of available repositories for this org")
 
 
 @router.post("/docbook/publish-live", response_model=PublishLiveResponse)
@@ -1530,11 +1531,41 @@ async def get_live_org_status(
 
     if not repo or not repo.live_url:
         raise HTTPException(status_code=404, detail="Live docs not found for org")
+    
+    # Fetch available repositories for this organization
+    available_repos = []
+    try:
+        # Extract repo name from live_url
+        if repo.live_url:
+            # Parse the URL properly to handle both full URLs and path-only URLs
+            if repo.live_url.startswith('http'):
+                # It's a full URL, extract the path
+                from urllib.parse import urlparse
+                parsed_url = urlparse(repo.live_url)
+                path = parsed_url.path.strip('/')
+            else:
+                # It's already a path
+                path = repo.live_url.strip('/')
+                
+            # Extract the first path segment as the repo name
+            path_parts = path.split('/')
+            if path_parts:
+                repo_name = path_parts[0]
+                available_repos.append(repo_name)
+                logger.info(f"[live-org-status] Found repo from live_url: {repo_name}")
+            else:
+                logger.warning(f"[live-org-status] No path segments found in URL: {repo.live_url}")
+        else:
+            logger.warning("[live-org-status] No live URL found for repo")
+
+    except Exception as e:
+        logger.warning(f"[live-org-status] Error extracting repos: {str(e)}")
 
     return LiveOrgStatusResponse(
         org_id=repo.org_id,
         exists=True,
         live_url=repo.live_url,
+        repos=available_repos,
     )
 
 

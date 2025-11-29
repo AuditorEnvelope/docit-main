@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import {
   Book,
@@ -96,7 +96,20 @@ export default function LiveDocsPage() {
   const repo = params.repo as string;
   const persona = params.persona as string;
   // The slug is ONLY what comes after the persona
-  const slug = (params.slug as string[]) || [];
+  const rawSlug = params.slug;
+  const slug = Array.isArray(rawSlug)
+    ? rawSlug
+    : typeof rawSlug === "string"
+    ? [rawSlug]
+    : [];
+  const slugKey = slug.join("/");
+  const manifestKey = useMemo(
+    () => `${org ?? ""}::${repo ?? ""}::${persona ?? ""}`,
+    [org, repo, persona]
+  );
+
+  const fetchedManifestKeyRef = useRef<string | null>(null);
+  const fetchedContentKeyRef = useRef<string | null>(null);
 
   console.log(`[Page] 🟢 Loaded: Org=${org}, Repo=${repo}, Persona=${persona}`);
 
@@ -149,25 +162,18 @@ export default function LiveDocsPage() {
     }
   }, [isLight, mounted]);
 
-  useEffect(() => {
-    if (!org || !repo || !persona) {
-      setError("Invalid documentation URL");
-      setLoading(false);
-      return;
-    }
-
-    console.log(
-      "[Page] 🟢 useEffect triggered, fetching manifest with:",
-      { org, repo, persona }
-    );
-    fetchManifest();
-  }, [org, repo, persona]);
-
   const apiBase = BACKEND_URL.endsWith("/api/v1")
     ? BACKEND_URL
     : `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
 
-  const fetchManifest = async () => {
+  const fetchManifest = useCallback(async (options: { force?: boolean } = {}) => {
+    const currentKey = manifestKey;
+    if (!options.force && fetchedManifestKeyRef.current === currentKey) {
+      console.log("[Page] 🟢 Manifest fetch skipped (duplicate key)", currentKey);
+      return;
+    }
+
+    fetchedManifestKeyRef.current = currentKey;
     try {
       setLoading(true);
       setError(null);
@@ -212,18 +218,36 @@ export default function LiveDocsPage() {
       setError(null);
     } catch (err) {
       console.error("Error fetching manifest:", err);
+      fetchedManifestKeyRef.current = null;
       setError(
         err instanceof Error ? err.message : "Failed to load documentation"
       );
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiBase, manifestKey, org, repo, persona]);
 
-  const fetchContent = async (
+  useEffect(() => {
+    if (!org || !repo || !persona) {
+      setError("Invalid documentation URL");
+      setLoading(false);
+      return;
+    }
+
+    console.log(
+      "[Page] 🟢 useEffect triggered, fetching manifest with:",
+      { org, repo, persona }
+    );
+    fetchManifest().catch((err) => {
+      console.error("[Page] 🟥 Manifest fetch failed:", err);
+    });
+  }, [fetchManifest, org, repo, persona]);
+
+  const fetchContent = useCallback(async (
     slugSegments: string[],
     displayPath?: string,
-    sourceSegments?: string[]
+    sourceSegments?: string[],
+    options: { force?: boolean } = {}
   ) => {
     setLoading(true);
     setError(null);
@@ -247,6 +271,17 @@ export default function LiveDocsPage() {
 
       const segmentsToUse =
         sourceSegments && sourceSegments.length ? sourceSegments : slugSegments;
+
+      const contentKey = `${manifestKey}::${
+        segmentsToUse.length ? segmentsToUse.join("/") : "SUMMARY.md"
+      }`;
+      if (!options.force && fetchedContentKeyRef.current === contentKey) {
+        console.log("[Page] 🟢 Content fetch skipped (duplicate key)", contentKey);
+        setLoading(false);
+        return;
+      }
+
+      fetchedContentKeyRef.current = contentKey;
 
       segmentsToUse.forEach((segment) => {
         if (segment) {
@@ -274,17 +309,20 @@ export default function LiveDocsPage() {
       setError(null);
     } catch (err) {
       console.error("Error fetching content:", err);
+      fetchedContentKeyRef.current = null;
       setError(err instanceof Error ? err.message : "Failed to load content");
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiBase, manifestKey, org, repo, persona]);
 
   useEffect(() => {
     if (!manifest) return;
 
     if (slug.length) {
-      fetchContent(slug);
+      fetchContent([...slug]).catch((err) =>
+        console.error("[Page] 🟥 Content fetch failed:", err)
+      );
     } else {
       const flatten = (items: SidebarItem[]): SidebarItem[] =>
         items.flatMap((entry) =>
@@ -296,12 +334,14 @@ export default function LiveDocsPage() {
         (item) => item.type === "file"
       );
       if (firstDoc) {
-        fetchContent(["SUMMARY.md"], firstDoc.path, ["SUMMARY.md"]);
+        fetchContent(["SUMMARY.md"], firstDoc.path, ["SUMMARY.md"]).catch(
+          (err) => console.error("[Page] 🟥 Default content fetch failed:", err)
+        );
       } else {
         setError("No published documentation found.");
       }
     }
-  }, [manifest, repo, slug]);
+  }, [fetchContent, manifest, repo, slug, slugKey]);
 
   const renderSidebarItems = (items: SidebarItem[], depth = 0) => {
     return items.map((item, index) => {
@@ -432,7 +472,9 @@ export default function LiveDocsPage() {
       window.history.pushState({}, "", nextUrl);
     }
 
-    await fetchContent(slugSegments, normalizedPath, sourceSegments);
+    await fetchContent(slugSegments, normalizedPath, sourceSegments, {
+      force: true,
+    });
   };
 
   const allFiles = useMemo(() => {

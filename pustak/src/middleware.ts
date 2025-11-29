@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const RAW_BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || " https://cd17ff078a8e.ngrok-free.app";
+  process.env.NEXT_PUBLIC_BACKEND_URL || "https://cd17ff078a8e.ngrok-free.app";
 const API_BASE = RAW_BACKEND_URL.endsWith("/api/v1")
   ? RAW_BACKEND_URL
   : `${RAW_BACKEND_URL.replace(/\/$/, "")}/api/v1`;
@@ -97,8 +97,12 @@ export async function middleware(request: NextRequest) {
 
   // 3. VALIDATION LOGIC
   const isHtmlRequest =
-    method === "GET" &&
-    (acceptHeader.includes("text/html") || acceptHeader === "*/*");
+    (method === "GET" || method === "HEAD") &&
+    (acceptHeader.includes("text/html") || acceptHeader.includes("*/*") || !acceptHeader);
+
+  console.log(
+    `[Middleware] Request meta -> method=${method}, accept='${acceptHeader}', isHtmlRequest=${isHtmlRequest}`
+  );
 
   if (org && isHtmlRequest) {
     // Check if this is a request for the root path or docs path
@@ -273,8 +277,15 @@ export async function middleware(request: NextRequest) {
         // We have a repo name from the first path segment
         console.log(`[DOCS_DEBUG] 📚 Case 3: We have a repo name: ${repoName}`);
         
-        // Check if this repo exists in the available repos list
-        if (pathSegments[0] && !repoExists) {
+        // Check if this repo exists in the available repos list or matches the live URL path
+        const liveUrlRepo = liveUrlPath ? liveUrlPath.split('/').filter(Boolean)[0] : null;
+        
+        // Consider the repo valid if it's in the available repos list OR it matches the live URL path
+        const isValidRepo = repoExists || (liveUrlRepo && liveUrlRepo === repoName);
+        
+        console.log(`[Middleware] 🔍 Repo validation: repoName=${repoName}, liveUrlRepo=${liveUrlRepo}, isValidRepo=${isValidRepo}`);
+        
+        if (pathSegments[0] && !isValidRepo) {
           console.log(`[Middleware] ❌ Repo '${repoName}' not found or has no published docs. Showing 404.`);
           
           // Show 404 page for non-existent repos
@@ -370,7 +381,9 @@ export async function middleware(request: NextRequest) {
   // 4. LANDING PAGE FALLBACK
   // If no org subdomain, serve the landing page normally.
   console.log(
-    "[Middleware] No subdomain detected. Passing through to landing page."
+    org
+      ? `[Middleware] ⚠️ Skipping org rewrite because isHtmlRequest=${isHtmlRequest}`
+      : "[Middleware] No subdomain detected. Passing through to landing page."
   );
   return NextResponse.next();
 }
