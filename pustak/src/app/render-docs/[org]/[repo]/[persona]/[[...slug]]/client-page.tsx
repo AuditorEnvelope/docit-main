@@ -31,8 +31,15 @@ const MarkdownRenderer = nextDynamic(
   { ssr: false }
 );
 
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const backendEnvUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+
+if (!backendEnvUrl) {
+  throw new Error(
+    "NEXT_PUBLIC_BACKEND_URL is not defined. Please set it in the environment before building the app."
+  );
+}
+
+const BACKEND_URL = backendEnvUrl;
 
 interface SidebarItem {
   path: string;
