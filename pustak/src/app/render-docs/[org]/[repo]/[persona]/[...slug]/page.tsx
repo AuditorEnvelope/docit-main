@@ -85,46 +85,24 @@ interface Manifest {
 const TOC_INDENT_CLASSES = ["pl-0", "pl-3", "pl-6", "pl-9", "pl-12"];
 
 export default function LiveDocsPage() {
-  console.log("[DOCS_DEBUG] 🚀 NEW PAGE COMPONENT EXECUTED");
-  console.log("[DOCS_DEBUG] 🔍 URL Path Pattern: /docs/[org]/[repo]/[persona]/[...slug]");
-  console.log(
-    "[DOCS_DEBUG] 📚 Component: LiveDocsPage in [org]/[repo]/[persona]/[...slug]/page.tsx"
-  );
+  console.log("[Page] 🟢 RENDER-DOCS PAGE COMPONENT EXECUTED");
+  console.log("[Page] 🟢 URL Path Pattern: /render-docs/[org]/[repo]/[persona]/[...slug]");
 
   const params = useParams();
-  console.log("[DOCS_DEBUG] 🔍 useParams() result:", params);
+  console.log("[Page] 🟢 useParams() result:", params);
 
-  // Correctly extract parameters from the route
+  // STRICT EXTRACTION - NO GUESSING
   const org = params.org as string;
   const repo = params.repo as string;
   const persona = params.persona as string;
+  // The slug is ONLY what comes after the persona
   const slug = (params.slug as string[]) || [];
 
-  console.log("[DOCS_DEBUG] 📚 Extracted params from route:", {
-    org,
-    repo,
-    persona,
-    slug
-  });
+  console.log(`[Page] 🟢 Loaded: Org=${org}, Repo=${repo}, Persona=${persona}`);
 
-  console.log(
-    "[DOCS_DEBUG] 📢 API calls will use: org_id=" +
-      org +
-      ", repo_id=" +
-      repo +
-      ", persona=" +
-      persona
-  );
-
-  // Additional validation logging
-  if (!repo) {
-    console.log("[DOCS_DEBUG] ❌ ERROR: repo is empty! params:", params);
-  }
-  if (!org) {
-    console.log("[DOCS_DEBUG] ❌ ERROR: org is empty! params:", params);
-  }
-  if (!persona) {
-    console.log("[DOCS_DEBUG] ❌ ERROR: persona is empty! params:", params);
+  // Verify the migration worked - if repo is "docs", throw an error
+  if (repo === "docs") {
+    throw new Error("MIGRATION FAILED: 'docs' should not be a repo name. The Next.js router is still using the wrong route.");
   }
 
   const [manifest, setManifest] = useState<Manifest | null>(null);
@@ -179,7 +157,7 @@ export default function LiveDocsPage() {
     }
 
     console.log(
-      "[DOCS_DEBUG] 📚 useEffect triggered, fetching manifest with:",
+      "[Page] 🟢 useEffect triggered, fetching manifest with:",
       { org, repo, persona }
     );
     fetchManifest();
@@ -200,19 +178,13 @@ export default function LiveDocsPage() {
         persona
       )}`;
 
-      console.log("[DOCS_DEBUG] 📡 MANIFEST API CALL");
-      console.log("[DOCS_DEBUG] 📡 URL:", url);
-      console.log("[DOCS_DEBUG] 📡 Parameters:", {
+      console.log("[Page] 🟢 MANIFEST API CALL");
+      console.log("[Page] 🟢 URL:", url);
+      console.log("[Page] 🟢 Parameters:", {
         org_id: org,
         repo_id: repo,
         persona: persona,
       });
-
-      console.log(
-        `🔍 Fetching manifest with: org=${org}, repo=${repo}, persona=${persona}, slug=${JSON.stringify(
-          slug
-        )}`
-      );
 
       const response = await fetch(url);
 
@@ -257,8 +229,8 @@ export default function LiveDocsPage() {
     setError(null);
 
     try {
-      console.log("[DOCS_DEBUG] 📡 CONTENT API CALL");
-      console.log("[DOCS_DEBUG] 📡 Parameters:", {
+      console.log("[Page] 🟢 CONTENT API CALL");
+      console.log("[Page] 🟢 Parameters:", {
         org_id: org,
         repo_id: repo,
         persona: persona,
@@ -266,12 +238,6 @@ export default function LiveDocsPage() {
         displayPath,
         sourceSegments,
       });
-
-      console.log(
-        `🔍 Fetching content with: org=${org}, repo=${repo}, persona=${persona}, slugSegments=${JSON.stringify(
-          slugSegments
-        )}`
-      );
 
       const params = new URLSearchParams({
         org_id: org,
@@ -289,8 +255,8 @@ export default function LiveDocsPage() {
       });
 
       const url = `${apiBase}/docbook/live-content/public?${params.toString()}`;
-      console.log("[DOCS_DEBUG] 📡 CONTENT URL:", url);
-      console.log("[DOCS_DEBUG] 📡 Slug parameters:", segmentsToUse);
+      console.log("[Page] 🟢 CONTENT URL:", url);
+      console.log("[Page] 🟢 Slug parameters:", segmentsToUse);
 
       const response = await fetch(url);
 
@@ -462,7 +428,7 @@ export default function LiveDocsPage() {
     const sourceSegments = sourceNormalized.split("/").filter(Boolean).slice(1);
 
     if (pushHistory) {
-      const nextUrl = `/docs/${org}/${repo}/${persona}${normalizedPath}`;
+      const nextUrl = `/render-docs/${org}/${repo}/${persona}${normalizedPath}`;
       window.history.pushState({}, "", nextUrl);
     }
 
@@ -493,8 +459,8 @@ export default function LiveDocsPage() {
     const segments = activePath.replace(/^\//, "").split("/").slice(1);
     const crumbs = segments.map((segment, idx) => ({
       label: segment.replace(/-/g, " ").replace(/_/g, " "),
-      path: `/docs/${org}/${repo}/${persona}/${segments.slice(0, idx + 1).join("/")}`,
-      uniquePath: `/docs/${org}/${repo}/${persona}/${segments.slice(0, idx + 1).join("/")}__${idx}`,
+      path: `/render-docs/${org}/${repo}/${persona}/${segments.slice(0, idx + 1).join("/")}`,
+      uniquePath: `/render-docs/${org}/${repo}/${persona}/${segments.slice(0, idx + 1).join("/")}__${idx}`,
     }));
     return [...base, ...crumbs];
   }, [manifest, activePath, org, repo, persona]);
@@ -929,53 +895,43 @@ export default function LiveDocsPage() {
                 onKeyDown={(e) => {
                   if (e.key === "Escape") {
                     setSearchOpen(false);
-                    setSearchQuery("");
                   }
                 }}
+                autoFocus
               />
               <button
-                onClick={() => {
-                  setSearchOpen(false);
-                  setSearchQuery("");
-                }}
-                className={`ml-2 rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-800`}
+                onClick={() => setSearchOpen(false)}
+                className={`rounded p-1 ${isLight ? "text-slate-500 hover:bg-slate-100" : "text-slate-400 hover:bg-slate-800"}`}
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="max-h-[60vh] overflow-y-auto p-4">
-              {filteredResults.length > 0 ? (
-                <div className="space-y-2">
+            <div className="max-h-[60vh] overflow-y-auto p-2">
+              {filteredResults.length === 0 ? (
+                <div className="p-4 text-center">
+                  <p className={isLight ? "text-slate-500" : "text-slate-400"}>
+                    No results found.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1">
                   {filteredResults.map((item) => (
                     <button
                       key={item.id}
                       onClick={() => {
                         fetchContentByPath(item.path, true, item.source_path);
                         setSearchOpen(false);
-                        setSearchQuery("");
                       }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"}`}
+                      className={`flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"}`}
                     >
-                      <FileText
-                        className={`h-4 w-4 shrink-0 ${isLight ? "text-slate-500" : "text-slate-400"}`}
-                      />
-                      <span
-                        className={`text-sm ${isLight ? "text-slate-700" : "text-slate-300"}`}
-                      >
+                      <FileText className={`h-4 w-4 shrink-0 ${isLight ? "text-slate-500" : "text-slate-400"}`} />
+                      <span className={`font-medium ${isLight ? "text-slate-900" : "text-white"}`}>
                         {item.name.replace(/-/g, " ").replace(/_/g, " ")}
                       </span>
                     </button>
                   ))}
                 </div>
-              ) : searchQuery ? (
-                <div className="py-8 text-center">
-                  <p
-                    className={`text-sm ${isLight ? "text-slate-500" : "text-slate-400"}`}
-                  >
-                    No results found for "{searchQuery}"
-                  </p>
-                </div>
-              ) : null}
+              )}
             </div>
           </div>
         </div>

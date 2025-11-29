@@ -139,7 +139,8 @@ export async function middleware(request: NextRequest) {
       console.log(`[Middleware] ✅ Org '${org}' is valid. Serving docs.`);
 
       const alreadyDocsPath =
-        pathname === `/docs/${org}` || pathname.startsWith(`/docs/${org}/`);
+        pathname === `/docs/${org}` || pathname.startsWith(`/docs/${org}/`) ||
+        pathname === `/render-docs/${org}` || pathname.startsWith(`/render-docs/${org}/`);
 
       if (alreadyDocsPath) {
         console.log(
@@ -212,7 +213,7 @@ export async function middleware(request: NextRequest) {
         // Homepage with live URL path returned from backend
         const normalizedPath = liveUrlPath.replace(/^\/+/, "");
         const liveSegmentsRaw = normalizedPath.split("/").filter(Boolean);
-        if (liveSegmentsRaw[0] === "docs") {
+        if (liveSegmentsRaw[0] === "docs" || liveSegmentsRaw[0] === "render-docs") {
           liveSegmentsRaw.shift();
         }
 
@@ -231,13 +232,13 @@ export async function middleware(request: NextRequest) {
 
         if (!liveRepo) {
           // Default to a generic docs page for the org
-          url.pathname = `/docs/${org}`;
+          url.pathname = `/dashboard`;
           console.log(
-            `[DOCS_DEBUG] 📚 Case 1: Live URL path missing repo. Falling back to ${url.pathname}`
+            `[DOCS_DEBUG] 📚 Case 1: Live URL path missing repo. Redirecting to dashboard: ${url.pathname}`
           );
         } else {
-          // FIXED: Use the new component pattern: /docs/[org]/[repo]/[persona]/[...slug]
-          url.pathname = `/docs/${org}/${liveRepo}/${livePersona}/${remainingSegments.join("/")}`;
+          // NUCLEAR FIX: Use the new component pattern: /render-docs/[org]/[repo]/[persona]/[...slug]
+          url.pathname = `/render-docs/${org}/${liveRepo}/${livePersona}/${remainingSegments.join("/")}`;
           console.log(
             `[DOCS_DEBUG] 📚 Case 1: Homepage with live URL path -> ${url.pathname}`
           );
@@ -278,8 +279,8 @@ export async function middleware(request: NextRequest) {
           
           const remainingSegments = pathSegments.slice(2);
           
-          // FIXED: Use the new component pattern: /docs/[org]/[repo]/[persona]/[...slug]
-          url.pathname = `/docs/${org}/${repoName}/${persona}/${remainingSegments.join("/")}`;
+          // NUCLEAR FIX: Use the new component pattern: /render-docs/[org]/[repo]/[persona]/[...slug]
+          url.pathname = `/render-docs/${org}/${repoName}/${persona}/${remainingSegments.join("/")}`;
           
           console.log(`[DOCS_DEBUG] 📚 Case 3.1: Valid persona found: ${persona}, remainingSegments=${JSON.stringify(remainingSegments)}`);
           console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}`);
@@ -287,8 +288,8 @@ export async function middleware(request: NextRequest) {
           // No valid persona specified - use default
           const remainingSegments = pathSegments.slice(1);
           
-          // FIXED: Use the new component pattern: /docs/[org]/[repo]/[persona]/[...slug]
-          url.pathname = `/docs/${org}/${repoName}/${persona}/${remainingSegments.join("/")}`;
+          // NUCLEAR FIX: Use the new component pattern: /render-docs/[org]/[repo]/[persona]/[...slug]
+          url.pathname = `/render-docs/${org}/${repoName}/${persona}/${remainingSegments.join("/")}`;
           
           console.log(`[DOCS_DEBUG] 📚 Case 3.2: Using default persona: ${persona}, remainingSegments=${JSON.stringify(remainingSegments)}`);
           console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}`);
@@ -297,9 +298,9 @@ export async function middleware(request: NextRequest) {
         // Add debug info
         console.log(`[DOCS_DEBUG] 🔑 FINAL REWRITE: org=${org}, repo=${repoName}, persona=${persona}, path=${url.pathname}${url.search}`);
       } else {
-        // Fallback - just rewrite to docs page
-        url.pathname = `/docs/${org}${originalPath}`;
-        console.log(`[DOCS_DEBUG] 📚 Case 4: Fallback rewriting: ${url.pathname}`);
+        // Fallback - redirect to dashboard instead of using docs path
+        url.pathname = `/dashboard`;
+        console.log(`[DOCS_DEBUG] 📚 Case 4: Fallback redirecting to dashboard: ${url.pathname}`);
       }
 
       const response = NextResponse.rewrite(url);
