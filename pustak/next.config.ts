@@ -15,6 +15,23 @@ const nextConfig: NextConfig = {
   images: {
     domains: ['avatars.githubusercontent.com', 'github.com'],
   },
+  async headers() {
+    return [
+      {
+        source: '/render-docs/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-store, must-revalidate',
+          },
+          {
+            key: 'Pragma',
+            value: 'no-cache',
+          },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     const hostRule = {
       type: 'host' as const,
