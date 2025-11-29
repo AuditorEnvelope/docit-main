@@ -164,6 +164,15 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [headings, setHeadings] = useState<HeadingItem[]>([]);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<
+    {
+      timestamp: string;
+      level: "info" | "error";
+      message: string;
+      context?: string;
+    }[]
+  >([]);
 
   // Use resolvedTheme to avoid hydration issues
   const isLight = mounted ? resolvedTheme === "light" : true; // Default to light theme
@@ -197,10 +206,46 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
     ? BACKEND_URL
     : `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
 
+  const appendDebugLog = useCallback(
+    (
+      message: string,
+      {
+        level = "info",
+        context,
+      }: { level?: "info" | "error"; context?: Record<string, unknown> | string } = {}
+    ) => {
+      const contextString =
+        typeof context === "string"
+          ? context
+          : context
+          ? JSON.stringify(context, null, 2)
+          : undefined;
+
+      const entry = {
+        timestamp: new Date().toISOString(),
+        level,
+        message,
+        context: contextString,
+      };
+
+      setDebugLogs((prev) => [entry, ...prev].slice(0, 200));
+
+      if (level === "error") {
+        console.error("[LiveDocs Debug]", message, context);
+      } else {
+        console.log("[LiveDocs Debug]", message, context);
+      }
+    },
+    []
+  );
+
   const fetchManifest = useCallback(async (options: { force?: boolean } = {}) => {
     const currentKey = manifestKey;
     if (!options.force && fetchedManifestKeyRef.current === currentKey) {
       console.log("[Page] 🟢 Manifest fetch skipped (duplicate key)", currentKey);
+      appendDebugLog("Manifest fetch skipped (duplicate key)", {
+        context: { cacheKey: currentKey },
+      });
       return;
     }
 
@@ -222,10 +267,17 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
         repo_id: repo,
         persona: persona,
       });
+      appendDebugLog("Manifest fetch started", {
+        context: { url, org, repo, persona, cacheKey: currentKey },
+      });
 
       const response = await fetch(url);
 
       if (!response.ok) {
+        appendDebugLog("Manifest fetch failed with non-OK status", {
+          level: "error",
+          context: { status: response.status, statusText: response.statusText, url },
+        });
         throw new Error(`Failed to load manifest: ${response.statusText}`);
       }
 
@@ -247,16 +299,30 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
         setExpandedNodes(expanded);
       }
       setError(null);
+      appendDebugLog("Manifest fetch succeeded", {
+        context: {
+          url,
+          sidebarItems: Array.isArray(data.sidebar) ? data.sidebar.length : 0,
+          navigationKeys: data.navigation ? Object.keys(data.navigation).length : 0,
+        },
+      });
     } catch (err) {
       console.error("Error fetching manifest:", err);
       fetchedManifestKeyRef.current = null;
       setError(
         err instanceof Error ? err.message : "Failed to load documentation"
       );
+      appendDebugLog("Manifest fetch failed", {
+        level: "error",
+        context:
+          err instanceof Error
+            ? { message: err.message, stack: err.stack }
+            : { message: String(err) },
+      });
     } finally {
       setLoading(false);
     }
-  }, [apiBase, manifestKey, org, repo, persona]);
+  }, [apiBase, appendDebugLog, manifestKey, org, repo, persona]);
 
   useEffect(() => {
     if (!org || !repo || !persona) {
@@ -267,6 +333,10 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       });
       setError("Invalid documentation URL");
       setLoading(false);
+      appendDebugLog("Missing route params", {
+        level: "error",
+        context: { org, repo, persona, slug },
+      });
       return;
     }
 
@@ -274,10 +344,20 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       "[Page] 🟢 useEffect triggered, fetching manifest with:",
       { org, repo, persona }
     );
+    appendDebugLog("Route params resolved", {
+      context: { org, repo, persona, slug },
+    });
     fetchManifest().catch((err) => {
       console.error("[Page] 🟥 Manifest fetch failed:", err);
+      appendDebugLog("Manifest fetch promise rejected", {
+        level: "error",
+        context:
+          err instanceof Error
+            ? { message: err.message, stack: err.stack }
+            : { message: String(err) },
+      });
     });
-  }, [fetchManifest, org, repo, persona]);
+  }, [appendDebugLog, fetchManifest, org, repo, persona, slug]);
 
   const fetchContent = useCallback(async (
     slugSegments: string[],
@@ -328,10 +408,17 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       const url = `${apiBase}/docbook/live-content/public?${params.toString()}`;
       console.log("[Page] 🟢 CONTENT URL:", url);
       console.log("[Page] 🟢 Slug parameters:", segmentsToUse);
+      appendDebugLog("Content fetch started", {
+        context: { url, org, repo, persona, slug: segmentsToUse },
+      });
 
       const response = await fetch(url);
 
       if (!response.ok) {
+        appendDebugLog("Content fetch failed with non-OK status", {
+          level: "error",
+          context: { status: response.status, statusText: response.statusText, url },
+        });
         throw new Error(`Failed to load content: ${response.statusText}`);
       }
 
@@ -343,14 +430,29 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       const activeName = normalizedPath.split("/").pop() || repo;
       setPageTitle(activeName.replace(/-/g, " ").replace(/_/g, " "));
       setError(null);
+      appendDebugLog("Content fetch succeeded", {
+        context: {
+          url,
+          normalizedPath,
+          slugSegments,
+          displayPath,
+        },
+      });
     } catch (err) {
       console.error("Error fetching content:", err);
       fetchedContentKeyRef.current = null;
       setError(err instanceof Error ? err.message : "Failed to load content");
+      appendDebugLog("Content fetch failed", {
+        level: "error",
+        context:
+          err instanceof Error
+            ? { message: err.message, stack: err.stack }
+            : { message: String(err) },
+      });
     } finally {
       setLoading(false);
     }
-  }, [apiBase, manifestKey, org, repo, persona]);
+  }, [apiBase, appendDebugLog, manifestKey, org, repo, persona]);
 
   useEffect(() => {
     if (!manifest) return;
@@ -608,20 +710,65 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
 
   return (
     <div
-      className={`min-h-screen transition-colors ${
-        isLight ? "bg-white" : "bg-slate-950"
+      className={`flex min-h-screen flex-col ${
+        isLight ? "bg-white text-slate-900" : "bg-slate-950 text-slate-100"
       }`}
-      style={{
-        color: isLight ? "#000000" : "#e2e8f0",
-      }}
     >
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
+        <button
+          onClick={() => setShowDebugPanel((prev) => !prev)}
+          className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-500"
+        >
+          {showDebugPanel ? "Hide Debug" : "Show Debug"}
+        </button>
+      </div>
 
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
+      {showDebugPanel && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+          className="fixed inset-x-0 bottom-0 z-40 max-h-80 overflow-y-auto border-t border-slate-700/60 bg-slate-900/90 p-4 text-sm text-slate-100 backdrop-blur"
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">
+              Debug Logs
+            </h3>
+            <button
+              onClick={() => setDebugLogs([])}
+              className="rounded-full border border-slate-600 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-200 transition hover:bg-slate-700/60"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="space-y-2 font-mono text-xs">
+            {debugLogs.length === 0 ? (
+              <p className="text-slate-400">No debug events yet.</p>
+            ) : (
+              debugLogs.map((log, index) => (
+                <div
+                  key={`${log.timestamp}-${index}`}
+                  className={`rounded-md border px-3 py-2 ${
+                    log.level === "error"
+                      ? "border-red-500/40 bg-red-500/10"
+                      : "border-slate-600/60 bg-slate-800/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">
+                      [{log.level.toUpperCase()}] {log.message}
+                    </span>
+                    <span className="text-[0.65rem] text-slate-400">
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  {log.context && (
+                    <pre className="mt-2 whitespace-pre-wrap text-[0.65rem] text-slate-300">
+                      {log.context}
+                    </pre>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       )}
       <div className="relative flex min-h-screen lg:h-screen lg:overflow-hidden">
         {/* Sidebar */}
