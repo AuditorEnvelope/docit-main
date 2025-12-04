@@ -10,6 +10,7 @@ import PendingReviewsTab from "@/components/PendingReviewsTab";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePendingReviews } from "@/hooks/usePendingReviews";
 import { OnboardingSplash, ONBOARDING_PROGRESS_MESSAGES } from "@/components/OnboardingSplash";
+import { mapDocsRouteToRepoSlug } from "@/lib/docsPathMapper";
 import {
   BookOpen,
   Calendar,
@@ -861,9 +862,20 @@ export default function DashboardPage() {
                     const docbookNotice =
                       "This is your docbook repository where generated documentation lives. Docs are already stored here.";
                     const repoShortName = fullName.split("/")[1] || displayName;
-                    const docsHref = docbookRepo
-                      ? `/repo/${docbookRepo}/${repoShortName}/architecture/current.md`
-                      : `/repo/${fullName}`;
+                    const docsHref = (() => {
+                      if (!docbookRepo) {
+                        return `/repo/${fullName}`;
+                      }
+
+                      const { canonicalSlug } = mapDocsRouteToRepoSlug({
+                        org: fullName.split("/")[0] || "",
+                        repo: repoShortName,
+                        slug: ["introduction"],
+                      });
+
+                      const slugPath = canonicalSlug.join("/");
+                      return `/docs/${fullName.split("/")[0]}/${repoShortName}/${slugPath}`;
+                    })();
                     const viewDocsDisabled = !docbookRepo;
 
                     const cardGradient = isDocbookRepo

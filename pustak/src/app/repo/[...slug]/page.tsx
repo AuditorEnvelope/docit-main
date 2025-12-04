@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Calendar,
   FileText,
+  Globe2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -114,6 +115,10 @@ export default function RepoPage({ params }: RepoPageProps) {
   const [version, setVersion] = useState<string | null>(null);
   const [repoName, setRepoName] = useState<string>("");
   const [sourcePath, setSourcePath] = useState<string>("");
+  const [orgName, setOrgName] = useState<string>("");
+  const [sourceRepo, setSourceRepo] = useState<string>("");
+  const [persona, setPersona] = useState<string>("dev");
+  const [publicUrl, setPublicUrl] = useState<string>("");
 
   // Load page only once on mount
   useEffect(() => {
@@ -134,6 +139,12 @@ export default function RepoPage({ params }: RepoPageProps) {
         const [orgSegment, repoSegment, ...pathSegments] = slug;
         const repoFullName = `${orgSegment}/${repoSegment}`;
 
+        const repoFolder = pathSegments[0] || "";
+        const personaSegment =
+          pathSegments.length >= 3 && pathSegments[1].toLowerCase() === "docs"
+            ? pathSegments[2]?.toLowerCase() || "dev"
+            : "dev";
+
         const docInfo = extractDocInfo(pathSegments);
         const parsedRepoName = repoFullName;
 
@@ -143,6 +154,14 @@ export default function RepoPage({ params }: RepoPageProps) {
         setVersion(docInfo.version);
         setRepoName(parsedRepoName);
         setSourcePath(docInfo.filePath);
+        setOrgName(orgSegment);
+        setSourceRepo(repoFolder);
+        setPersona(personaSegment);
+        if (orgSegment && repoFolder) {
+          setPublicUrl(`https://${orgSegment}.docbook.site/${repoFolder}`);
+        } else {
+          setPublicUrl("");
+        }
 
         const filePath = docInfo.filePath;
 
@@ -187,6 +206,7 @@ export default function RepoPage({ params }: RepoPageProps) {
   }, []);
 
   const githubUrl = `https://github.com/${repoName}`;
+  const personaLabel = persona ? `${persona.charAt(0).toUpperCase()}${persona.slice(1)}` : "";
   const lastUpdated = new Date();
 
   const getDocIcon = useCallback((type: string) => {
@@ -256,57 +276,74 @@ export default function RepoPage({ params }: RepoPageProps) {
   return (
     <Layout>
       <div className="flex-1 p-8">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+        <div className="max-w-6xl mx-auto space-y-6">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 px-6 py-4 shadow-[0_25px_70px_-55px_rgba(15,23,42,1)]">
+            <div className="flex flex-wrap items-center gap-3">
               <Link
-                href="/"
-                className="flex items-center space-x-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+                href="/dashboard"
+                className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.3em] text-slate-300 transition hover:border-slate-500 hover:text-white"
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Back</span>
               </Link>
+            </div>
 
-              <div className="h-6 w-px bg-gray-300 dark:bg-gray-600" />
-
-              <div className="flex items-center space-x-3">
-                <div className="flex items-center space-x-2">
-                  {getDocIcon(docType)}
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+            <div className="mt-4 flex flex-col gap-4 lg:mt-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-slate-100">
+                  <span className="rounded-full bg-blue-500/10 p-2 text-blue-300">
+                    {getDocIcon(docType)}
+                  </span>
+                  <h1 className="text-2xl font-semibold tracking-tight">
                     {getDocTitle()}
                   </h1>
                 </div>
 
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {repoName}
-                </span>
-              </div>
-            </div>
+                {(sourceRepo || personaLabel) && (
+                  <div className="flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/70 px-3 py-1 text-xs font-medium text-slate-300">
+                    {sourceRepo && <span className="uppercase tracking-[0.2em] text-slate-400">{sourceRepo}</span>}
+                    {sourceRepo && personaLabel && <span className="opacity-40">•</span>}
+                    {personaLabel && <span>{personaLabel} persona</span>}
+                  </div>
+                )}
 
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
-                <Calendar className="w-4 h-4" />
-                <span>
-                  Updated{" "}
-                  {lastUpdated.toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/70 px-3 py-1 text-xs font-medium text-slate-300">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="tracking-wide">
+                    Updated {lastUpdated.toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
               </div>
 
-              <a
-                href={githubUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center space-x-2 px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
-              >
-                <ExternalLink className="w-4 h-4" />
-                <span>View on GitHub</span>
-              </a>
+              <div className="flex flex-wrap items-center gap-3">
+                {publicUrl && (
+                  <a
+                    href={publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-full bg-blue-500/90 px-4 py-1.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/35 transition hover:bg-blue-500"
+                  >
+                    <Globe2 className="w-4 h-4" />
+                    <span>Preview live docs</span>
+                  </a>
+                )}
+
+                <a
+                  href={githubUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-4 py-1.5 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>View on GitHub</span>
+                </a>
+              </div>
             </div>
           </div>
 

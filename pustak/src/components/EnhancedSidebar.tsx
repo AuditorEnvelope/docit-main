@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { mapDocbookPathToDocsSlug } from "@/lib/docsPathMapper";
 
 interface SidebarProps {
   onClose: () => void;
@@ -186,34 +187,31 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
     safeSetExpandedFolders((draft) => {
       docbooks.forEach((docbook) => {
-        const encodedDocbook = docbook.fullName
-          .split("/")
-          .map((segment) => encodeURIComponent(segment))
-          .join("/");
-        const baseHref = `/repo/${encodedDocbook}`;
-        if (!pathname.startsWith(baseHref)) {
-          return;
-        }
+        const traverse = (items: DocbookFile[], basePath: string[] = []) => {
+          items.forEach((item) => {
+            const itemPath = [...basePath, item.name];
 
-        const remainder = pathname.slice(baseHref.length).replace(/^\//, "");
-        if (!remainder) {
-          return;
-        }
+            if (item.type === "file") {
+              const docRoute = mapDocbookPathToDocsSlug({
+                org: docbook.orgId,
+                pathSegments: itemPath,
+              });
 
-        const decodedSegments = remainder
-          .split("/")
-          .filter(Boolean)
-          .map((segment) => decodeURIComponent(segment));
+              if (docRoute && pathname === docRoute.href) {
+                for (let i = 1; i < itemPath.length; i += 1) {
+                  draft.add(itemPath.slice(0, i).join("/"));
+                }
+              }
+              return;
+            }
 
-        const cumulative: string[] = [];
-        decodedSegments.forEach((segment, index) => {
-          // Skip last segment (file) to only expand folders
-          if (index === decodedSegments.length - 1) {
-            return;
-          }
-          cumulative.push(segment);
-          draft.add(cumulative.join("/"));
-        });
+            if (item.files && item.files.length > 0) {
+              traverse(item.files, itemPath);
+            }
+          });
+        };
+
+        traverse(docbook.folders);
       });
     });
   }, [pathname, docbooks]);
@@ -222,21 +220,12 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
   const renderFileTree = (
     items: DocbookFile[],
     basePath: string[] = [],
-    docbookFullName: string
+    docbook: DocbookRepo
   ): JSX.Element => {
-    const repoHrefBase = `/repo/${docbookFullName
-      .split("/")
-      .map((segment) => encodeURIComponent(segment))
-      .join("/")}`;
-
-    const toEncodedPath = (segments: string[]) =>
-      segments.map((segment) => encodeURIComponent(segment)).join("/");
-
     return (
       <div className="space-y-1">
         {items.map((item) => {
           if (basePath.length === 0 && item.type === "file") {
-            // Skip top-level files like README.md; only show folders at root
             return null;
           }
 
@@ -245,9 +234,16 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
           const isExpanded = expandedFolders.has(itemKey);
 
           if (item.type === "file") {
-            // Clickable file link using actual file path
-            const encodedFilePath = toEncodedPath(itemPath);
-            const href = `${repoHrefBase}/${encodedFilePath}`;
+            const docRoute = mapDocbookPathToDocsSlug({
+              org: docbook.orgId,
+              pathSegments: itemPath,
+            });
+
+            if (!docRoute) {
+              return null;
+            }
+
+            const href = docRoute.href;
 
             return (
               <Link
@@ -264,45 +260,45 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                 <span className="truncate">{item.name}</span>
               </Link>
             );
-          } else {
-            // Expandable folder
-            const lowerName = item.name.toLowerCase();
-            const defaultHref =
-              lowerName === "architecture" || lowerName === "workflow"
-                ? `${repoHrefBase}/${toEncodedPath([
-                    ...itemPath,
-                    "current.md",
-                  ])}`
-                : undefined;
-
-            return (
-              <div key={itemKey} className="space-y-1">
-                <button
-                  onClick={() => toggleFolder(itemKey, defaultHref)}
-                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800/60"
-                >
-                  <div className="flex items-center gap-2">
-                    <Folder className="h-3 w-3 text-blue-300" />
-                    <span className="font-medium text-slate-100">
-                      {item.name}
-                    </span>
-                  </div>
-                  <span
-                    className={`transition-transform ${
-                      isExpanded ? "rotate-180" : "rotate-0"
-                    }`}
-                  >
-                    <ChevronDown className="h-3 w-3" />
-                  </span>
-                </button>
-                {isExpanded && item.files && (
-                  <div className="ml-3 border-l border-slate-800/60 pl-3">
-                    {renderFileTree(item.files, itemPath, docbookFullName)}
-                  </div>
-                )}
-              </div>
-            );
           }
+
+          const lowerName = item.name.toLowerCase();
+          const defaultDocRoute =
+            lowerName === "architecture" || lowerName === "workflow"
+              ? mapDocbookPathToDocsSlug({
+                  org: docbook.orgId,
+                  pathSegments: [...itemPath, "current.md"],
+                })
+              : null;
+          const defaultHref = defaultDocRoute?.href;
+
+          return (
+            <div key={itemKey} className="space-y-1">
+              <button
+                onClick={() => toggleFolder(itemKey, defaultHref)}
+                className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800/60"
+              >
+                <div className="flex items-center gap-2">
+                  <Folder className="h-3 w-3 text-blue-300" />
+                  <span className="font-medium text-slate-100">
+                    {item.name}
+                  </span>
+                </div>
+                <span
+                  className={`transition-transform ${
+                    isExpanded ? "rotate-180" : "rotate-0"
+                  }`}
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </span>
+              </button>
+              {isExpanded && item.files && (
+                <div className="ml-3 border-l border-slate-800/60 pl-3">
+                  {renderFileTree(item.files, itemPath, docbook)}
+                </div>
+              )}
+            </div>
+          );
         })}
       </div>
     );
@@ -530,11 +526,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                           Staging file map
                         </p>
                         <div className="space-y-2">
-                          {renderFileTree(
-                            docbook.folders,
-                            [],
-                            docbook.fullName
-                          )}
+                          {renderFileTree(docbook.folders, [], docbook)}
                         </div>
                       </div>
                     )}
