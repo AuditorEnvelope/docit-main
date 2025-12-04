@@ -25,6 +25,81 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import nextDynamic from "next/dynamic";
+import { DEFAULT_PERSONA, mapPublicRouteToRepoPath } from "@/lib/docsPathMapper";
+
+const SUMMARY_ALIASES = new Set(["summary", "readme", "introduction", "index"]);
+
+const normalizeDocSegment = (segment: string): string => {
+  const trimmed = segment.replace(/\.md$/i, "").toLowerCase();
+  return SUMMARY_ALIASES.has(trimmed) ? "introduction" : trimmed;
+};
+
+const buildPublicHref = (repo: string, canonicalSlug: string[]): string => {
+  const base = `/${encodeURIComponent(repo)}`;
+  if (!canonicalSlug.length) {
+    return base;
+  }
+  const segments = canonicalSlug.map((segment) => encodeURIComponent(segment.toLowerCase()));
+  return `${base}/${segments.join("/")}`;
+};
+
+const titleizeSegment = (segment: string): string => {
+  const lower = segment.toLowerCase();
+  if (lower === "introduction") {
+    return "Summary";
+  }
+  return lower.replace(/[-_]/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const deriveCanonicalSlug = ({
+  persona,
+  slugSegments,
+  sourceSegments,
+}: {
+  persona: string;
+  slugSegments: string[];
+  sourceSegments?: string[];
+}): string[] => {
+  const personaNormalized = (persona || DEFAULT_PERSONA).toLowerCase();
+
+  let workingSegments: string[] | null = null;
+
+  if (sourceSegments && sourceSegments.length) {
+    workingSegments = [...sourceSegments];
+  } else if (slugSegments && slugSegments.length) {
+    workingSegments = [...slugSegments];
+  }
+
+  if (!workingSegments || workingSegments.length === 0) {
+    return personaNormalized === DEFAULT_PERSONA ? [] : [personaNormalized];
+  }
+
+  const normalizedSegments = workingSegments.map((segment) => segment.trim()).filter(Boolean);
+  let personaPrefixed = normalizedSegments;
+
+  const first = normalizedSegments[0]?.toLowerCase();
+  if (first !== personaNormalized) {
+    personaPrefixed = [personaNormalized, ...normalizedSegments];
+  } else {
+    personaPrefixed[0] = personaNormalized;
+  }
+
+  const docSegments = personaPrefixed.map((segment, index) =>
+    index === 0 ? segment.toLowerCase() : normalizeDocSegment(segment)
+  );
+
+  const withoutPersona = docSegments.slice(1);
+
+  if (!withoutPersona.length || withoutPersona[0] === "introduction") {
+    return personaNormalized === DEFAULT_PERSONA
+      ? []
+      : [personaNormalized];
+  }
+
+  return personaNormalized === DEFAULT_PERSONA
+    ? withoutPersona
+    : [personaNormalized, ...withoutPersona];
+};
 
 const MarkdownRenderer = nextDynamic(
   () => import("@/components/MarkdownRenderer").then((mod) => mod.MarkdownRenderer),
@@ -123,19 +198,34 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
   const persona = params.persona as string;
   // The slug is ONLY what comes after the persona
   const rawSlug = params.slug;
-  const slug = Array.isArray(rawSlug)
-    ? rawSlug
-    : typeof rawSlug === "string"
-    ? [rawSlug]
-    : [];
-  const slugKey = slug.join("/");
+  const publicMapping = useMemo(() => {
+    const raw = Array.isArray(rawSlug)
+      ? rawSlug
+      : typeof rawSlug === "string"
+      ? [rawSlug]
+      : [];
+
+    return mapPublicRouteToRepoPath({ repo, slug: raw });
+  }, [rawSlug, repo]);
+
+  const initialCanonicalSlug = publicMapping.canonicalSlug;
+  const initialApiSlug = publicMapping.docPath.slice(2);
+  const slugKey = initialApiSlug.join("/");
+
+  const [currentCanonicalSlug, setCurrentCanonicalSlug] = useState<string[]>(
+    initialCanonicalSlug
+  );
+
+  useEffect(() => {
+    setCurrentCanonicalSlug(initialCanonicalSlug);
+  }, [initialCanonicalSlug.join("/")]);
 
   useEffect(() => {
     console.log("🐛 [CLIENT DEBUG] Mounted. Params:", params);
   }, [params]);
 
   const manifestKey = useMemo(
-    () => `${org ?? ""}::${repo ?? ""}::${persona ?? ""}`,
+    () => `${org ?? ""}::${repo ?? ""}::${persona ?? DEFAULT_PERSONA}`,
     [org, repo, persona]
   );
 
@@ -335,7 +425,12 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       setLoading(false);
       appendDebugLog("Missing route params", {
         level: "error",
-        context: { org, repo, persona, slug },
+        context: {
+          org,
+          repo,
+          persona,
+          slug: initialCanonicalSlug,
+        },
       });
       return;
     }
@@ -345,7 +440,12 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       { org, repo, persona }
     );
     appendDebugLog("Route params resolved", {
-      context: { org, repo, persona, slug },
+      context: {
+        org,
+        repo,
+        persona,
+        slug: initialCanonicalSlug,
+      },
     });
     fetchManifest().catch((err) => {
       console.error("[Page] 🟥 Manifest fetch failed:", err);
@@ -357,7 +457,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
             : { message: String(err) },
       });
     });
-  }, [appendDebugLog, fetchManifest, org, repo, persona, slug]);
+  }, [appendDebugLog, fetchManifest, initialCanonicalSlug, org, persona, repo]);
 
   const fetchContent = useCallback(async (
     slugSegments: string[],
@@ -424,11 +524,16 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
 
       const data = await response.json();
       setContent(data.content || "");
-      const normalizedPath =
-        displayPath || `/${[repo, ...slugSegments].join("/")}`;
+      const canonical = deriveCanonicalSlug({
+        persona,
+        slugSegments,
+        sourceSegments: segmentsToUse,
+      });
+      const normalizedPath = buildPublicHref(repo, canonical);
       setActivePath(normalizedPath);
-      const activeName = normalizedPath.split("/").pop() || repo;
-      setPageTitle(activeName.replace(/-/g, " ").replace(/_/g, " "));
+      const activeName = canonical[canonical.length - 1] || repo;
+      setPageTitle(titleizeSegment(activeName));
+      setCurrentCanonicalSlug(canonical);
       setError(null);
       appendDebugLog("Content fetch succeeded", {
         context: {
@@ -457,29 +562,31 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
   useEffect(() => {
     if (!manifest) return;
 
-    if (slug.length) {
-      fetchContent([...slug]).catch((err) =>
+    const loadIntroduction = () => {
+      const flattened = manifest.sidebar.flatMap((item) =>
+        item.type === "folder" && item.children
+          ? item.children
+          : [item]
+      );
+      const summaryItem = flattened.find((item) =>
+        item.type === "file" && item.name.toLowerCase() === "summary"
+      );
+      const sourceSegments = summaryItem?.source_path
+        ? summaryItem.source_path.split("/").filter(Boolean).slice(1)
+        : [persona, "SUMMARY.md"];
+      fetchContent(sourceSegments, summaryItem?.path, sourceSegments).catch((err) =>
+        console.error("[Page] 🟥 Default content fetch failed:", err)
+      );
+    };
+
+    if (initialApiSlug.length) {
+      fetchContent(initialApiSlug).catch((err) =>
         console.error("[Page] 🟥 Content fetch failed:", err)
       );
     } else {
-      const flatten = (items: SidebarItem[]): SidebarItem[] =>
-        items.flatMap((entry) =>
-          entry.type === "folder" && entry.children
-            ? flatten(entry.children)
-            : [entry]
-        );
-      const firstDoc = flatten(manifest.sidebar).find(
-        (item) => item.type === "file"
-      );
-      if (firstDoc) {
-        fetchContent(["SUMMARY.md"], firstDoc.path, ["SUMMARY.md"]).catch(
-          (err) => console.error("[Page] 🟥 Default content fetch failed:", err)
-        );
-      } else {
-        setError("No published documentation found.");
-      }
+      loadIntroduction();
     }
-  }, [fetchContent, manifest, repo, slug, slugKey]);
+  }, [fetchContent, manifest, initialApiSlug, persona]);
 
   const renderSidebarItems = (items: SidebarItem[], depth = 0) => {
     return items.map((item, index) => {
@@ -605,9 +712,15 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       : normalizedPath;
     const sourceSegments = sourceNormalized.split("/").filter(Boolean).slice(1);
 
+    const canonical = deriveCanonicalSlug({
+      persona,
+      slugSegments,
+      sourceSegments,
+    });
+
     if (pushHistory) {
-      const nextUrl = `/render-docs/${org}/${repo}/${persona}${normalizedPath}`;
-      window.history.pushState({}, "", nextUrl);
+      const href = buildPublicHref(repo, canonical);
+      window.history.pushState({}, "", href);
     }
 
     await fetchContent(slugSegments, normalizedPath, sourceSegments, {
@@ -632,18 +745,47 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
     return manifest.navigation?.[activePath] ?? { previous: null, next: null };
   }, [manifest, activePath]);
 
+  const publicHref = useMemo(
+    () => buildPublicHref(repo, currentCanonicalSlug),
+    [repo, currentCanonicalSlug]
+  );
+
+  useEffect(() => {
+    if (!mounted) return;
+    if (typeof window === "undefined") return;
+    if (!publicHref) return;
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+    if (currentUrl !== publicHref) {
+      window.history.replaceState({}, "", publicHref);
+    }
+  }, [publicHref, mounted]);
+
   const dynamicBreadcrumbs = useMemo(() => {
     if (!manifest) return [];
     const base = manifest.breadcrumbs || [];
-    if (!activePath) return base;
-    const segments = activePath.replace(/^\//, "").split("/").slice(1);
-    const crumbs = segments.map((segment, idx) => ({
-      label: segment.replace(/-/g, " ").replace(/_/g, " "),
-      path: `/render-docs/${org}/${repo}/${persona}/${segments.slice(0, idx + 1).join("/")}`,
-      uniquePath: `/render-docs/${org}/${repo}/${persona}/${segments.slice(0, idx + 1).join("/")}__${idx}`,
-    }));
-    return [...base, ...crumbs];
-  }, [manifest, activePath, org, repo, persona]);
+    const personaNormalized = (persona || DEFAULT_PERSONA).toLowerCase();
+
+    const relevantSegments = currentCanonicalSlug.length
+      ? currentCanonicalSlug
+      : personaNormalized === DEFAULT_PERSONA
+      ? []
+      : [personaNormalized];
+
+    const breadcrumbSegments = relevantSegments.filter(
+      (segment) => segment !== personaNormalized
+    );
+
+    const docBreadcrumbs = breadcrumbSegments.map((segment, index) => {
+      const cumulative = breadcrumbSegments.slice(0, index + 1);
+      return {
+        label: titleizeSegment(segment),
+        path: buildPublicHref(repo, cumulative),
+        uniquePath: `${repo}-${cumulative.join("-")}`,
+      };
+    });
+
+    return [...base, ...docBreadcrumbs];
+  }, [manifest, currentCanonicalSlug, repo, persona]);
 
   const filteredResults = useMemo(() => {
     if (!searchQuery.trim()) return allFiles;

@@ -11,6 +11,7 @@ interface DocsRouteInput {
 
 interface DocsRouteMapping {
   repoSlug: string[];
+  docPath: string[];
   canonicalSlug: string[];
   persona: string;
   docbookRepoName: string;
@@ -19,6 +20,18 @@ interface DocsRouteMapping {
 interface DocbookPathInput {
   org: string;
   pathSegments: string[];
+}
+
+interface PublicRouteInput {
+  repo: string;
+  slug?: string[];
+}
+
+interface PublicRouteMapping {
+  persona: string;
+  renderSlug: string[];
+  canonicalSlug: string[];
+  docPath: string[];
 }
 
 export function getDocbookRepoName(org: string): string {
@@ -92,6 +105,7 @@ export function mapDocsRouteToRepoSlug({ org, repo, slug }: DocsRouteInput): Doc
 
   return {
     repoSlug: [org, docbookRepoName, ...normalizedPath],
+    docPath: normalizedPath,
     canonicalSlug,
     persona,
     docbookRepoName,
@@ -131,4 +145,95 @@ export function mapDocbookPathToDocsSlug({
   return { href, slugSegments: finalSlug, persona };
 }
 
+export function mapDocbookPathToPublicSlug({
+  repo,
+  pathSegments,
+}: {
+  repo: string;
+  pathSegments: string[];
+}): { href: string; slugSegments: string[]; persona: string } | null {
+  if (!Array.isArray(pathSegments) || pathSegments.length < 3) {
+    return null;
+  }
+
+  const [repoName, maybeDocs, personaRaw, ...rest] = pathSegments;
+  if (repoName !== repo) {
+    return null;
+  }
+
+  const docsKeyword = maybeDocs?.toLowerCase();
+  if (docsKeyword !== "docs") {
+    return null;
+  }
+
+  const persona = personaRaw?.toLowerCase() || DEFAULT_PERSONA;
+  const slugSegments = rest.map((segment) => stripExtension(segment));
+
+  if (slugSegments.length === 1) {
+    const alias = slugSegments[0].toLowerCase();
+    if (alias === "summary" || alias === "readme") {
+      slugSegments[0] = "introduction";
+    }
+  }
+
+  const finalSlug = persona === DEFAULT_PERSONA ? slugSegments : [persona, ...slugSegments];
+  const normalizedSlug =
+    finalSlug.length === 1 && finalSlug[0].toLowerCase() === "introduction"
+      ? []
+      : finalSlug;
+
+  const encodedSlug = normalizedSlug.map((segment) => encodeURIComponent(segment)).join("/");
+  const href = encodedSlug.length
+    ? `/${encodeURIComponent(repo)}/${encodedSlug}`
+    : `/${encodeURIComponent(repo)}`;
+
+  return { href, slugSegments: normalizedSlug.length ? normalizedSlug : finalSlug, persona };
+}
+
 export { DEFAULT_PERSONA, VALID_PERSONAS };
+
+export function mapPublicRouteToRepoPath({ repo, slug }: PublicRouteInput): PublicRouteMapping {
+  const sanitized = sanitizeSegments(slug).map((segment) => stripExtension(segment));
+
+  let persona = DEFAULT_PERSONA;
+  let remainingSegments = sanitized;
+
+  if (remainingSegments.length > 0 && VALID_PERSONAS.has(remainingSegments[0].toLowerCase())) {
+    persona = remainingSegments[0].toLowerCase();
+    remainingSegments = remainingSegments.slice(1);
+  }
+
+  if (remainingSegments.length === 0) {
+    remainingSegments = ["introduction"];
+  }
+
+  const canonicalSegments = [...remainingSegments];
+  if (canonicalSegments.length === 1) {
+    const alias = canonicalSegments[0].toLowerCase();
+    if (alias === "summary" || alias === "readme" || alias === "summary.md") {
+      canonicalSegments[0] = "introduction";
+    }
+  }
+
+  const normalizedPath = normalizeRepoPath(repo, persona, canonicalSegments);
+
+  const canonicalSlug =
+    persona === DEFAULT_PERSONA ? canonicalSegments : [persona, ...canonicalSegments];
+
+  const renderSlug = (() => {
+    if (canonicalSegments.length === 1) {
+      const first = canonicalSegments[0].toLowerCase();
+      if (first === "introduction") {
+        return [];
+      }
+    }
+    return canonicalSegments;
+  })();
+
+  return {
+    persona,
+    renderSlug,
+    canonicalSlug,
+    docPath: normalizedPath,
+  };
+}

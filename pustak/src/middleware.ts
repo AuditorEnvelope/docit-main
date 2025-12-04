@@ -1,6 +1,7 @@
 // src/middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { mapPublicRouteToRepoPath } from "@/lib/docsPathMapper";
 
 const RAW_BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "https://cd17ff078a8e.ngrok-free.app";
@@ -244,8 +245,6 @@ export async function middleware(request: NextRequest) {
       console.log(`[DOCS_DEBUG] 📚 Starting URL rewriting logic`);
       console.log(`[DOCS_DEBUG] 📚 originalPath=${originalPath}, liveUrlPath=${liveUrlPath}, repoName=${repoName}`);
       
-      const validPersonas = ["internal", "dev"];
-      
       if (!originalPath && liveUrlPath) {
         // Homepage with live URL path returned from backend
         const normalizedPath = liveUrlPath.replace(/^\/+/, "");
@@ -255,16 +254,10 @@ export async function middleware(request: NextRequest) {
         }
 
         const liveRepo = liveSegmentsRaw[0] || "";
-        const livePersonaCandidate = liveSegmentsRaw[1] || "";
-        const livePersona = validPersonas.includes(livePersonaCandidate)
-          ? livePersonaCandidate
-          : "dev";
-        const remainingSegments = validPersonas.includes(livePersonaCandidate)
-          ? liveSegmentsRaw.slice(2)
-          : liveSegmentsRaw.slice(1);
+        const liveSlugSegments = liveSegmentsRaw.slice(1);
 
         console.log(
-          `[DOCS_DEBUG] 📚 Case 1: Normalized live URL path -> repo=${liveRepo}, persona=${livePersona}, remaining=${JSON.stringify(remainingSegments)}`
+          `[DOCS_DEBUG] 📚 Case 1: Normalized live URL path -> repo=${liveRepo}, segments=${JSON.stringify(liveSlugSegments)}`
         );
 
         if (!liveRepo) {
@@ -274,10 +267,27 @@ export async function middleware(request: NextRequest) {
             `[DOCS_DEBUG] 📚 Case 1: Live URL path missing repo. Redirecting to dashboard: ${url.pathname}`
           );
         } else {
-          // NUCLEAR FIX: Use the new component pattern: /render-docs/[org]/[repo]/[persona]/[...slug]
-          url.pathname = buildRenderDocsPath(org, liveRepo, livePersona, remainingSegments);
+          const mapping = mapPublicRouteToRepoPath({ repo: liveRepo, slug: liveSlugSegments });
+
+          if (mapping.persona === "internal") {
+            const authToken =
+              request.cookies.get("pustak_access_token")?.value ||
+              request.headers.get("authorization")?.replace("Bearer ", "");
+
+            if (!authToken) {
+              console.log(
+                `[Middleware] ⚠️ Unauthorized access attempt to internal docs for ${liveRepo} from live URL`
+              );
+              const loginUrl = request.nextUrl.clone();
+              loginUrl.pathname = "/login";
+              loginUrl.searchParams.set("redirect", request.url);
+              return NextResponse.redirect(loginUrl);
+            }
+          }
+
+          url.pathname = buildRenderDocsPath(org, liveRepo, mapping.persona, mapping.renderSlug);
           console.log(
-            `[DOCS_DEBUG] 📚 Case 1: Homepage with live URL path -> ${url.pathname}`
+            `[DOCS_DEBUG] 📚 Case 1: Homepage with live URL path -> ${url.pathname} (canonical=${JSON.stringify(mapping.canonicalSlug)})`
           );
         }
       } else if (!originalPath) {
@@ -289,56 +299,42 @@ export async function middleware(request: NextRequest) {
       } else if (repoName) {
         // We have a repo name from the first path segment
         console.log(`[DOCS_DEBUG] 📚 Case 3: We have a repo name: ${repoName}`);
-        
+
         // Check if this repo exists in the available repos list or matches the live URL path
-        const liveUrlRepo = liveUrlPath ? liveUrlPath.split('/').filter(Boolean)[0] : null;
+        const liveUrlRepo = liveUrlPath ? liveUrlPath.split("/").filter(Boolean)[0] : null;
         const isValidRepo = repoExists || (liveUrlRepo && liveUrlRepo === repoName);
-        console.log(`[Middleware] 🔍 Repo validation (non-blocking): repoName=${repoName}, liveUrlRepo=${liveUrlRepo}, isValidRepo=${isValidRepo}`);
-        
-        // CRITICAL FIX: For subdomain access, ALWAYS use a valid persona
-        // Default to 'dev' persona for public access
-        let persona = "dev"; // Default persona
-        
-        // Check if second segment is a valid persona
-        console.log(`[DOCS_DEBUG] 📚 Checking if second segment is valid persona. pathSegments[1]=${pathSegments[1]}`);
-        if (validPersonas.includes(pathSegments[1] || "")) {
-          persona = pathSegments[1];
-          
-          // Check for auth when accessing internal persona
-          if (persona === "internal") {
-            const authToken = request.cookies.get("pustak_access_token")?.value || 
-                             request.headers.get("authorization")?.replace("Bearer ", "");
-            
-            if (!authToken) {
-              console.log(`[Middleware] ⚠️ Unauthorized access attempt to internal docs for ${repoName}`);
-              const loginUrl = request.nextUrl.clone();
-              loginUrl.pathname = "/login";
-              loginUrl.searchParams.set("redirect", request.url);
-              return NextResponse.redirect(loginUrl);
-            }
-            console.log(`[Middleware] ✅ Authorized access to internal docs for ${repoName}`);
+        console.log(
+          `[Middleware] 🔍 Repo validation (non-blocking): repoName=${repoName}, liveUrlRepo=${liveUrlRepo}, isValidRepo=${isValidRepo}`
+        );
+
+        const slugSegments = pathSegments.slice(1);
+        const mapping = mapPublicRouteToRepoPath({ repo: repoName, slug: slugSegments });
+
+        if (mapping.persona === "internal") {
+          const authToken =
+            request.cookies.get("pustak_access_token")?.value ||
+            request.headers.get("authorization")?.replace("Bearer ", "");
+
+          if (!authToken) {
+            console.log(
+              `[Middleware] ⚠️ Unauthorized access attempt to internal docs for ${repoName}`
+            );
+            const loginUrl = request.nextUrl.clone();
+            loginUrl.pathname = "/login";
+            loginUrl.searchParams.set("redirect", request.url);
+            return NextResponse.redirect(loginUrl);
           }
-          
-          const remainingSegments = pathSegments.slice(2);
-          
-          // NUCLEAR FIX: Use the new component pattern: /render-docs/[org]/[repo]/[persona]/[...slug]
-          url.pathname = buildRenderDocsPath(org, repoName, persona, remainingSegments);
-          
-          console.log(`[DOCS_DEBUG] 📚 Case 3.1: Valid persona found: ${persona}, remainingSegments=${JSON.stringify(remainingSegments)}`);
-          console.log(`[Middleware] 📝 Rewriting with explicit persona: ${url.pathname}`);
-        } else {
-          // No valid persona specified - use default
-          const remainingSegments = pathSegments.slice(1);
-          
-          // NUCLEAR FIX: Use the new component pattern: /render-docs/[org]/[repo]/[persona]/[...slug]
-          url.pathname = buildRenderDocsPath(org, repoName, persona, remainingSegments);
-          
-          console.log(`[DOCS_DEBUG] 📚 Case 3.2: Using default persona: ${persona}, remainingSegments=${JSON.stringify(remainingSegments)}`);
-          console.log(`[Middleware] 📝 Rewriting with default persona: ${url.pathname}`);
+          console.log(`[Middleware] ✅ Authorized access to internal docs for ${repoName}`);
         }
-        
-        // Add debug info
-        console.log(`[DOCS_DEBUG] 🔑 FINAL REWRITE: org=${org}, repo=${repoName}, persona=${persona}, path=${url.pathname}${url.search}`);
+
+        url.pathname = buildRenderDocsPath(org, repoName, mapping.persona, mapping.renderSlug);
+
+        console.log(
+          `[DOCS_DEBUG] 📚 Case 3: Mapping slug -> repo=${repoName}, persona=${mapping.persona}, renderSlug=${JSON.stringify(
+            mapping.renderSlug
+          )}, canonical=${JSON.stringify(mapping.canonicalSlug)}`
+        );
+        console.log(`[Middleware] 📝 Rewriting to: ${url.pathname}`);
       } else {
         // Fallback - redirect to dashboard instead of using docs path
         url.pathname = `/dashboard`;
