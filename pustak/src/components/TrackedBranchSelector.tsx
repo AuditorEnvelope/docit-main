@@ -35,7 +35,27 @@ export function TrackedBranchSelector({
   const [selectedBranch, setSelectedBranch] = useState<string>("");
   const [useCustomBranch, setUseCustomBranch] = useState(false);
 
-  const encodedRepoId = useMemo(() => encodeURIComponent(repoId), [repoId]);
+  // Extract actual repo name if it contains org/repo format
+  const normalizedRepoId = useMemo(() => {
+    console.log('🔍 TrackedBranchSelector received repoId:', repoId);
+    
+    // If repoId is in the format "org/repo", use it directly
+    if (repoId && repoId.includes('/')) {
+      return repoId;
+    }
+    
+    // If repoId has multiple segments (like org/repo/settings), extract org/repo
+    const segments = repoId.split('/');
+    if (segments.length >= 2) {
+      const result = `${segments[0]}/${segments[1]}`;
+      console.log('🔍 Normalized repoId to:', result);
+      return result;
+    }
+    
+    return repoId;
+  }, [repoId]);
+  
+  const encodedRepoId = useMemo(() => encodeURIComponent(normalizedRepoId), [normalizedRepoId]);
 
   const apiBase = useMemo(() => {
     const normalized = backendUrl.replace(/\/$/, "");

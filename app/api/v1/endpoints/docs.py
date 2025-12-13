@@ -49,7 +49,45 @@ async def generate_documentation_v4(
 
     github_token = _require_github_token(user)
     org_id, source_repo = _parse_repo_full_name(repo_name)
+    
+    # Validate and normalize doc_persona
+    valid_personas = ["internal", "developer"]
+    
+    # Log the requested persona
+    print(f"🔍 Requested doc_persona: {doc_persona}")
+    
+    # Check if we need to fetch from database
+    if doc_persona not in valid_personas:
+        # Try to get the repository's doc_persona from database
+        try:
+            from sqlalchemy import select
+            from app.models.repository import Repository
+            
+            stmt = select(Repository.doc_persona).where(
+                (Repository.full_name == repo_name) | (Repository.repo_id == repo_name)
+            )
+            result = await db.execute(stmt)
+            db_persona = result.scalar_one_or_none()
+            
+            if db_persona and db_persona in valid_personas:
+                print(f"✅ Using database doc_persona: {db_persona}")
+                doc_persona = db_persona
+            else:
+                print(f"⚠️ Invalid doc_persona: {doc_persona}, falling back to 'internal'")
+                doc_persona = "internal"
+        except Exception as e:
+            print(f"⚠️ Error fetching doc_persona from database: {e}")
+            print(f"⚠️ Falling back to 'internal'")
+            doc_persona = "internal"
+    
+    # Map 'developer' to 'dev' for compatibility
+    if doc_persona == "developer":
+        doc_persona = "dev"
+        print(f"🔄 Mapped 'developer' to 'dev' for compatibility")
+    
+    print(f"📝 Using doc_persona: {doc_persona} for {repo_name}")
 
+    # Create generator with validated persona
     generator = ManualDocGenerator(doc_persona=doc_persona)
     dual_app_helper = GitHubDualAppHelper()
     publisher = DocbookPublisher(dual_app=dual_app_helper, db_session=db)
@@ -76,6 +114,40 @@ async def generate_documentation_v4(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=publish_result.get("message", "Docbook publication failed"),
         )
+    
+    # Update last_documented_at timestamp in repositories table
+    from datetime import datetime, timezone
+    from sqlalchemy import select, update
+    from app.models.repository import Repository
+    from app.services.repositories.service import RepositoryService
+    
+    try:
+        # Upsert repository record to ensure it exists
+        repo_service = RepositoryService(db)
+        await repo_service.upsert_tracked_branch(
+            repo_name,
+            tracked_branch="main",  # Default, will be overridden if already set
+            default_branch="main"
+        )
+        
+        # Update the repository's last_documented_at field
+        stmt = (
+            update(Repository)
+            .where(Repository.full_name == repo_name)
+            .values(last_documented_at=datetime.now(timezone.utc))
+        )
+        result = await db.execute(stmt)
+        await db.commit()
+        
+        if result.rowcount > 0:
+            print(f"✅ Updated last_documented_at for {repo_name}")
+        else:
+            print(f"⚠️ No repository found to update last_documented_at for {repo_name}")
+    except Exception as e:
+        print(f"⚠️ Failed to update last_documented_at: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        # Don't fail the whole request if this update fails
 
     return ManualGenerationResponse(
         status=publish_result.get("status", "published_to_staging"),

@@ -3,16 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-export async function GET(
-  request: NextRequest,
-  context: { params: { orgId: string } | Promise<{ orgId: string }> }
-) {
+export async function GET(request: NextRequest, context: any) {
   try {
-    // Handle both direct params and Promise<params>
-    const params = await (context.params instanceof Promise
-      ? context.params
-      : Promise.resolve(context.params));
-    const { orgId } = params;
+    // Extract the orgId from params
+    const { orgId } = context.params;
     const branch = request.nextUrl.searchParams.get("branch") || "staging";
     const authHeader = request.headers.get("authorization");
 

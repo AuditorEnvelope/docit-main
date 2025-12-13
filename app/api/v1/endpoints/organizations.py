@@ -1,5 +1,6 @@
 """Organization-related API endpoints."""
 
+import logging
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -17,6 +18,7 @@ from app.services.repositories.service import RepositoryService
 from app.utils.github_dual_app import GitHubDualAppHelper
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _require_github_token(user: User) -> str:
@@ -24,6 +26,10 @@ def _require_github_token(user: User) -> str:
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="GitHub token not found")
     return token
+
+
+def _normalize_repo_key(value: Optional[str]) -> str:
+    return (value or "").strip().lower()
 
 
 async def _get_user_orgs(github_token: str) -> List[Dict[str, Any]]:
@@ -329,14 +335,64 @@ async def get_org_repository_summary(
 
     repo_service = RepositoryService(db)
     repo_tracked_map: Dict[str, str] = {}
+    repo_metadata_map: Dict[str, Dict[str, Any]] = {}
+
     if repo_full_names:
-        for full_name in repo_full_names:
+        unique_repo_ids = {name for name in repo_full_names if name}
+        logger.info("[repo-summary] unique repo ids from GitHub: %s", sorted(unique_repo_ids))
+
+        for full_name in unique_repo_ids:
+            normalized_name = _normalize_repo_key(full_name)
+            repo_obj = None
+
             try:
-                repo_branch = await repo_service.get_tracked_branch(full_name)
-                if repo_branch:
-                    repo_tracked_map[full_name] = repo_branch
-            except Exception:
+                repo_obj = await repo_service.get_by_full_name(full_name)
+            except Exception as exc:
+                logger.warning("[repo-summary] get_by_full_name error for %s: %s", full_name, exc)
+
+            if not repo_obj and full_name.lower() != full_name:
+                # Retry with lower-case identifier as fallback
+                try:
+                    repo_obj = await repo_service.get_by_full_name(full_name.lower())
+                except Exception as exc:
+                    logger.warning(
+                        "[repo-summary] lowercase retry failed for %s: %s",
+                        full_name,
+                        exc,
+                    )
+
+            if not repo_obj:
+                logger.info("[repo-summary] repository metadata missing for %s", full_name)
                 continue
+
+            key = _normalize_repo_key(repo_obj.full_name or repo_obj.repo_id or full_name)
+            if not key:
+                logger.info("[repo-summary] repository key empty for %s", full_name)
+                continue
+
+            branch = (repo_obj.tracked_branch or "").strip()
+            if branch:
+                repo_tracked_map[key] = branch
+
+            repo_metadata_map[key] = {
+                "doc_persona": repo_obj.doc_persona,
+                "last_documented_at": repo_obj.last_documented_at.isoformat() if repo_obj.last_documented_at else None,
+            }
+
+            logger.info(
+                "[repo-summary] metadata loaded",
+                extra={
+                    "full_name": repo_obj.full_name,
+                    "normalized_key": key,
+                    "doc_persona": repo_obj.doc_persona,
+                    "last_documented_at": repo_metadata_map[key]["last_documented_at"],
+                },
+            )
+
+        logger.info(
+            "[repo-summary] metadata map keys: %s",
+            sorted(repo_metadata_map.keys()),
+        )
 
     summaries: List[Dict[str, Any]] = []
     for repo in repos:
@@ -347,6 +403,9 @@ async def get_org_repository_summary(
             continue
 
         meta = db_metadata.get(full_name) or {}
+        normalized_name = _normalize_repo_key(full_name)
+        repo_meta = repo_metadata_map.get(normalized_name, {})
+
         summaries.append(
             {
                 "full_name": full_name,
@@ -354,15 +413,13 @@ async def get_org_repository_summary(
                 "description": repo.get("description"),
                 "default_branch": repo.get("default_branch"),
                 "private": repo.get("private", False),
-                "doc_persona": None,
-                "last_documented_at": None,
-                "last_commit_sha": None,
-                "last_webhook_at": None,
+                "doc_persona": repo_meta.get("doc_persona"),
+                "last_documented_at": repo_meta.get("last_documented_at"),
                 "pending_reviews": pending_map.get(full_name, 0),
                 "docbook_tracked_branch": docbook_tracked_branch,
-                "tracked_branch": repo_tracked_map.get(full_name, docbook_tracked_branch),
+                "tracked_branch": repo_tracked_map.get(normalized_name, docbook_tracked_branch),
                 "tracked_branch_source": "repository"
-                if full_name in repo_tracked_map
+                if normalized_name in repo_tracked_map
                 else "docbook",
             }
         )

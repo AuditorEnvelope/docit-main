@@ -21,7 +21,7 @@ async def handle_push_event(
     payload: Dict[str, object],
     *,
     github_token: str | None = None,
-    doc_persona: str = "internal",
+    doc_personas: list[str] = ["internal", "dev"],
 ) -> None:
     """Clone the repo at the pushed commit, analyse, generate docs, and publish."""
 
@@ -72,13 +72,23 @@ async def handle_push_event(
 
 
         ref = payload.get("ref", "unknown")
-        await generate_smart_documentation(
-            repo_path,
-            analysis,
-            commit_sha,
-            ref,
-            doc_persona
-        )
+        # Generate documentation for each persona
+        for persona in doc_personas:
+            print(f"\n{'=' * 80}")
+            print(f"📚 Generating {persona} documentation")
+            print(f"{'=' * 80}")
+            
+            # Create persona-specific docs directory
+            persona_docs_dir = repo_path / "docs" / persona
+            persona_docs_dir.mkdir(parents=True, exist_ok=True)
+            
+            await generate_smart_documentation(
+                repo_path,
+                analysis,
+                commit_sha,
+                ref,
+                persona
+            )
 
         docs = read_generated_docs(str(repo_path))
         if docs:

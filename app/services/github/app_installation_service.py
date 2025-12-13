@@ -302,7 +302,7 @@ class AppInstallationService:
                         """
                         SELECT installation_id
                         FROM app_installations
-                        WHERE org_id = $1 AND app_id = $2
+                        WHERE LOWER(org_id) = LOWER($1) AND app_id = $2
                         """,
                         org_id,
                         app_id,

@@ -14,12 +14,17 @@ logger = logging.getLogger(__name__)
 # QUALITY CHECKING SYSTEM (ported from old codebase)
 # ============================================================================
 
-def check_documentation_quality(repo_dir: Path) -> Dict[str, object]:
+def check_documentation_quality(repo_dir: Path, doc_persona: str = "internal") -> Dict[str, object]:
     """
     Check if existing documentation is comprehensive and worthy
     Returns dict with quality scores and what needs to be generated (like old codebase)
+    
+    Args:
+        repo_dir: Path to repository
+        doc_persona: Documentation persona (internal|developer)
     """
-    docs_dir = Path(repo_dir) / "docs"
+    # Check for persona-specific docs directory
+    docs_dir = Path(repo_dir) / "docs" / doc_persona
     
     quality_report = {
         "summary_exists": False,
@@ -639,6 +644,69 @@ def analyze_architecture(repo_dir: Path) -> Dict[str, object]:
         "patterns": detect_design_patterns(repo_dir)
     }
 
+
+def update_summary_navigation(docs_dir: Path) -> None:
+    """Update SUMMARY.md navigation with links to all documentation files.
+    
+    Args:
+        docs_dir: Path to the documentation directory (persona-specific)
+    """
+    summary = ["# Summary", ""]
+    
+    # Get persona from path if available
+    persona = "" 
+    if "internal" in str(docs_dir) or "dev" in str(docs_dir):
+        persona = docs_dir.name
+        print(f"📚 Updating SUMMARY.md for persona: {persona}")
+    
+    # Add home link
+    if (docs_dir / "SUMMARY.md").exists():
+        summary.append("* [Home](SUMMARY.md)")
+    elif (docs_dir / "README.md").exists():
+        summary.append("* [Home](README.md)")
+    
+    # Add architecture links
+    arch_dir = docs_dir / "architecture"
+    if arch_dir.exists():
+        summary.append("\n## Architecture")
+        for path in sorted(arch_dir.glob("v*-architecture.md"), reverse=True)[:5]:
+            summary.append(f"* [{path.stem.upper()}](architecture/{path.name})")
+    
+    # Add workflow links
+    workflow_dir = docs_dir / "workflow"
+    if workflow_dir.exists():
+        summary.append("\n## Workflow")
+        for path in sorted(workflow_dir.glob("v*-workflow.md"), reverse=True)[:5]:
+            summary.append(f"* [{path.stem.upper()}](workflow/{path.name})")
+    
+    # Add API link
+    if (docs_dir / "api.md").exists():
+        summary.append("\n## API")
+        summary.append("* [API Documentation](api.md)")
+    
+    # Add changes (show only last 10 changes to avoid clutter)
+    changes_dir = docs_dir / "changes"
+    if changes_dir.exists():
+        change_files = sorted(changes_dir.glob("*.md"), reverse=True)
+        if change_files:
+            summary.append("\n## Recent Changes")
+            for change_file in change_files[:10]:  # Latest 10 only
+                # Extract title from filename (remove commit hash prefix)
+                title = change_file.stem.split("-", 1)[-1].replace("-", " ").title()
+                summary.append(f"* [{title}](changes/{change_file.name})")
+    
+    # Add persona information if applicable
+    if persona:
+        summary.append(f"\n## Documentation Info")
+        summary.append(f"* Persona: **{persona}**")
+        summary.append(f"* Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    
+    # Write the SUMMARY.md file
+    (docs_dir / "SUMMARY.md").write_text("\n".join(summary))
+    print(f"✅ Updated SUMMARY.md for {docs_dir.name} (showing only recent versions)")
+
+
+
 # ============================================================================
 # VERSIONING LOGIC (ported from old codebase)
 # ============================================================================
@@ -728,13 +796,23 @@ async def generate_comprehensive_documentation(
         changed_files: List of changed files
         doc_persona: Documentation persona (internal|developer)
     """
-    docs_dir = Path(repo_dir) / "docs"
+    # Create base docs directory
+    base_docs_dir = Path(repo_dir) / "docs"
+    base_docs_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create persona-specific docs directory
+    docs_dir = base_docs_dir / doc_persona
     docs_dir.mkdir(parents=True, exist_ok=True)
     
     print("🔍 Checking documentation quality...")
     changed_files = changed_files or []  # safety
 
     quality_report = check_documentation_quality(repo_dir)
+    # ⭐ NEW: Log doc_persona being used
+    print(f"📚 Generating docs with persona: {doc_persona}")
+    
+    quality_report = check_documentation_quality(repo_dir, doc_persona)
+    
     print(f"📋 Quality Report: {json.dumps(quality_report, indent=2)}")
 
     # NEW: Check if architecture/workflow need new versions
@@ -881,14 +959,20 @@ async def generate_smart_documentation(
         update_summary_md,
     )
     
-    # Create docs directory structure - everything goes in docs/
-    docs_dir = Path(repo_dir) / "docs"
-    changes_dir = docs_dir / "changes"  # Move changes inside docs
+    # Create base docs directory
+    base_docs_dir = Path(repo_dir) / "docs"
+    base_docs_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create persona-specific docs directory
+    docs_dir = base_docs_dir / doc_persona
     docs_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Changes directory is persona-specific
+    changes_dir = docs_dir / "changes"
     changes_dir.mkdir(parents=True, exist_ok=True)
     
-    # NEW: Check documentation quality and generate comprehensive docs if needed
-    print("🔍 Checking documentation quality...")
+    # Check documentation quality and generate comprehensive docs if needed
+    print(f"🔍 Checking documentation quality for persona: {doc_persona}...")
     changed_files = get_changed_files_from_analysis(analysis)
     await generate_comprehensive_documentation(repo_dir, analysis, changed_files, doc_persona)
     
