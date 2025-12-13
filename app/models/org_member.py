@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import uuid
+
 from sqlalchemy import Boolean, Column, DateTime, String
 from sqlalchemy.dialects.postgresql import BIGINT, UUID
 
@@ -11,7 +13,7 @@ from app.models.base import Base
 class OrgMember(Base):
     __tablename__ = "org_members"
 
-    id = Column(UUID(as_uuid=True), primary_key=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     org_id = Column(String(255), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     github_username = Column(String(255), nullable=True)
