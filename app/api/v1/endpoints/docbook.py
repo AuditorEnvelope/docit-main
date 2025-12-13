@@ -17,6 +17,7 @@ from app.models.user import User
 from app.services.auth import get_current_user
 from app.services.docbook.service import DocbookService
 from app.services.auth import AuthService
+from app.services.org_members import OrgMembershipService
 from app.utils.github_dual_app import GitHubDualAppHelper
 
 logger = logging.getLogger(__name__)
@@ -34,16 +35,39 @@ class LinkDocbookRepoRequest(BaseModel):
 class DocbookTrackedBranchResponse(BaseModel):
     org_id: str
     tracked_branch: str
-
-
 class DocbookTrackedBranchUpdate(BaseModel):
     tracked_branch: str
+
+
+class DocbookTrackedBranchResponse(BaseModel):
+    org_id: str
+    repo: str
+    branches: List[str]
 
 
 class DocbookBranchesResponse(BaseModel):
     org_id: str
     repo: str
     branches: List[str]
+
+
+async def _ensure_internal_access(
+    *, db: AsyncSession, org_id: str, user: Optional[User]
+) -> None:
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access internal documentation.",
+        )
+
+    membership_service = OrgMembershipService(db)
+    is_member = await membership_service.ensure_member(org_id, user)
+
+    if not is_member:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to the internal documentation for this organization.",
+        )
 
 
 def _require_github_token(user: User) -> str:
@@ -259,6 +283,15 @@ async def link_docbook_repo_logic(
         full_name=repo_data.get("full_name", f"{org_id}/{repo_name}"),
         repo_id=repo_data.get("id"),
         url=repo_data.get("html_url", ""),
+    )
+
+    membership_service = OrgMembershipService(db)
+    await membership_service.upsert_member(
+        org_id=org_id,
+        user=user,
+        role="owner",
+        is_owner=True,
+        is_active=True,
     )
 
     # Ensure background workers discover this org
@@ -689,6 +722,8 @@ async def get_pending_reviews(
             user_uuid = UUID(str(raw_user_id))
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid user identifier")
+
+        await _ensure_internal_access(db=db, org_id=org_id, user=user)
 
         result = await db.execute(
             text(
@@ -1164,6 +1199,9 @@ async def _build_live_manifest(
     user: Optional[User],
     persona: str = "dev",
 ) -> Dict[str, Any]:
+    if persona == "internal":
+        await _ensure_internal_access(db=db, org_id=org_id, user=user)
+
     user_uuid = user.id if user else None
     docbook_repo = await _resolve_docbook_repo(db=db, org_id=org_id, user_id=user_uuid)
 
@@ -1362,6 +1400,9 @@ async def _fetch_live_page(
     user: Optional[User],
     persona: str = "dev",
 ) -> Dict[str, Any]:
+    if persona == "internal":
+        await _ensure_internal_access(db=db, org_id=org_id, user=user)
+
     docbook_repo = await _resolve_docbook_repo(
         db=db,
         org_id=org_id,
@@ -1604,11 +1645,9 @@ async def get_live_manifest_public(
             
         print(f"📋 Using persona: {persona} for public access")
         
-        # For public access, force dev persona for internal requests
+        # For public access, block internal persona
         if persona == "internal":
-            # Check if user is authenticated
-            print(f"⚠️ Forcing dev persona for public access to internal docs")
-            persona = "dev"
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Internal documentation requires authentication")
         
         return await _build_live_manifest(
             db=db,

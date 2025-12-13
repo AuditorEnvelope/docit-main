@@ -25,7 +25,13 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import nextDynamic from "next/dynamic";
-import { DEFAULT_PERSONA, mapPublicRouteToRepoPath } from "@/lib/docsPathMapper";
+import { useAuth } from "@/contexts/AuthContext";
+import Link from "next/link";
+import {
+  DEFAULT_PERSONA,
+  mapPublicRouteToRepoPath,
+  mapDocsRouteToRepoSlug,
+} from "@/lib/docsPathMapper";
 
 const SUMMARY_ALIASES = new Set(["summary", "readme", "introduction", "index"]);
 
@@ -174,6 +180,22 @@ interface Manifest {
 
 const TOC_INDENT_CLASSES = ["pl-0", "pl-3", "pl-6", "pl-9", "pl-12"];
 
+const dedupeHeadings = (items: HeadingItem[]): HeadingItem[] => {
+  const seen = new Set<string>();
+  const result: HeadingItem[] = [];
+
+  for (const item of items) {
+    const key = `${item.level}::${item.text.trim().toLowerCase()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(item);
+  }
+
+  return result;
+};
+
 interface LiveDocsPageProps {
   initialParams?: {
     org: string;
@@ -198,18 +220,30 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
   const persona = params.persona as string;
   // The slug is ONLY what comes after the persona
   const rawSlug = params.slug;
-  const publicMapping = useMemo(() => {
+
+  const { token, loading: authLoading, isAuthenticated } = useAuth();
+  const isInternalPersona = (persona || "").toLowerCase() === "internal";
+  const routeMapping = useMemo(() => {
     const raw = Array.isArray(rawSlug)
       ? rawSlug
       : typeof rawSlug === "string"
       ? [rawSlug]
       : [];
 
-    return mapPublicRouteToRepoPath({ repo, slug: raw });
-  }, [rawSlug, repo]);
+    const personaSegment = persona ? [persona] : [];
+    const docsSlug = [...personaSegment, ...raw];
 
-  const initialCanonicalSlug = publicMapping.canonicalSlug;
-  const initialApiSlug = publicMapping.docPath.slice(2);
+    const publicMap = mapPublicRouteToRepoPath({ repo, slug: raw });
+    const docsMap = mapDocsRouteToRepoSlug({ org, repo, slug: docsSlug });
+
+    return {
+      publicMap,
+      docsMap,
+    };
+  }, [org, persona, rawSlug, repo]);
+
+  const initialCanonicalSlug = routeMapping.docsMap.canonicalSlug;
+  const initialApiSlug = routeMapping.docsMap.docPath.slice(2);
   const slugKey = initialApiSlug.join("/");
 
   const [currentCanonicalSlug, setCurrentCanonicalSlug] = useState<string[]>(
@@ -254,6 +288,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [headings, setHeadings] = useState<HeadingItem[]>([]);
+  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [debugLogs, setDebugLogs] = useState<
     {
@@ -263,6 +298,30 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       context?: string;
     }[]
   >([]);
+
+  const handleHeadingsChange = useCallback((items: HeadingItem[]) => {
+    setHeadings((prev) => {
+      const deduped = dedupeHeadings(items);
+
+      if (
+        prev.length === deduped.length &&
+        prev.every((heading, index) => {
+          const next = deduped[index];
+          return (
+            heading &&
+            next &&
+            heading.id === next.id &&
+            heading.level === next.level &&
+            heading.text === next.text
+          );
+        })
+      ) {
+        return prev;
+      }
+
+      return deduped;
+    });
+  }, []);
 
   // Use resolvedTheme to avoid hydration issues
   const isLight = mounted ? resolvedTheme === "light" : true; // Default to light theme
@@ -344,11 +403,19 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       setLoading(true);
       setError(null);
 
-      const url = `${apiBase}/docbook/live-manifest/public?org_id=${encodeURIComponent(
+      const manifestPath = isInternalPersona
+        ? "/docbook/live-manifest"
+        : "/docbook/live-manifest/public";
+      const url = `${apiBase}${manifestPath}?org_id=${encodeURIComponent(
         org
       )}&repo_id=${encodeURIComponent(repo)}&persona=${encodeURIComponent(
         persona
       )}`;
+
+      const headers: Record<string, string> = {};
+      if (isInternalPersona && token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
 
       console.log("[Page] 🟢 MANIFEST API CALL");
       console.log("[Page] 🟢 URL:", url);
@@ -361,13 +428,21 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
         context: { url, org, repo, persona, cacheKey: currentKey },
       });
 
-      const response = await fetch(url);
+      const response = await fetch(url, { headers });
 
       if (!response.ok) {
         appendDebugLog("Manifest fetch failed with non-OK status", {
           level: "error",
           context: { status: response.status, statusText: response.statusText, url },
         });
+        if (response.status === 401) {
+          setError("Authentication required to view internal documentation.");
+          throw new Error("Unauthorized");
+        }
+        if (response.status === 403) {
+          setError("You do not have access to the internal documentation for this organization.");
+          throw new Error("Forbidden");
+        }
         throw new Error(`Failed to load manifest: ${response.statusText}`);
       }
 
@@ -412,7 +487,16 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
     } finally {
       setLoading(false);
     }
-  }, [apiBase, appendDebugLog, manifestKey, org, repo, persona]);
+  }, [
+    appendDebugLog,
+    apiBase,
+    isInternalPersona,
+    manifestKey,
+    org,
+    persona,
+    repo,
+    token,
+  ]);
 
   useEffect(() => {
     if (!org || !repo || !persona) {
@@ -420,6 +504,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
         org,
         repo,
         persona,
+        slug: initialCanonicalSlug,
       });
       setError("Invalid documentation URL");
       setLoading(false);
@@ -433,6 +518,23 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
         },
       });
       return;
+    }
+
+    if (isInternalPersona) {
+      if (authLoading) {
+        console.log("[Page] ⏳ Waiting for auth state before fetching internal manifest");
+        return;
+      }
+      if (!token) {
+        const message = "Sign in to view internal documentation for this repository.";
+        setError(message);
+        setLoading(false);
+        appendDebugLog("Manifest fetch blocked - no token", {
+          level: "info",
+          context: { org, repo, persona },
+        });
+        return;
+      }
     }
 
     console.log(
@@ -457,119 +559,228 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
             : { message: String(err) },
       });
     });
-  }, [appendDebugLog, fetchManifest, initialCanonicalSlug, org, persona, repo]);
+  }, [
+    appendDebugLog,
+    authLoading,
+    fetchManifest,
+    initialCanonicalSlug,
+    isInternalPersona,
+    org,
+    persona,
+    repo,
+    token,
+  ]);
 
-  const fetchContent = useCallback(async (
-    slugSegments: string[],
-    displayPath?: string,
-    sourceSegments?: string[],
-    options: { force?: boolean } = {}
-  ) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      console.log("[Page] 🟢 CONTENT API CALL");
-      console.log("[Page] 🟢 Parameters:", {
-        org_id: org,
-        repo_id: repo,
-        persona: persona,
-        slugSegments,
-        displayPath,
-        sourceSegments,
-      });
-
-      const params = new URLSearchParams({
-        org_id: org,
-        repo_id: repo,
-        persona: persona,
-      });
-
-      const segmentsToUse =
-        sourceSegments && sourceSegments.length ? sourceSegments : slugSegments;
-
-      const contentKey = `${manifestKey}::${
-        segmentsToUse.length ? segmentsToUse.join("/") : "SUMMARY.md"
-      }`;
-      if (!options.force && fetchedContentKeyRef.current === contentKey) {
-        console.log("[Page] 🟢 Content fetch skipped (duplicate key)", contentKey);
-        setLoading(false);
-        return;
-      }
-
-      fetchedContentKeyRef.current = contentKey;
-
-      segmentsToUse.forEach((segment) => {
-        if (segment) {
-          params.append("slug", segment);
+  const fetchContent = useCallback(
+    async (
+      slugSegments: string[],
+      displayPath?: string,
+      sourceSegments?: string[],
+      options: { force?: boolean } = {}
+    ) => {
+      if (isInternalPersona) {
+        if (authLoading) {
+          setLoading(true);
+          return;
         }
-      });
-
-      const url = `${apiBase}/docbook/live-content/public?${params.toString()}`;
-      console.log("[Page] 🟢 CONTENT URL:", url);
-      console.log("[Page] 🟢 Slug parameters:", segmentsToUse);
-      appendDebugLog("Content fetch started", {
-        context: { url, org, repo, persona, slug: segmentsToUse },
-      });
-
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        appendDebugLog("Content fetch failed with non-OK status", {
-          level: "error",
-          context: { status: response.status, statusText: response.statusText, url },
-        });
-        throw new Error(`Failed to load content: ${response.statusText}`);
+        if (!token) {
+          const message =
+            "Sign in to view internal documentation for this repository.";
+          setError(message);
+          setLoading(false);
+          appendDebugLog("Content fetch blocked - no token", {
+            level: "info",
+            context: { org, repo, persona },
+          });
+          return;
+        }
       }
 
-      const data = await response.json();
-      setContent(data.content || "");
-      const canonical = deriveCanonicalSlug({
-        persona,
-        slugSegments,
-        sourceSegments: segmentsToUse,
-      });
-      const normalizedPath = buildPublicHref(repo, canonical);
-      setActivePath(normalizedPath);
-      const activeName = canonical[canonical.length - 1] || repo;
-      setPageTitle(titleizeSegment(activeName));
-      setCurrentCanonicalSlug(canonical);
+      setLoading(true);
       setError(null);
-      appendDebugLog("Content fetch succeeded", {
-        context: {
-          url,
-          normalizedPath,
+
+      try {
+        console.log("[Page] 🟢 CONTENT API CALL");
+        console.log("[Page] 🟢 Parameters:", {
+          org_id: org,
+          repo_id: repo,
+          persona: persona,
           slugSegments,
           displayPath,
-        },
-      });
-    } catch (err) {
-      console.error("Error fetching content:", err);
-      fetchedContentKeyRef.current = null;
-      setError(err instanceof Error ? err.message : "Failed to load content");
-      appendDebugLog("Content fetch failed", {
-        level: "error",
-        context:
-          err instanceof Error
-            ? { message: err.message, stack: err.stack }
-            : { message: String(err) },
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [apiBase, appendDebugLog, manifestKey, org, repo, persona]);
+          sourceSegments,
+        });
+
+        const params = new URLSearchParams({
+          org_id: org,
+          repo_id: repo,
+          persona: persona,
+        });
+
+        const segmentsToUse =
+          sourceSegments && sourceSegments.length ? sourceSegments : slugSegments;
+
+        const contentKey = `${manifestKey}::${
+          segmentsToUse.length ? segmentsToUse.join("/") : "SUMMARY.md"
+        }`;
+        if (!options.force && fetchedContentKeyRef.current === contentKey) {
+          console.log("[Page] 🟢 Content fetch skipped (duplicate key)", contentKey);
+          setLoading(false);
+          return;
+        }
+
+        fetchedContentKeyRef.current = contentKey;
+
+        segmentsToUse.forEach((segment) => {
+          if (segment) {
+            params.append("slug", segment);
+          }
+        });
+
+        const contentPath = isInternalPersona
+          ? "/docbook/live-content"
+          : "/docbook/live-content/public";
+        const url = `${apiBase}${contentPath}?${params.toString()}`;
+        const headers: Record<string, string> = {};
+        if (isInternalPersona && token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
+        console.log("[Page] 🟢 CONTENT URL:", url);
+        console.log("[Page] 🟢 Slug parameters:", segmentsToUse);
+        appendDebugLog("Content fetch started", {
+          context: { url, org, repo, persona, slug: segmentsToUse },
+        });
+
+        const response = await fetch(url, { headers });
+
+        if (!response.ok) {
+          appendDebugLog("Content fetch failed with non-OK status", {
+            level: "error",
+            context: {
+              status: response.status,
+              statusText: response.statusText,
+              url,
+            },
+          });
+          if (response.status === 401) {
+            setError("Authentication required to view internal documentation.");
+            throw new Error("Unauthorized");
+          }
+          if (response.status === 403) {
+            setError(
+              "You do not have access to the internal documentation for this organization."
+            );
+            throw new Error("Forbidden");
+          }
+          throw new Error(`Failed to load content: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        setContent(data.content || "");
+        const canonical = deriveCanonicalSlug({
+          persona,
+          slugSegments,
+          sourceSegments: segmentsToUse,
+        });
+        const personaNormalized = (persona || DEFAULT_PERSONA).toLowerCase();
+
+        const manifestPath = (() => {
+          if (displayPath) {
+            return displayPath;
+          }
+
+          const rawSegments =
+            sourceSegments && sourceSegments.length ? [...sourceSegments] : [...slugSegments];
+
+          if (!rawSegments.length) {
+            return `/${repo}/${personaNormalized}/SUMMARY`;
+          }
+
+          if (rawSegments[0]?.toLowerCase() === repo.toLowerCase()) {
+            rawSegments.shift();
+          }
+
+          if (rawSegments[0]?.toLowerCase() === "docs") {
+            rawSegments.shift();
+          }
+
+          if (rawSegments[0]?.toLowerCase() === personaNormalized) {
+            rawSegments.shift();
+          }
+
+          const leafSegments = rawSegments.length
+            ? rawSegments.map((segment, index) =>
+                index === rawSegments.length - 1
+                  ? segment.replace(/\.md$/i, "") || "SUMMARY"
+                  : segment
+              )
+            : ["SUMMARY"];
+
+          return `/${repo}/${personaNormalized}/${leafSegments.join("/")}`;
+        })();
+
+        const resolvedPath = (() => {
+          if (!manifest?.navigation) {
+            return manifestPath;
+          }
+          const match = Object.keys(manifest.navigation).find(
+            (key) => key.toLowerCase() === manifestPath.toLowerCase()
+          );
+          return match ?? manifestPath;
+        })();
+
+        setActivePath(resolvedPath);
+        const normalizedPath = buildPublicHref(repo, canonical);
+        const activeName = canonical[canonical.length - 1] || repo;
+        setPageTitle(titleizeSegment(activeName));
+        setCurrentCanonicalSlug(canonical);
+        setError(null);
+        appendDebugLog("Content fetch succeeded", {
+          context: {
+            url,
+            normalizedPath,
+            slugSegments,
+            displayPath,
+          },
+        });
+      } catch (err) {
+        console.error("Error fetching content:", err);
+        fetchedContentKeyRef.current = null;
+        setError(err instanceof Error ? err.message : "Failed to load content");
+        appendDebugLog("Content fetch failed", {
+          level: "error",
+          context:
+            err instanceof Error
+              ? { message: err.message, stack: err.stack }
+              : { message: String(err) },
+        });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      appendDebugLog,
+      apiBase,
+      authLoading,
+      isInternalPersona,
+      manifest,
+      manifestKey,
+      org,
+      persona,
+      repo,
+      token,
+    ]
+  );
 
   useEffect(() => {
     if (!manifest) return;
 
     const loadIntroduction = () => {
       const flattened = manifest.sidebar.flatMap((item) =>
-        item.type === "folder" && item.children
-          ? item.children
-          : [item]
+        item.type === "folder" && item.children ? item.children : [item]
       );
-      const summaryItem = flattened.find((item) =>
-        item.type === "file" && item.name.toLowerCase() === "summary"
+      const summaryItem = flattened.find(
+        (item) => item.type === "file" && item.name.toLowerCase() === "summary"
       );
       const sourceSegments = summaryItem?.source_path
         ? summaryItem.source_path.split("/").filter(Boolean).slice(1)
@@ -588,8 +799,104 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
     }
   }, [fetchContent, manifest, initialApiSlug, persona]);
 
+  useEffect(() => {
+    if (!mounted) {
+      return;
+    }
+
+    if (!headings.length) {
+      setActiveHeadingId(null);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+
+        if (visible.length > 0) {
+          setActiveHeadingId(visible[0].target.id);
+          return;
+        }
+
+        const sortedByPosition = [...entries].sort(
+          (a, b) => Math.abs(a.boundingClientRect.top) - Math.abs(b.boundingClientRect.top)
+        );
+
+        if (sortedByPosition[0]?.target?.id) {
+          setActiveHeadingId(sortedByPosition[0].target.id);
+        }
+      },
+      {
+        rootMargin: "-120px 0px -60% 0px",
+        threshold: [0, 0.1, 0.25, 0.5],
+      }
+    );
+
+    headings.forEach((heading) => {
+      const element = document.getElementById(heading.id);
+      if (element) {
+        observer.observe(element);
+      }
+    });
+
+    if (!activeHeadingId && headings[0]) {
+      setActiveHeadingId(headings[0].id);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [activeHeadingId, headings, mounted]);
+
+  const toggleNode = (id: string) => {
+    setExpandedNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const fetchContentByPath = async (
+    path: string,
+    pushHistory = true,
+    sourcePath?: string
+  ) => {
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const segments = normalizedPath.split("/").filter(Boolean);
+    const slugSegments = segments.slice(1);
+
+    const sourceNormalized = sourcePath
+      ? sourcePath.startsWith("/")
+        ? sourcePath
+        : `/${sourcePath}`
+      : normalizedPath;
+    const sourceSegments = sourceNormalized.split("/").filter(Boolean).slice(1);
+
+    const canonical = deriveCanonicalSlug({
+      persona,
+      slugSegments,
+      sourceSegments,
+    });
+
+    if (pushHistory && !isInternalPersona) {
+      const href = buildPublicHref(repo, canonical);
+      window.history.pushState({}, "", href);
+    }
+
+    await fetchContent(slugSegments, normalizedPath, sourceSegments, {
+      force: true,
+    });
+    setSidebarOpen(false);
+  };
+
   const renderSidebarItems = (items: SidebarItem[], depth = 0) => {
-    return items.map((item, index) => {
+    return items.map((item) => {
       const isFolder = item.type === "folder";
       const label = item.name.replace(/-/g, " ");
       const isRoot = depth === 0;
@@ -637,24 +944,21 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
               </div>
             </button>
             {isOpen && item.children && (
-              <div className="mt-1">
-                {renderSidebarItems(item.children, depth + 1)}
-              </div>
+              <div className="mt-1">{renderSidebarItems(item.children, depth + 1)}</div>
             )}
           </div>
         );
       }
 
-      const isActive = activePath === item.path;
+      const isActive = activePath === (item.path || "");
       const itemPadding = depth * 16 + 32;
 
       return (
         <button
           key={item.id}
-          onClick={() => {
-            fetchContentByPath(item.path, true, item.source_path);
-            setSidebarOpen(false);
-          }}
+          onClick={() =>
+            fetchContentByPath(item.path, true, item.source_path)
+          }
           className={`mb-1 flex w-full items-center gap-2 rounded-lg py-2 pr-3 text-sm transition-colors ${
             isActive
               ? isLight
@@ -673,18 +977,6 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
     });
   };
 
-  const toggleNode = (id: string) => {
-    setExpandedNodes((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
   const handleCopyLink = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url);
@@ -694,38 +986,6 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
 
   const handleThemeToggle = () => {
     setTheme(resolvedTheme === "dark" ? "light" : "dark");
-  };
-
-  const fetchContentByPath = async (
-    path: string,
-    pushHistory = true,
-    sourcePath?: string
-  ) => {
-    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    const segments = normalizedPath.split("/").filter(Boolean);
-    const slugSegments = segments.slice(1);
-
-    const sourceNormalized = sourcePath
-      ? sourcePath.startsWith("/")
-        ? sourcePath
-        : `/${sourcePath}`
-      : normalizedPath;
-    const sourceSegments = sourceNormalized.split("/").filter(Boolean).slice(1);
-
-    const canonical = deriveCanonicalSlug({
-      persona,
-      slugSegments,
-      sourceSegments,
-    });
-
-    if (pushHistory) {
-      const href = buildPublicHref(repo, canonical);
-      window.history.pushState({}, "", href);
-    }
-
-    await fetchContent(slugSegments, normalizedPath, sourceSegments, {
-      force: true,
-    });
   };
 
   const allFiles = useMemo(() => {
@@ -745,10 +1005,12 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
     return manifest.navigation?.[activePath] ?? { previous: null, next: null };
   }, [manifest, activePath]);
 
-  const publicHref = useMemo(
-    () => buildPublicHref(repo, currentCanonicalSlug),
-    [repo, currentCanonicalSlug]
-  );
+  const publicHref = useMemo(() => {
+    if (isInternalPersona) {
+      return null;
+    }
+    return buildPublicHref(repo, currentCanonicalSlug);
+  }, [isInternalPersona, repo, currentCanonicalSlug]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -758,10 +1020,10 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
     if (currentUrl !== publicHref) {
       window.history.replaceState({}, "", publicHref);
     }
-  }, [publicHref, mounted]);
+  }, [mounted, publicHref]);
 
   const dynamicBreadcrumbs = useMemo(() => {
-    if (!manifest) return [];
+    if (!manifest) return [] as BreadcrumbItem[];
     const base = manifest.breadcrumbs || [];
     const personaNormalized = (persona || DEFAULT_PERSONA).toLowerCase();
 
@@ -799,21 +1061,34 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
 
   if (loading && !manifest) {
     return (
-      <div
-        className={`flex min-h-screen items-center justify-center ${
-          isLight ? "bg-white" : "bg-slate-950"
-        }`}
-      >
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-slate-950 text-slate-200">
+        <Loader2 className="h-10 w-10 animate-spin" />
+        <div className="text-lg font-medium">Loading documentation…</div>
+      </div>
+    );
+  }
+
+  if (isInternalPersona && !authLoading && !isAuthenticated) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-slate-950 text-slate-200">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500/20">
+          <X className="h-8 w-8 text-red-400" />
+        </div>
         <div className="text-center">
-          <Loader2
-            className={`mx-auto mb-4 h-8 w-8 animate-spin ${
-              isLight ? "text-indigo-600" : "text-indigo-400"
-            }`}
-          />
-          <p className={isLight ? "text-slate-700" : "text-slate-400"}>
-            Loading documentation...
+          <h1 className="text-2xl font-semibold">Sign in required</h1>
+          <p className="mt-2 max-w-sm text-sm text-slate-400">
+            Log in with your GitHub account that belongs to the <span className="font-medium">{org}</span> organization to view internal documentation for <span className="font-medium">{repo}</span>.
           </p>
         </div>
+        <Link
+          href={`/login?redirect=${encodeURIComponent(
+            `/render-docs/${org}/${repo}/${persona}` +
+              (initialCanonicalSlug.length ? `/${initialCanonicalSlug.join("/")}` : "")
+          )}`}
+          className="inline-flex items-center rounded-full bg-slate-100 px-6 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white"
+        >
+          Sign in to continue
+        </Link>
       </div>
     );
   }
@@ -1017,7 +1292,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
               isLight
                 ? "border-slate-300 bg-white/85"
                 : "border-slate-800 bg-slate-900/80"
-            }`}
+              }`}
           >
             <div className="flex flex-col gap-3 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-1 items-center gap-4">
@@ -1156,7 +1431,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
                         content={content}
                         isLight={isLight}
                         className="space-y-6"
-                        onHeadingsChange={setHeadings}
+                        onHeadingsChange={handleHeadingsChange}
                       />
 
                       {/* Navigation */}
@@ -1230,6 +1505,52 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
                         </div>
                       )}
                     </article>
+
+                    {headings.length > 0 && (
+                      <aside className="hidden w-64 shrink-0 lg:mt-14 lg:block">
+                        <div
+                          className={`sticky top-28 rounded-2xl border p-4 text-sm ${
+                            isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-900"
+                          }`}
+                        >
+                          <h3
+                            className={`text-xs font-semibold uppercase tracking-[0.35em] ${
+                              isLight ? "text-slate-500" : "text-slate-400"
+                            }`}
+                          >
+                            On this page
+                          </h3>
+                          <ul className="mt-4 flex flex-col gap-2">
+                            {headings.map((heading) => {
+                              const indentClass = TOC_INDENT_CLASSES[Math.min(
+                                heading.level - 1,
+                                TOC_INDENT_CLASSES.length - 1
+                              )];
+                              const isActive = heading.id === activeHeadingId;
+
+                              return (
+                                <li key={heading.id} className={indentClass}>
+                                  <a
+                                    href={`#${heading.id}`}
+                                    className={`block truncate rounded-lg px-2 py-1 text-sm transition-colors ${
+                                      isActive
+                                        ? isLight
+                                          ? "bg-indigo-50 text-indigo-700"
+                                          : "bg-indigo-500/20 text-indigo-200"
+                                        : isLight
+                                        ? "text-slate-600 hover:bg-slate-100"
+                                        : "text-slate-400 hover:bg-slate-800"
+                                    }`}
+                                  >
+                                    {heading.text}
+                                  </a>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      </aside>
+                    )}
                   </div>
                 </>
               )}
