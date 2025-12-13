@@ -318,7 +318,7 @@ export default function ConnectOrganizationModal({
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <a
-                          href="https://github.com/apps/pustak-analyser-ai"
+                          href="https://github.com/apps/pustak-analyser-ai-test"
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setPollingAppInstall(true)}

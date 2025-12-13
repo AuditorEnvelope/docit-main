@@ -41,8 +41,8 @@ function formatPlanLabel(plan?: string | null) {
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-const READER_APP_URL = "https://github.com/apps/pustak-analyser-ai";
-const WRITER_APP_URL = "https://github.com/apps/pustak-publisher-ai";
+const READER_APP_URL = "https://github.com/apps/pustak-analyser-ai-test";
+const WRITER_APP_URL = "https://github.com/apps/pustak-publisher-ai-test";
 
 const STATUS_TONE_CLASSES = {
   success:
@@ -526,7 +526,7 @@ export default function SettingsPage() {
                                 {summary?.docbookLinked ? "Manage docbook" : "Link docbook"}
                               </button>
                               <a
-                                href="https://github.com/apps/pustak-analyser-ai"
+                                href="https://github.com/apps/pustak-analyser-ai-test"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700/70 bg-slate-900/60 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-indigo-400 hover:text-white"

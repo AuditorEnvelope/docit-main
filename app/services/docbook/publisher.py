@@ -680,7 +680,7 @@ class DocbookPublisher:
     def _writer_identity(self) -> Tuple[str, str]:
         helper = self._get_dual_app_helper()
         app_id = helper.writer_app_id or helper.github_app_id or "pustak-bot"
-        slug = "pustak-publisher-ai"
+        slug = "pustak-publisher-ai-test"
         bot_name = f"{slug}[bot]"
         bot_email = f"{app_id}+{slug}[bot]@users.noreply.github.com"
         return bot_name, bot_email
