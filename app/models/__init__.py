@@ -3,6 +3,7 @@ from .events import Event, EventProcessingLog, EventStatus
 from .user import User, Session, UserPlan
 from .repository import Repository, CommitEvent, DocPersona
 from .docbook import DocbookRepo, DocbookReview, DocbookStatus
+from .org_member import OrgMember
 from .subscription import Subscription, SubscriptionPlanConfig, SubscriptionStatus, SubscriptionPlan
 from .overlay import Overlay, QualityScore
 
@@ -25,6 +26,7 @@ __all__ = [
     'DocbookRepo',
     'DocbookReview',
     'DocbookStatus',
+    'OrgMember',
     # GitHub
     'AppInstallation',
     'GitHubInstallation',
