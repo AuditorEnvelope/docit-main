@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@blocknote/core": "^0.44.2",
+    "@blocknote/mantine": "^0.44.2",
+    "@blocknote/react": "^0.44.2",
     "@types/marked": "^6.0.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "date-fns": "^4.1.0",

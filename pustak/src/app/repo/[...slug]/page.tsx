@@ -3,6 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { Layout } from "@/components/Layout";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { BlockNoteEditor } from "@/components/BlockNoteEditor";
+import { CommitModal } from "@/components/CommitModal";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Home,
   Building2,
@@ -15,6 +18,10 @@ import {
   Calendar,
   FileText,
   Globe2,
+  Edit,
+  X,
+  Save,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -108,7 +115,9 @@ const extractDocInfo = (pathSegments: string[]): {
 };
 
 export default function RepoPage({ params }: RepoPageProps) {
+  const { token, isAuthenticated } = useAuth();
   const [content, setContent] = useState<string>("");
+  const [editedContent, setEditedContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [docType, setDocType] = useState<string>("");
@@ -119,6 +128,10 @@ export default function RepoPage({ params }: RepoPageProps) {
   const [sourceRepo, setSourceRepo] = useState<string>("");
   const [persona, setPersona] = useState<string>("dev");
   const [publicUrl, setPublicUrl] = useState<string>("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [trackedBranch, setTrackedBranch] = useState<string>("staging");
 
   // Load page only once on mount
   useEffect(() => {
@@ -185,8 +198,31 @@ export default function RepoPage({ params }: RepoPageProps) {
 
         if (data.content) {
           setContent(data.content);
+          setEditedContent(data.content);
         } else {
           setError("Documentation not found");
+        }
+
+        // Fetch tracked branch
+        if (isMounted && token && parsedRepoName) {
+          try {
+            const branchResponse = await fetch(
+              `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/v1/repositories/${encodeURIComponent(parsedRepoName)}/tracked-branch`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                },
+              }
+            );
+            if (branchResponse.ok) {
+              const branchData = await branchResponse.json();
+              if (branchData.tracked_branch) {
+                setTrackedBranch(branchData.tracked_branch);
+              }
+            }
+          } catch (err) {
+            console.error("Failed to fetch tracked branch:", err);
+          }
         }
       } catch (err) {
         if (!isMounted) return;
@@ -203,7 +239,7 @@ export default function RepoPage({ params }: RepoPageProps) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [token]);
 
   const githubUrl = `https://github.com/${repoName}`;
   const personaLabel = persona ? `${persona.charAt(0).toUpperCase()}${persona.slice(1)}` : "";
@@ -232,6 +268,66 @@ export default function RepoPage({ params }: RepoPageProps) {
     const baseTitle = DOC_TYPE_DISPLAY_MAP[docType] || docType;
     return version ? `${baseTitle} ${version}` : baseTitle;
   }, [docType, version]);
+
+  const handleEdit = () => {
+    setIsEditing(true);
+    setEditedContent(content);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditedContent(content);
+  };
+
+  const handleCommit = async (commitMessage: string, branch?: string) => {
+    if (!token || !repoName || !sourcePath) {
+      throw new Error("Missing required information for commit");
+    }
+
+    setIsCommitting(true);
+    try {
+      const response = await fetch("/api/commit-doc", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          repo: repoName,
+          filePath: sourcePath,
+          content: editedContent,
+          commitMessage,
+          branch: branch || trackedBranch,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to commit changes");
+      }
+
+      // Reload the page content
+      const reloadResponse = await fetch(
+        `/api/fetch-doc?repo=${encodeURIComponent(repoName)}&filePath=${encodeURIComponent(sourcePath)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (reloadResponse.ok) {
+        const reloadData = await reloadResponse.json();
+        setContent(reloadData.content);
+        setEditedContent(reloadData.content);
+      }
+
+      setIsEditing(false);
+      setIsCommitModalOpen(false);
+    } catch (err) {
+      throw err;
+    } finally {
+      setIsCommitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -322,27 +418,67 @@ export default function RepoPage({ params }: RepoPageProps) {
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                {publicUrl && (
-                  <a
-                    href={publicUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 rounded-full bg-blue-500/90 px-4 py-1.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/35 transition hover:bg-blue-500"
-                  >
-                    <Globe2 className="w-4 h-4" />
-                    <span>Preview live docs</span>
-                  </a>
+                {isEditing ? (
+                  <>
+                    <button
+                      onClick={handleCancel}
+                      disabled={isCommitting}
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/70 px-4 py-1.5 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:opacity-50"
+                    >
+                      <X className="w-4 h-4" />
+                      <span>Cancel</span>
+                    </button>
+                    <button
+                      onClick={() => setIsCommitModalOpen(true)}
+                      disabled={isCommitting}
+                      className="inline-flex items-center gap-2 rounded-full bg-blue-500/90 px-4 py-1.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/35 transition hover:bg-blue-500 disabled:opacity-50"
+                    >
+                      {isCommitting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Committing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" />
+                          <span>Commit Changes</span>
+                        </>
+                      )}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {isAuthenticated && (
+                      <button
+                        onClick={handleEdit}
+                        className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/70 px-4 py-1.5 text-sm font-semibold text-slate-200 transition hover:border-blue-500 hover:text-blue-300"
+                      >
+                        <Edit className="w-4 h-4" />
+                        <span>Edit</span>
+                      </button>
+                    )}
+                    {publicUrl && (
+                      <a
+                        href={publicUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 rounded-full bg-blue-500/90 px-4 py-1.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/35 transition hover:bg-blue-500"
+                      >
+                        <Globe2 className="w-4 h-4" />
+                        <span>Preview live docs</span>
+                      </a>
+                    )}
+                    <a
+                      href={githubUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-4 py-1.5 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>View on GitHub</span>
+                    </a>
+                  </>
                 )}
-
-                <a
-                  href={githubUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-4 py-1.5 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>View on GitHub</span>
-                </a>
               </div>
             </div>
           </div>
@@ -351,10 +487,28 @@ export default function RepoPage({ params }: RepoPageProps) {
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Source: {fileName}
             </p>
-            <MarkdownRenderer content={content} />
+            {isEditing ? (
+              <div className="min-h-[400px]">
+                <BlockNoteEditor
+                  initialContent={editedContent}
+                  onChange={setEditedContent}
+                  editable={true}
+                />
+              </div>
+            ) : (
+              <MarkdownRenderer content={content} />
+            )}
           </div>
         </div>
       </div>
+
+      <CommitModal
+        isOpen={isCommitModalOpen}
+        onClose={() => setIsCommitModalOpen(false)}
+        onCommit={handleCommit}
+        defaultBranch={trackedBranch}
+        isLoading={isCommitting}
+      />
     </Layout>
   );
 }
