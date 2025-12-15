@@ -1129,11 +1129,8 @@ async def _resolve_docbook_repo(
             status_code=404,
             detail=f"No docbook repository linked for organization {org_id}",
         )
-    if not repo.last_published_commit:
-        raise HTTPException(
-            status_code=404,
-            detail="No published version available. Publish first via /publish-live",
-        )
+    # Note: We no longer require last_published_commit since we use main_branch for public access
+    # This allows viewing latest content even if publish-live hasn't been called
     return repo
 
 
@@ -1431,13 +1428,24 @@ async def _fetch_live_page(
     
     print(f"📄 Accessing content at path: {repo_path} with persona: {persona}")
 
+    # For public access, use main branch to get latest content
+    # For authenticated access, use last_published_commit if available, otherwise main branch
+    ref_to_use = docbook_repo.main_branch  # Always use main branch for latest content
+    if user and docbook_repo.last_published_commit:
+        # For authenticated users, prefer last_published_commit if available
+        # This allows viewing specific published versions
+        ref_to_use = docbook_repo.last_published_commit
+        print(f"📌 Using last_published_commit: {ref_to_use[:8]} for authenticated user")
+    else:
+        print(f"📌 Using main branch '{ref_to_use}' for latest content")
+    
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             file_data = await _fetch_github_file(
                 client=client,
                 repo_full_name=docbook_repo.docbook_full_name,
                 path=repo_path,
-                ref=docbook_repo.last_published_commit,
+                ref=ref_to_use,
                 token=token,
             )
     except HTTPException as e:
@@ -1450,7 +1458,7 @@ async def _fetch_live_page(
                     client=httpx.AsyncClient(timeout=10.0),
                     repo_full_name=docbook_repo.docbook_full_name,
                     path=persona_path,
-                    ref=docbook_repo.last_published_commit,
+                    ref=ref_to_use,
                     token=token,
                 )
                 # Persona folder exists, but the specific file doesn't

@@ -286,6 +286,8 @@ export default function RepoPage({ params }: RepoPageProps) {
 
     setIsCommitting(true);
     try {
+      // Always use staging branch
+      const commitBranch = branch || "staging";
       const response = await fetch("/api/commit-doc", {
         method: "POST",
         headers: {
@@ -297,7 +299,7 @@ export default function RepoPage({ params }: RepoPageProps) {
           filePath: sourcePath,
           content: editedContent,
           commitMessage,
-          branch: branch || trackedBranch,
+          branch: commitBranch,
         }),
       });
 
@@ -483,8 +485,8 @@ export default function RepoPage({ params }: RepoPageProps) {
             </div>
           </div>
 
-          <div className="mt-8 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-8">
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          <div className="mt-8">
+            <p className="text-xs text-slate-500 mb-2">
               Source: {fileName}
             </p>
             {isEditing ? (
@@ -506,7 +508,7 @@ export default function RepoPage({ params }: RepoPageProps) {
         isOpen={isCommitModalOpen}
         onClose={() => setIsCommitModalOpen(false)}
         onCommit={handleCommit}
-        defaultBranch={trackedBranch}
+        pageTitle={getDocTitle()}
         isLoading={isCommitting}
       />
     </Layout>

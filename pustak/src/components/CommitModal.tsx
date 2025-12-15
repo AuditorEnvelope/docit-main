@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { X, GitCommit, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Loader2 } from "lucide-react";
 
 interface CommitModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCommit: (message: string, branch?: string) => Promise<void>;
-  defaultBranch?: string;
+  pageTitle?: string;
   isLoading?: boolean;
 }
 
@@ -15,12 +15,27 @@ export function CommitModal({
   isOpen,
   onClose,
   onCommit,
-  defaultBranch,
+  pageTitle = "Documentation",
   isLoading = false,
 }: CommitModalProps) {
   const [commitMessage, setCommitMessage] = useState("");
-  const [branch, setBranch] = useState(defaultBranch || "staging");
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-fill commit message when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const now = new Date();
+      const dateTime = now.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      setCommitMessage(`Update: ${pageTitle} - ${dateTime}`);
+      setError(null);
+    }
+  }, [isOpen, pageTitle]);
 
   if (!isOpen) return null;
 
@@ -34,7 +49,8 @@ export function CommitModal({
     }
 
     try {
-      await onCommit(commitMessage.trim(), branch);
+      // Always commit to staging branch
+      await onCommit(commitMessage.trim(), "staging");
       setCommitMessage("");
       onClose();
     } catch (err) {
@@ -56,100 +72,71 @@ export function CommitModal({
       onClick={handleClose}
     >
       <div
-        className="relative w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/95 p-6 shadow-2xl"
+        className="relative w-full max-w-md rounded-lg border border-slate-800 bg-slate-900/95 p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded-full bg-blue-500/10 p-2">
-              <GitCommit className="h-5 w-5 text-blue-400" />
-            </div>
-            <h2 className="text-xl font-semibold text-white">Commit Changes</h2>
-          </div>
-          <button
-            onClick={handleClose}
-            disabled={isLoading}
-            className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-50"
-          >
-            <X className="h-5 w-5" />
-          </button>
+        {/* Header */}
+        <div className="mb-4">
+          <h2 className="text-xl font-semibold text-white">Save Changes</h2>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Body */}
+        <div className="mb-6">
+          <p className="text-sm text-slate-300 mb-4">
+            Your changes will be saved to the staging environment.
+          </p>
+
           <div>
             <label
               htmlFor="commit-message"
-              className="mb-2 block text-sm font-medium text-slate-300"
+              className="mb-1.5 block text-xs font-medium text-slate-400"
             >
-              Commit Message <span className="text-red-400">*</span>
+              Commit Message
             </label>
             <textarea
               id="commit-message"
               value={commitMessage}
               onChange={(e) => setCommitMessage(e.target.value)}
-              placeholder="e.g., Updated API documentation"
               disabled={isLoading}
-              className="w-full rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
-              rows={3}
+              className="w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-xs text-slate-300 placeholder:text-slate-500 focus:border-slate-600 focus:outline-none focus:ring-1 focus:ring-slate-600 disabled:opacity-50"
+              rows={2}
               required
             />
           </div>
 
-          <div>
-            <label
-              htmlFor="branch"
-              className="mb-2 block text-sm font-medium text-slate-300"
-            >
-              Branch
-            </label>
-            <input
-              id="branch"
-              type="text"
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-              disabled={isLoading}
-              className="w-full rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
-              placeholder="staging"
-            />
-            <p className="mt-1.5 text-xs text-slate-400">
-              Changes will be committed to this branch
-            </p>
-          </div>
-
           {error && (
-            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            <div className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
               {error}
             </div>
           )}
+        </div>
 
-          <div className="flex items-center gap-3 pt-2">
-            <button
-              type="button"
-              onClick={handleClose}
-              disabled={isLoading}
-              className="flex-1 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-slate-600 hover:bg-slate-800 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading || !commitMessage.trim()}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-500/90 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/35 transition hover:bg-blue-500 disabled:opacity-50"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Committing...</span>
-                </>
-              ) : (
-                <>
-                  <GitCommit className="h-4 w-4" />
-                  <span>Commit Changes</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-4">
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={isLoading}
+            className="text-sm text-slate-400 transition hover:text-slate-200 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            onClick={handleSubmit}
+            disabled={isLoading || !commitMessage.trim()}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-500/90 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <span>Save to Staging</span>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
