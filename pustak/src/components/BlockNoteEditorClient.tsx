@@ -24,9 +24,7 @@ export default function BlockNoteEditorClient({
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Create the editor instance - start with empty, then load markdown
-  const editor = useCreateBlockNote({
-    editable,
-  });
+  const editor = useCreateBlockNote({});
 
   // Initialize editor with markdown content
   useEffect(() => {
@@ -74,7 +72,7 @@ export default function BlockNoteEditorClient({
 
   return (
     <div className={`blocknote-editor ${className}`}>
-      <BlockNoteView editor={editor} theme="dark" />
+      <BlockNoteView editor={editor} theme="dark" editable={editable} />
       <style jsx global>{`
         .blocknote-editor {
           min-height: 400px;
@@ -89,4 +87,3 @@ export default function BlockNoteEditorClient({
     </div>
   );
 }
-
