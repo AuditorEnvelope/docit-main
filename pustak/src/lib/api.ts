@@ -9,12 +9,33 @@ export interface RepoData {
   description: string;
   lastUpdated: string;
   hasLocalDocs: boolean;
+  hasLocalDocs: boolean;
 }
 
 export interface SearchResult {
   id: string;
   title: string;
   content: string;
+  type: string;
+  repo_id: string;
+  path: string;
+  created_at: string;
+}
+
+export interface HierarchicalNode {
+  id: string;
+  type: string;
+  title: string;
+  slug: string;
+  path: string;
+  parent_id: string | null;
+  depth: number;
+  position: number;
+  content: any;
+  children?: HierarchicalNode[];
+}
+
+// Fetch repositories from backend
   type: string;
   repo_id: string;
   path: string;

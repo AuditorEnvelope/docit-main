@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, memo } from "react";
+import { useState, useEffect, memo } from "react";
 import { useTheme } from "next-themes";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -30,6 +31,12 @@ import { EnhancedSidebar as EnhancedSidebarComponent } from "./EnhancedSidebar";
 const EnhancedSidebar = memo(EnhancedSidebarComponent);
 import { GlobalSearch } from "./GlobalSearch";
 import { useAuth } from "@/contexts/AuthContext";
+import { EnhancedSidebar as EnhancedSidebarComponent } from "./EnhancedSidebar";
+
+// Memoize sidebar to prevent re-mounts on parent re-renders
+const EnhancedSidebar = memo(EnhancedSidebarComponent);
+import { GlobalSearch } from "./GlobalSearch";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -39,6 +46,7 @@ export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   const { user, logout, isAuthenticated } = useAuth();
@@ -283,6 +291,8 @@ export function Layout({ children }: LayoutProps) {
         <main className="flex-1">{children}</main>
       </div>
 
+      {/* Global Search */}
+      <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
       {/* Global Search */}
       <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
 
