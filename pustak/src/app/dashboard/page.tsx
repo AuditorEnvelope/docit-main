@@ -22,6 +22,7 @@ import {
   Settings,
   Sparkles,
   X,
+  Edit3,
 } from "lucide-react";
 
 const BACKEND_URL =
@@ -621,6 +622,37 @@ export default function DashboardPage() {
                 <p className="text-4xl font-semibold text-white">{documentedCount}</p>
                 <p className="text-sm text-slate-400">
                   Repositories with generated docs
+                </p>
+              </div>
+            </div>
+
+            <div className="group relative overflow-hidden rounded-2xl border border-blue-500/40 bg-gradient-to-br from-blue-900/70 via-slate-900/70 to-blue-900/60 p-6 shadow-[0_40px_90px_-60px_rgba(59,130,246,0.8)] transition hover:shadow-[0_40px_90px_-50px_rgba(59,130,246,1)]">
+              <div className="relative space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/30 text-blue-100">
+                      <Edit3 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.35em] text-blue-200">
+                        Multi-Page Editor
+                      </h3>
+                      <p className="text-xs text-blue-200/70">
+                        Edit multiple docs simultaneously
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => router.push("/editor")}
+                    className="inline-flex items-center gap-2 rounded-full border border-blue-400/50 px-4 py-2 text-xs font-semibold uppercase tracking-widest transition hover:border-blue-300 hover:bg-blue-500/20 text-blue-100"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                    Open Editor
+                  </button>
+                </div>
+                <p className="text-sm text-blue-200/80">
+                  Use our powerful multi-page editor to manage your entire documentation structure.
+                  Create, edit, and delete pages with an intuitive interface.
                 </p>
               </div>
             </div>

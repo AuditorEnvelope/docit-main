@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL =
+const RAW_BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
+// Normalize backend URL - remove /api/v1 if it exists, we'll add it back
+const BACKEND_URL = RAW_BACKEND_URL.replace(/\/api\/v1\/?$/, '');
+const API_BASE = `${BACKEND_URL}/api/v1`;
 
 export async function GET(request: NextRequest, context: any) {
   try {
-    // Extract the orgId from params
-    const { orgId } = context.params;
+    // Extract the orgId from params (await for Next.js 15+)
+    const params = await context.params;
+    const { orgId } = params;
     const branch = request.nextUrl.searchParams.get("branch") || "staging";
     const authHeader = request.headers.get("authorization");
 
@@ -19,7 +24,7 @@ export async function GET(request: NextRequest, context: any) {
 
     // Get docbook structure from backend
     const response = await fetch(
-      `${BACKEND_URL}/docbook/${orgId}/structure?branch=${branch}`,
+      `${API_BASE}/docbook/${orgId}/structure?branch=${branch}`,
       {
         headers: {
           Authorization: authHeader,

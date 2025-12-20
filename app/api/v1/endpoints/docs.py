@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from typing import Tuple
+from typing import Tuple, List, Dict, Any, Optional
 from uuid import UUID
 from urllib.parse import unquote
 import base64
@@ -24,6 +24,48 @@ class CommitFileRequest(BaseModel):
     file_path: str
     content: str
     commit_message: str
+    branch: str = "staging"
+
+
+class BatchFileOperation(BaseModel):
+    """Single file operation in a batch"""
+    action: str  # 'create', 'update', 'delete', 'move'
+    path: str
+    content: Optional[str] = None
+    new_path: Optional[str] = None  # For move operation
+
+
+class BatchCommitRequest(BaseModel):
+    """Batch commit multiple file operations"""
+    repo: str
+    operations: List[BatchFileOperation]
+    commit_message: str
+    branch: str = "staging"
+
+
+class CreatePageRequest(BaseModel):
+    """Create a new documentation page"""
+    repo: str
+    path: str  # e.g., "docs/dev/new-page.md"
+    content: str = "# New Page\n\nContent goes here..."
+    commit_message: str = "docs: Create new page"
+    branch: str = "staging"
+
+
+class DeletePageRequest(BaseModel):
+    """Delete a documentation page"""
+    repo: str
+    path: str
+    commit_message: str = "docs: Delete page"
+    branch: str = "staging"
+
+
+class MovePageRequest(BaseModel):
+    """Move/rename a documentation page"""
+    repo: str
+    old_path: str
+    new_path: str
+    commit_message: str = "docs: Move page"
     branch: str = "staging"
 
 
@@ -364,3 +406,263 @@ async def commit_file_to_github(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error committing file: {str(e)}")
+
+
+# ==================== HELPER FUNCTIONS ====================
+
+
+async def _fetch_github_user(client: httpx.AsyncClient, token: str) -> Dict[str, Any]:
+    """Fetch GitHub user information"""
+    response = await client.get(
+        "https://api.github.com/user",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "Pustak-AI"
+        }
+    )
+    if response.status_code != 200:
+        raise HTTPException(status_code=500, detail="Failed to fetch user info")
+    return response.json()
+
+
+async def _get_branch_head(client: httpx.AsyncClient, repo: str, branch: str, token: str) -> Dict[str, Any]:
+    """Get the latest commit on a branch"""
+    response = await client.get(
+        f"https://api.github.com/repos/{repo}/git/refs/heads/{branch}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "Pustak-AI"
+        }
+    )
+    if response.status_code != 200:
+        raise HTTPException(status_code=404, detail=f"Branch {branch} not found")
+    
+    ref_data = response.json()
+    commit_sha = ref_data["object"]["sha"]
+    
+    # Fetch commit details
+    commit_response = await client.get(
+        f"https://api.github.com/repos/{repo}/git/commits/{commit_sha}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "Pustak-AI"
+        }
+    )
+    if commit_response.status_code != 200:
+        raise HTTPException(status_code=500, detail="Failed to fetch commit")
+    
+    return {"sha": commit_sha, "commit": commit_response.json()}
+
+
+async def _fetch_file_content(client: httpx.AsyncClient, repo: str, path: str, branch: str, token: str) -> str:
+    """Fetch file content from GitHub"""
+    response = await client.get(
+        f"https://api.github.com/repos/{repo}/contents/{path}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "Pustak-AI"
+        },
+        params={"ref": branch}
+    )
+    if response.status_code != 200:
+        raise HTTPException(status_code=404, detail=f"File {path} not found")
+    
+    data = response.json()
+    if data.get("encoding") == "base64":
+        return base64.b64decode(data["content"].replace("\n", "")).decode("utf-8")
+    return data.get("content", "")
+
+
+# ==================== BATCH OPERATIONS ENDPOINTS ====================
+
+
+@router.post("/batch-commit")
+async def batch_commit_files(
+    request: BatchCommitRequest,
+    user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Commit multiple file operations in a single atomic commit.
+    Uses GitHub Tree API for batch operations.
+    """
+    github_token = _require_github_token(user)
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Get user identity
+            user_data = await _fetch_github_user(client, github_token)
+            author_name = user_data.get("name") or user_data.get("login", "Pustak User")
+            author_email = user_data.get("email") or f"{user_data.get('id')}+{user_data.get('login')}@users.noreply.github.com"
+            
+            # Get base commit SHA
+            base_commit = await _get_branch_head(client, request.repo, request.branch, github_token)
+            base_tree_sha = base_commit["commit"]["tree"]["sha"]
+            
+            # Build tree for all operations
+            tree_items = []
+            for op in request.operations:
+                if op.action in ["create", "update"]:
+                    if not op.content:
+                        raise HTTPException(status_code=400, detail=f"Content required for {op.action} operation")
+                    tree_items.append({
+                        "path": op.path,
+                        "mode": "100644",
+                        "type": "blob",
+                        "content": op.content
+                    })
+                elif op.action == "delete":
+                    tree_items.append({
+                        "path": op.path,
+                        "mode": "100644",
+                        "type": "blob",
+                        "sha": None  # null SHA deletes the file
+                    })
+                elif op.action == "move":
+                    if not op.new_path:
+                        raise HTTPException(status_code=400, detail="new_path required for move operation")
+                    # Fetch original file content
+                    file_content = await _fetch_file_content(client, request.repo, op.path, request.branch, github_token)
+                    # Delete old, create new
+                    tree_items.append({"path": op.path, "sha": None})
+                    tree_items.append({
+                        "path": op.new_path,
+                        "mode": "100644",
+                        "type": "blob",
+                        "content": file_content
+                    })
+            
+            # Create new tree
+            tree_response = await client.post(
+                f"https://api.github.com/repos/{request.repo}/git/trees",
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                json={
+                    "base_tree": base_tree_sha,
+                    "tree": tree_items
+                }
+            )
+            
+            if tree_response.status_code != 201:
+                error_detail = tree_response.text
+                raise HTTPException(status_code=500, detail=f"Failed to create tree: {error_detail}")
+            
+            new_tree_sha = tree_response.json()["sha"]
+            
+            # Create commit
+            commit_response = await client.post(
+                f"https://api.github.com/repos/{request.repo}/git/commits",
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                json={
+                    "message": request.commit_message,
+                    "tree": new_tree_sha,
+                    "parents": [base_commit["sha"]],
+                    "author": {
+                        "name": author_name,
+                        "email": author_email
+                    },
+                    "committer": {
+                        "name": author_name,
+                        "email": author_email
+                    }
+                }
+            )
+            
+            if commit_response.status_code != 201:
+                error_detail = commit_response.text
+                raise HTTPException(status_code=500, detail=f"Failed to create commit: {error_detail}")
+            
+            new_commit_sha = commit_response.json()["sha"]
+            
+            # Update branch reference
+            ref_response = await client.patch(
+                f"https://api.github.com/repos/{request.repo}/git/refs/heads/{request.branch}",
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                json={"sha": new_commit_sha}
+            )
+            
+            if ref_response.status_code != 200:
+                error_detail = ref_response.text
+                raise HTTPException(status_code=500, detail=f"Failed to update branch: {error_detail}")
+            
+            return {
+                "success": True,
+                "commit_sha": new_commit_sha,
+                "operations_count": len(request.operations),
+                "message": f"Successfully committed {len(request.operations)} operations"
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch commit failed: {str(e)}")
+
+
+@router.post("/create-page")
+async def create_page(
+    request: CreatePageRequest,
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Create a new documentation page"""
+    batch_req = BatchCommitRequest(
+        repo=request.repo,
+        operations=[BatchFileOperation(
+            action="create",
+            path=request.path,
+            content=request.content
+        )],
+        commit_message=request.commit_message,
+        branch=request.branch
+    )
+    return await batch_commit_files(batch_req, user)
+
+
+@router.post("/delete-page")
+async def delete_page(
+    request: DeletePageRequest,
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Delete a documentation page"""
+    batch_req = BatchCommitRequest(
+        repo=request.repo,
+        operations=[BatchFileOperation(
+            action="delete",
+            path=request.path
+        )],
+        commit_message=request.commit_message,
+        branch=request.branch
+    )
+    return await batch_commit_files(batch_req, user)
+
+
+@router.post("/move-page")
+async def move_page(
+    request: MovePageRequest,
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Move/rename a documentation page"""
+    batch_req = BatchCommitRequest(
+        repo=request.repo,
+        operations=[BatchFileOperation(
+            action="move",
+            path=request.old_path,
+            new_path=request.new_path
+        )],
+        commit_message=request.commit_message,
+        branch=request.branch
+    )
+    return await batch_commit_files(batch_req, user)

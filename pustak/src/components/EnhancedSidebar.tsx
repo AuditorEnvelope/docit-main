@@ -14,10 +14,15 @@ import {
   Sparkles,
   Globe2,
   ShieldCheck,
+  Edit2,
+  Trash2,
+  MoreVertical,
+  FilePlus,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { mapDocbookPathToDocsSlug } from "@/lib/docsPathMapper";
+import { useEditor } from "@/contexts/EditorContext";
 
 interface SidebarProps {
   onClose: () => void;
@@ -47,8 +52,19 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
     new Set()
   );
   const [loading, setLoading] = useState(true);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    item: DocbookFile;
+    itemPath: string;
+    docbook: DocbookRepo;
+  } | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createModalType, setCreateModalType] = useState<'file' | 'folder'>('file');
+  const [createModalPath, setCreateModalPath] = useState('');
   const pathname = usePathname();
   const router = useRouter();
+  const { openPage } = useEditor();
 
   const safeSetExpandedFolders = (updater: (draft: Set<string>) => void) => {
     setExpandedFolders((prev) => {
@@ -180,6 +196,124 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
     return pathname === path;
   };
 
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    if (contextMenu) {
+      document.addEventListener('click', handleClick);
+      return () => document.removeEventListener('click', handleClick);
+    }
+  }, [contextMenu]);
+
+  // Page management handlers
+  const handleCreatePage = async (folderPath: string, docbook: DocbookRepo) => {
+    const pageName = prompt('Enter page name (without .md extension):');
+    if (!pageName) return;
+
+    const fileName = pageName.endsWith('.md') ? pageName : `${pageName}.md`;
+    const fullPath = folderPath ? `${folderPath}/${fileName}` : fileName;
+
+    try {
+      const userToken = localStorage.getItem('pustak_access_token');
+      const response = await fetch('/api/pages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({
+          action: 'create',
+          repo: docbook.fullName,
+          path: fullPath,
+          content: `# ${pageName}\n\nContent goes here...`,
+          commit_message: `docs: Create ${pageName}`,
+          branch: 'staging',
+        }),
+      });
+
+      if (response.ok) {
+        alert('Page created successfully!');
+        // Reload docbooks to reflect the new page
+        window.location.reload();
+      } else {
+        const error = await response.json();
+        alert(`Failed to create page: ${error.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to create page:', error);
+      alert('Failed to create page');
+    }
+  };
+
+  const handleDeletePage = async (filePath: string, docbook: DocbookRepo) => {
+    if (!confirm(`Are you sure you want to delete ${filePath}?`)) return;
+
+    try {
+      const userToken = localStorage.getItem('pustak_access_token');
+      const response = await fetch('/api/pages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({
+          action: 'delete',
+          repo: docbook.fullName,
+          path: filePath,
+          commit_message: `docs: Delete ${filePath.split('/').pop()}`,
+          branch: 'staging',
+        }),
+      });
+
+      if (response.ok) {
+        alert('Page deleted successfully!');
+        window.location.reload();
+      } else {
+        const error = await response.json();
+        alert(`Failed to delete page: ${error.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to delete page:', error);
+      alert('Failed to delete page');
+    }
+  };
+
+  const handleOpenInEditor = async (filePath: string, docbook: DocbookRepo) => {
+    try {
+      const userToken = localStorage.getItem('pustak_access_token');
+      const response = await fetch(
+        `/api/fetch-doc?repo=${encodeURIComponent(docbook.fullName)}&filePath=${encodeURIComponent(filePath)}&branch=staging`,
+        {
+          headers: {
+            'Authorization': `Bearer ${userToken}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        openPage(filePath, data.content || '');
+      } else {
+        alert('Failed to load page content');
+      }
+    } catch (error) {
+      console.error('Failed to load page:', error);
+      alert('Failed to load page');
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, item: DocbookFile, itemPath: string, docbook: DocbookRepo) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      item,
+      itemPath,
+      docbook,
+    });
+  };
+
   useEffect(() => {
     if (!pathname || docbooks.length === 0) {
       return;
@@ -246,19 +380,34 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
             const href = docRoute.href;
 
             return (
-              <Link
+              <div
                 key={itemKey}
-                href={href}
-                prefetch={false}
-                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-all duration-150 ${
-                  isActive(href)
-                    ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-500/40"
-                    : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
-                }`}
+                className="group relative flex items-center gap-1"
+                onContextMenu={(e) => handleContextMenu(e, item, itemKey, docbook)}
               >
-                <FileText className="h-3 w-3 text-blue-300/80" />
-                <span className="truncate">{item.name}</span>
-              </Link>
+                <Link
+                  href={href}
+                  prefetch={false}
+                  className={`flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-all duration-150 ${
+                    isActive(href)
+                      ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-500/40"
+                      : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
+                  }`}
+                >
+                  <FileText className="h-3 w-3 text-blue-300/80" />
+                  <span className="truncate">{item.name}</span>
+                </Link>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleContextMenu(e as any, item, itemKey, docbook);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 rounded p-1 hover:bg-slate-700 transition"
+                  title="More options"
+                >
+                  <MoreVertical className="h-3 w-3 text-slate-400" />
+                </button>
+              </div>
             );
           }
 
@@ -274,24 +423,36 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
           return (
             <div key={itemKey} className="space-y-1">
-              <button
-                onClick={() => toggleFolder(itemKey, defaultHref)}
-                className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800/60"
-              >
-                <div className="flex items-center gap-2">
-                  <Folder className="h-3 w-3 text-blue-300" />
-                  <span className="font-medium text-slate-100">
-                    {item.name}
-                  </span>
-                </div>
-                <span
-                  className={`transition-transform ${
-                    isExpanded ? "rotate-180" : "rotate-0"
-                  }`}
+              <div className="group relative flex items-center gap-1">
+                <button
+                  onClick={() => toggleFolder(itemKey, defaultHref)}
+                  className="flex flex-1 items-center justify-between rounded-lg px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800/60"
                 >
-                  <ChevronDown className="h-3 w-3" />
-                </span>
-              </button>
+                  <div className="flex items-center gap-2">
+                    <Folder className="h-3 w-3 text-blue-300" />
+                    <span className="font-medium text-slate-100">
+                      {item.name}
+                    </span>
+                  </div>
+                  <span
+                    className={`transition-transform ${
+                      isExpanded ? "rotate-180" : "rotate-0"
+                    }`}
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </span>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleContextMenu(e as any, item, itemKey, docbook);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 rounded p-1 hover:bg-slate-700 transition"
+                  title="More options"
+                >
+                  <MoreVertical className="h-3 w-3 text-slate-400" />
+                </button>
+              </div>
               {isExpanded && item.files && (
                 <div className="ml-3 border-l border-slate-800/60 pl-3">
                   {renderFileTree(item.files, itemPath, docbook)}
@@ -550,6 +711,54 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
           </button>
         </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[200px] rounded-lg border border-slate-700 bg-slate-900 shadow-xl"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contextMenu.item.type === 'file' ? (
+            <>
+              <button
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-800 transition"
+                onClick={() => {
+                  handleOpenInEditor(contextMenu.itemPath, contextMenu.docbook);
+                  setContextMenu(null);
+                }}
+              >
+                <Edit2 className="h-4 w-4 text-blue-400" />
+                Open in Editor
+              </button>
+              <div className="border-t border-slate-800" />
+              <button
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-slate-800 transition"
+                onClick={() => {
+                  handleDeletePage(contextMenu.itemPath, contextMenu.docbook);
+                  setContextMenu(null);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Page
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-800 transition"
+                onClick={() => {
+                  handleCreatePage(contextMenu.itemPath, contextMenu.docbook);
+                  setContextMenu(null);
+                }}
+              >
+                <FilePlus className="h-4 w-4 text-green-400" />
+                New Page in Folder
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

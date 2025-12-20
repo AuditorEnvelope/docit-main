@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const RAW_BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
+// Normalize backend URL - remove /api/v1 if it exists, we'll add it back
+const BACKEND_URL = RAW_BACKEND_URL.replace(/\/api\/v1\/?$/, '');
+const API_BASE = `${BACKEND_URL}/api/v1`;
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const repo = searchParams.get('repo');
     const filePath = searchParams.get('filePath');
+    const branch = searchParams.get('branch') || 'staging';
     const userToken = request.headers.get('authorization')?.replace('Bearer ', '');
 
-    console.log('[/api/fetch-doc] Request received:', { repo, filePath, hasToken: !!userToken });
+    console.log('[/api/fetch-doc] Request received:', { repo, filePath, branch, hasToken: !!userToken });
 
     if (!repo || !filePath) {
       console.log('[/api/fetch-doc] Missing parameters');
@@ -32,8 +37,7 @@ export async function GET(request: NextRequest) {
     console.log('[/api/fetch-doc] Using repo name:', fullRepoName);
 
     // Call backend to fetch file using user's token and full repo name
-    // BACKEND_URL already includes /api/v1 prefix (like other routes)
-    const backendUrl = `${BACKEND_URL}/docs/fetch-file?repo=${encodeURIComponent(fullRepoName)}&filePath=${encodeURIComponent(filePath)}`;
+    const backendUrl = `${API_BASE}/docs/fetch-file?repo=${encodeURIComponent(fullRepoName)}&filePath=${encodeURIComponent(filePath)}&branch=${branch}`;
     console.log('[/api/fetch-doc] Calling backend:', backendUrl);
     const response = await fetch(
       backendUrl,

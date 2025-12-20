@@ -4,6 +4,7 @@ import { ThemeProvider } from "next-themes";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { EditorProvider } from "@/contexts/EditorContext";
 import {
   OnboardingSplash,
   ONBOARDING_PROGRESS_MESSAGES,
@@ -285,9 +286,11 @@ export function Providers({
       disableTransitionOnChange
     >
       <AuthProvider>
-        <OnboardingRedirect isDocbookHost={isDocbookHost}>
-          {children}
-        </OnboardingRedirect>
+        <EditorProvider>
+          <OnboardingRedirect isDocbookHost={isDocbookHost}>
+            {children}
+          </OnboardingRedirect>
+        </EditorProvider>
       </AuthProvider>
     </ThemeProvider>
   );
