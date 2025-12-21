@@ -6,22 +6,22 @@ set -e
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo -e "${YELLOW}🔄 Starting Event Consumer Worker...${NC}"
 echo ""
 
-# Set Python path
-export PYTHONPATH="${PYTHONPATH}:$(pwd)"
-
-# Activate environment
-if [ -d "docai-env" ]; then
-    source docai-env/bin/activate
-    echo -e "${GREEN}✓${NC} Activated docai-env"
-elif [ -d "venv" ]; then
-    source venv/bin/activate
-    echo -e "${GREEN}✓${NC} Activated venv"
+# Ensure conda env is active
+if [ -z "$CONDA_DEFAULT_ENV" ]; then
+    echo -e "${YELLOW}⚠️ Conda env not active.${NC}"
+    echo "Run: conda activate lekhak"
+    exit 1
+else
+    echo -e "${GREEN}✓${NC} Using conda env: $CONDA_DEFAULT_ENV"
 fi
+
+# Set Python path
+export PYTHONPATH="$(pwd):${PYTHONPATH}"
 
 # Load environment variables
 if [ -f ".env" ]; then

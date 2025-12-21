@@ -3,10 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-export async function GET(request: NextRequest, context: any) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ orgId: string }> }
+) {
   try {
-    // Extract the orgId from params
-    const { orgId } = context.params;
+    const { orgId } = await params; 
+
     const branch = request.nextUrl.searchParams.get("branch") || "staging";
     const authHeader = request.headers.get("authorization");
 
@@ -17,7 +20,6 @@ export async function GET(request: NextRequest, context: any) {
       );
     }
 
-    // Get docbook structure from backend
     const response = await fetch(
       `${BACKEND_URL}/docbook/${orgId}/structure?branch=${branch}`,
       {

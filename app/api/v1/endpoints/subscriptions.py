@@ -4,14 +4,15 @@ Subscription API Endpoints
 Handles subscription plans and upgrades
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.user import User
 from app.services.auth import get_current_user
-from app.services.subscription import SubscriptionService
+from app.services.razorpay_service import RazorpayService
 
 router = APIRouter()
 
@@ -100,15 +101,50 @@ async def upgrade_subscription(
     if plan not in ["pro", "enterprise"]:
         raise HTTPException(status_code=400, detail="Invalid plan")
     
-    subscription_service = SubscriptionService(db)
-    subscription = await subscription_service.upgrade_subscription(user.id, plan)
-    
-    return {
-        "status": "upgraded",
-        "plan": subscription.plan,
-        "max_repositories": subscription.max_repositories,
-        "max_docs_per_month": subscription.max_docs_per_month
-    }
+    razorpay_service = RazorpayService(db)
+    order = await razorpay_service.create_order(
+        user_id=str(user.id),
+        user_email=user.email,
+        plan_name=plan,
+        user_name=user.name
+    )
+    return order
+
+
+class PaymentVerificationPayload(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+
+
+@router.post("/verify-payment")
+async def verify_payment(
+    payload: PaymentVerificationPayload,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify Razorpay payment and update subscription"""
+    razorpay_service = RazorpayService(db)
+
+    # Verify the payment signature
+    is_valid = await razorpay_service.verify_payment(
+        order_id=payload.razorpay_order_id,
+        payment_id=payload.razorpay_payment_id,
+        signature=payload.razorpay_signature,
+    )
+
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
+
+    # Handle successful payment capture
+    try:
+        await razorpay_service.handle_payment_captured_sync(
+            order_id=payload.razorpay_order_id, payment_id=payload.razorpay_payment_id
+        )
+        return {"status": "success", "message": "Payment successful and subscription updated"}
+    except Exception as e:
+        # The service logs the details, return a generic error
+        raise HTTPException(status_code=500, detail=f"Failed to process payment: {e}")
 
 
 __all__ = ["router"]

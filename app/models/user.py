@@ -38,6 +38,7 @@ class User(Base):
     # Subscription
     plan = Column(CaseInsensitiveEnum(UserPlan), default=UserPlan.FREE, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+    razorpay_customer_id = Column(String(100), nullable=True, index=True)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())

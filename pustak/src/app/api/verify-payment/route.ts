@@ -1,25 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const rawBackendUrl =
-	process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1";
-
-// Normalize the URL to remove duplicate /api/v1 segments
-const BACKEND_URL = rawBackendUrl.replace(/(\/api\/v1)+$/, "/api/v1");
+const BACKEND_URL =
+	process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 export async function POST(request: NextRequest) {
 	try {
 		const body = await request.json();
-		const { plan } = body;
-		// orgName is optional - backend will auto-generate from user email
+		const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
 
-		if (!plan) {
+		if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
 			return NextResponse.json(
-				{ error: "Missing required field: plan" },
+				{ error: "Missing required payment details" },
 				{ status: 400 }
 			);
 		}
 
-		// Get auth token from cookie or header
 		const authHeader =
 			request.headers.get("authorization") ||
 			request.headers.get("Authorization");
@@ -31,26 +26,26 @@ export async function POST(request: NextRequest) {
 			return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 		}
 
-		// Call backend to create Razorpay order
-		const response = await fetch(`${BACKEND_URL}/subscriptions/upgrade?plan=${plan}`, {
+		const response = await fetch(`${BACKEND_URL}/subscriptions/verify-payment`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${token}`,
 			},
+			body: JSON.stringify(body),
 		});
 
 		if (!response.ok) {
 			const errorData = await response.json().catch(() => ({}));
-			throw new Error(errorData.detail || "Failed to create checkout session");
+			throw new Error(errorData.detail || "Failed to verify payment");
 		}
 
 		const data = await response.json();
 		return NextResponse.json(data);
 	} catch (error: any) {
-		console.error("Checkout error:", error);
+		console.error("Payment verification error:", error);
 		return NextResponse.json(
-			{ error: error.message || "Failed to create checkout session" },
+			{ error: error.message || "Failed to verify payment" },
 			{ status: 500 }
 		);
 	}
