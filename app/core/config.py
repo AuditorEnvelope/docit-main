@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # GitHub OAuth Configuration
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""
-    GITHUB_OAUTH_CALLBACK_URL: str = "http://localhost:8000/auth/callback"
+    GITHUB_OAUTH_CALLBACK_URL: str = "http://localhost:8000/api/v1/auth/callback"
     
     # GitHub App Configuration (Reader App)
     GITHUB_READER_APP_ID: str = "2072879"

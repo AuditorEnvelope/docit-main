@@ -58,7 +58,7 @@ async def generate_documentation_v4(
 
     github_token = _require_github_token(user)
     org_id, source_repo = _parse_repo_full_name(repo_name)
-    
+
     # Validate and normalize doc_persona
     valid_personas = ["internal", "developer"]
     

@@ -171,7 +171,20 @@ async def lifespan(app: FastAPI):
     """Handle application startup and shutdown events"""
     # Startup
     logger.info("Starting application...")
-    await init_models()
+    
+    try:
+        await init_models()
+    except TimeoutError:
+        logger.error("🔴 Database connection timeout!")
+        logger.error("💡 This usually means:")
+        logger.error("   1. Your database is suspended (Neon free tier)")
+        logger.error("   2. Check your DATABASE_URL in .env")
+        logger.error("   3. Visit https://console.neon.tech to wake up your database")
+        raise
+    except Exception as e:
+        logger.error(f"🔴 Database connection failed: {e}")
+        logger.error("   Check your DATABASE_URL in .env file")
+        raise
     
     # Start the event processing loop if enabled
     if settings.ENABLE_EVENT_PROCESSOR:

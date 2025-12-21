@@ -62,7 +62,7 @@ class AuthService:
             try:
                 response = await client.post(
                     "https://github.com/login/oauth/access_token",
-                    json={
+                    data={  # Changed from json to data for form-encoded
                         "client_id": settings.GITHUB_CLIENT_ID,
                         "client_secret": settings.GITHUB_CLIENT_SECRET,
                         "code": code,
@@ -71,11 +71,36 @@ class AuthService:
                     timeout=10.0
                 )
                 
-                if response.status_code != 200:
-                    raise HTTPException(status_code=400, detail="Failed to exchange code for token")
+                # Log response status and content for debugging
+                print(f"🔍 GitHub OAuth Status: {response.status_code}")
+                print(f"🔍 GitHub OAuth Headers: {dict(response.headers)}")
                 
-                data = response.json()
+                if response.status_code != 200:
+                    error_text = response.text
+                    print(f"❌ GitHub OAuth failed: {error_text}")
+                    raise HTTPException(status_code=400, detail=f"Failed to exchange code for token: {error_text}")
+                
+                # Try to parse as JSON
+                try:
+                    data = response.json()
+                except Exception as e:
+                    # If JSON parsing fails, try URL-encoded format
+                    print(f"⚠️ JSON parse failed, trying URL-encoded. Raw response: {response.text}")
+                    from urllib.parse import parse_qs
+                    parsed = parse_qs(response.text)
+                    data = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
+                
+                # Debug: Log the response data
+                print(f"🔍 GitHub OAuth Response: {data}")
+                
                 if "access_token" not in data:
+                    # Check if it's an error response
+                    if "error" in data:
+                        error_msg = f"{data.get('error')}: {data.get('error_description', 'Unknown error')}"
+                        print(f"❌ GitHub OAuth Error: {error_msg}")
+                        raise HTTPException(status_code=400, detail=error_msg)
+                    
+                    print(f"❌ No access token in response. Full data: {data}")
                     raise HTTPException(status_code=400, detail="No access token in response")
                 
                 return data["access_token"]

@@ -1673,6 +1673,58 @@ async def get_live_manifest_public(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/docbook/fetch-file")
+async def fetch_docbook_file(
+    org_id: str = Query(...),
+    file_path: str = Query(..., description="Full file path relative to repo root (e.g., jaishreram/docs/dev/api.md)"),
+    branch: str = Query("staging", description="Branch to fetch from"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch raw file content from docbook repository for editor."""
+    try:
+        docbook_repo = await _resolve_docbook_repo(
+            db=db,
+            org_id=org_id,
+            user_id=user.id if user else None,
+        )
+        
+        token = _require_github_token(user)
+        
+        # Normalize path (remove leading/trailing slashes)
+        normalized_path = file_path.strip("/")
+        
+        print(f"📄 Fetching docbook file: {normalized_path} from {docbook_repo.docbook_full_name}@{branch}")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            file_data = await _fetch_github_file(
+                client=client,
+                repo_full_name=docbook_repo.docbook_full_name,
+                path=normalized_path,
+                ref=branch,
+                token=token,
+            )
+        
+        # Decode base64 content if present
+        content = file_data.get("content", "")
+        if file_data.get("encoding") == "base64" and content:
+            import base64
+            content = base64.b64decode(content.replace("\n", "")).decode("utf-8")
+        
+        return {
+            "content": content,
+            "fileName": normalized_path.split("/")[-1],
+            "path": normalized_path,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching docbook file: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error fetching file: {str(e)}")
+
+
 @router.get("/docbook/live-content")
 async def get_live_content(
     org_id: str = Query(...),
@@ -1858,4 +1910,791 @@ async def get_publish_history(
         
     except Exception as e:
         print(f"❌ Error fetching history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== MULTI-FILE WORKSPACE ENDPOINTS ====================
+
+class CreatePageRequest(BaseModel):
+    org_id: str
+    repo_id: str
+    persona: str
+    parent_path: str
+    fileName: str
+    content: Optional[str] = ""
+
+
+class UpdateStructureRequest(BaseModel):
+    org_id: str
+    repo_id: str
+    persona: str
+    structure: List[Dict[str, Any]]
+
+
+class BulkSaveRequest(BaseModel):
+    org_id: str
+    repo_id: str
+    persona: str
+    files: List[Dict[str, str]]  # [{"path": "...", "content": "..."}]
+    commit_message: str
+    branch: str = "staging"
+
+
+@router.post("/docbook/create-page")
+async def create_page(
+    request: CreatePageRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new markdown file in the docbook repository."""
+    github_token = _require_github_token(user)
+    
+    try:
+        # Get docbook repo
+        docbook_repo = await _get_docbook_repo(db, user, request.org_id)
+        
+        # Build file path: docs/{persona}/{parent_path}/{fileName}
+        file_path = f"docs/{request.persona}"
+        if request.parent_path:
+            # Ensure parent_path doesn't start with docs/{persona} to avoid duplication
+            clean_parent_path = request.parent_path
+            if clean_parent_path.startswith(f"docs/{request.persona}/"):
+                clean_parent_path = clean_parent_path[len(f"docs/{request.persona}/"):]
+            elif clean_parent_path == f"docs/{request.persona}":
+                clean_parent_path = ""
+            
+            if clean_parent_path:
+                file_path = f"{file_path}/{clean_parent_path}"
+        file_path = f"{file_path}/{request.fileName}"
+        
+        # Ensure .md extension
+        if not file_path.endswith(".md"):
+            file_path = f"{file_path}.md"
+        
+        print(f"📄 Creating page: {file_path}")
+        
+        # Get user's GitHub identity
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            user_response = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                }
+            )
+            
+            if user_response.status_code != 200:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to fetch user information from GitHub"
+                )
+            
+            user_data = user_response.json()
+            author_name = user_data.get("name") or user_data.get("login", "Pustak User")
+            author_email = user_data.get("email") or f"{user_data.get('id', '')}+{user_data.get('login', 'user')}@users.noreply.github.com"
+            
+            # Encode content to base64
+            import base64
+            content_bytes = (request.content or "").encode("utf-8")
+            content_base64 = base64.b64encode(content_bytes).decode("utf-8")
+            
+            # Check if file already exists (to get SHA if needed)
+            file_url = f"https://api.github.com/repos/{docbook_repo.docbook_full_name}/contents/{file_path}"
+            existing_sha = None
+            
+            try:
+                check_response = await client.get(
+                    file_url,
+                    headers={
+                        "Authorization": f"Bearer {github_token}",
+                        "Accept": "application/vnd.github.v3+json",
+                        "User-Agent": "Pustak-AI"
+                    },
+                    params={"ref": docbook_repo.staging_branch}
+                )
+                
+                if check_response.status_code == 200:
+                    existing_file = check_response.json()
+                    existing_sha = existing_file.get("sha")
+                    print(f"📝 File exists, will update with SHA: {existing_sha}")
+            except Exception as e:
+                print(f"ℹ️ File doesn't exist yet (will create new): {e}")
+            
+            # Create or update file via GitHub API
+            commit_payload = {
+                "message": f"Add: {request.fileName}" if not existing_sha else f"Update: {request.fileName}",
+                "content": content_base64,
+                "branch": docbook_repo.staging_branch,
+                "author": {
+                    "name": author_name,
+                    "email": author_email
+                },
+                "committer": {
+                    "name": author_name,
+                    "email": author_email
+                }
+            }
+            
+            # Add SHA if file exists
+            if existing_sha:
+                commit_payload["sha"] = existing_sha
+            
+            commit_response = await client.put(
+                file_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                json=commit_payload
+            )
+            
+            if commit_response.status_code not in (200, 201):
+                error_data = commit_response.json() if commit_response.headers.get("content-type", "").startswith("application/json") else {}
+                error_message = error_data.get("message", f"Failed to create file: {commit_response.status_code}")
+                print(f"❌ GitHub API Error: {error_message}")
+                print(f"📋 Error details: {error_data}")
+                print(f"📋 Request URL: {file_url}")
+                print(f"📋 Request payload: {commit_payload}")
+                raise HTTPException(
+                    status_code=commit_response.status_code,
+                    detail=error_message
+                )
+            
+            result = commit_response.json()
+            
+            return {
+                "path": file_path,
+                "name": request.fileName,
+                "type": "file",
+                "content": request.content or "",
+                "sha": result.get("content", {}).get("sha"),
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error creating page: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DeletePageRequest(BaseModel):
+    org_id: str
+    repo_id: str
+    persona: str
+    file_path: str
+
+
+class RenamePageRequest(BaseModel):
+    org_id: str
+    repo_id: str
+    persona: str
+    old_path: str
+    new_path: str
+
+
+@router.delete("/docbook/delete-page")
+async def delete_page(
+    request: DeletePageRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a markdown file from the docbook repository."""
+    github_token = _require_github_token(user)
+    
+    try:
+        # Get docbook repo
+        docbook_repo = await _get_docbook_repo(db, user, request.org_id)
+        
+        # Build file path: docs/{persona}/{file_path}
+        # Ensure file_path doesn't start with docs/{persona} to avoid duplication
+        clean_file_path = request.file_path
+        if clean_file_path.startswith(f"docs/{request.persona}/"):
+            clean_file_path = clean_file_path[len(f"docs/{request.persona}/"):]
+        elif clean_file_path == f"docs/{request.persona}":
+            clean_file_path = ""
+            
+        file_path = f"docs/{request.persona}"
+        if clean_file_path:
+            file_path = f"{file_path}/{clean_file_path}"
+        
+        # Ensure .md extension
+        if not file_path.endswith(".md"):
+            file_path = f"{file_path}.md"
+        
+        print(f"📄 Deleting page: {file_path}")
+        
+        # Get user's GitHub identity
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            user_response = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                }
+            )
+            
+            if user_response.status_code != 200:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to fetch user information from GitHub"
+                )
+            
+            user_data = user_response.json()
+            author_name = user_data.get("name") or user_data.get("login", "Pustak User")
+            author_email = user_data.get("email") or f"{user_data.get('id', '')}+{user_data.get('login', 'user')}@users.noreply.github.com"
+            
+            # First, get the file SHA (required for deletion)
+            file_url = f"https://api.github.com/repos/{docbook_repo.docbook_full_name}/contents/{file_path}"
+            
+            get_response = await client.get(
+                file_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                params={
+                    "ref": docbook_repo.staging_branch
+                }
+            )
+            
+            if get_response.status_code == 404:
+                raise HTTPException(
+                    status_code=404,
+                    detail="File not found"
+                )
+                
+            if get_response.status_code != 200:
+                error_data = get_response.json() if get_response.headers.get("content-type", "").startswith("application/json") else {}
+                error_message = error_data.get("message", f"Failed to get file: {get_response.status_code}")
+                print(f"❌ GitHub API Error: {error_message}")
+                print(f"📋 Error details: {error_data}")
+                print(f"📋 Request URL: {file_url}")
+                raise HTTPException(
+                    status_code=get_response.status_code,
+                    detail=error_message
+                )
+            
+            file_data = get_response.json()
+            file_sha = file_data.get("sha")
+            
+            # Delete file via GitHub API
+            commit_payload = {
+                "message": f"Delete: {file_path.split('/')[-1]}",
+                "sha": file_sha,
+                "branch": docbook_repo.staging_branch,
+                "author": {
+                    "name": author_name,
+                    "email": author_email
+                },
+                "committer": {
+                    "name": author_name,
+                    "email": author_email
+                }
+            }
+            
+            delete_response = await client.delete(
+                file_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                json=commit_payload
+            )
+            
+            if delete_response.status_code not in (200, 204):
+                error_data = delete_response.json() if delete_response.headers.get("content-type", "").startswith("application/json") else {}
+                error_message = error_data.get("message", f"Failed to delete file: {delete_response.status_code}")
+                print(f"❌ GitHub API Error: {error_message}")
+                print(f"📋 Error details: {error_data}")
+                print(f"📋 Request URL: {file_url}")
+                print(f"📋 Request payload: {commit_payload}")
+                raise HTTPException(
+                    status_code=delete_response.status_code,
+                    detail=error_message
+                )
+            
+            return {"message": "File deleted successfully"}
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error deleting page: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/docbook/rename-page")
+async def rename_page(
+    request: RenamePageRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rename a markdown file in the docbook repository."""
+    github_token = _require_github_token(user)
+    
+    try:
+        # Get docbook repo
+        docbook_repo = await _get_docbook_repo(db, user, request.org_id)
+        
+        # Build old file path: docs/{persona}/{old_path}
+        # Ensure old_path doesn't start with docs/{persona} to avoid duplication
+        clean_old_path = request.old_path
+        if clean_old_path.startswith(f"docs/{request.persona}/"):
+            clean_old_path = clean_old_path[len(f"docs/{request.persona}/"):]
+        elif clean_old_path == f"docs/{request.persona}":
+            clean_old_path = ""
+            
+        old_file_path = f"docs/{request.persona}"
+        if clean_old_path:
+            old_file_path = f"{old_file_path}/{clean_old_path}"
+        
+        # Ensure .md extension
+        if not old_file_path.endswith(".md"):
+            old_file_path = f"{old_file_path}.md"
+            
+        # Build new file path: docs/{persona}/{new_path}
+        # Ensure new_path doesn't start with docs/{persona} to avoid duplication
+        clean_new_path = request.new_path
+        if clean_new_path.startswith(f"docs/{request.persona}/"):
+            clean_new_path = clean_new_path[len(f"docs/{request.persona}/"):]
+        elif clean_new_path == f"docs/{request.persona}":
+            clean_new_path = ""
+            
+        new_file_path = f"docs/{request.persona}"
+        if clean_new_path:
+            new_file_path = f"{new_file_path}/{clean_new_path}"
+        
+        # Ensure .md extension
+        if not new_file_path.endswith(".md"):
+            new_file_path = f"{new_file_path}.md"
+        
+        print(f"📄 Renaming page: {old_file_path} -> {new_file_path}")
+        
+        # Get user's GitHub identity
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            user_response = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                }
+            )
+            
+            if user_response.status_code != 200:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to fetch user information from GitHub"
+                )
+            
+            user_data = user_response.json()
+            author_name = user_data.get("name") or user_data.get("login", "Pustak User")
+            author_email = user_data.get("email") or f"{user_data.get('id', '')}+{user_data.get('login', 'user')}@users.noreply.github.com"
+            
+            # First, get the file content and SHA
+            old_file_url = f"https://api.github.com/repos/{docbook_repo.docbook_full_name}/contents/{old_file_path}"
+            
+            get_response = await client.get(
+                old_file_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                params={
+                    "ref": docbook_repo.staging_branch
+                }
+            )
+            
+            if get_response.status_code == 404:
+                raise HTTPException(
+                    status_code=404,
+                    detail="File not found"
+                )
+                
+            if get_response.status_code != 200:
+                error_data = get_response.json() if get_response.headers.get("content-type", "").startswith("application/json") else {}
+                error_message = error_data.get("message", f"Failed to get file: {get_response.status_code}")
+                print(f"❌ GitHub API Error: {error_message}")
+                print(f"📋 Error details: {error_data}")
+                print(f"📋 Request URL: {old_file_url}")
+                raise HTTPException(
+                    status_code=get_response.status_code,
+                    detail=error_message
+                )
+            
+            file_data = get_response.json()
+            file_content = file_data.get("content", "")
+            file_encoding = file_data.get("encoding", "base64")
+            file_sha = file_data.get("sha")
+            
+            # Create new file with same content
+            new_file_url = f"https://api.github.com/repos/{docbook_repo.docbook_full_name}/contents/{new_file_path}"
+            
+            create_payload = {
+                "message": f"Rename: {old_file_path.split('/')[-1]} -> {new_file_path.split('/')[-1]}",
+                "content": file_content,
+                "branch": docbook_repo.staging_branch,
+                "author": {
+                    "name": author_name,
+                    "email": author_email
+                },
+                "committer": {
+                    "name": author_name,
+                    "email": author_email
+                }
+            }
+            
+            create_response = await client.put(
+                new_file_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                json=create_payload
+            )
+            
+            if create_response.status_code not in (200, 201):
+                error_data = create_response.json() if create_response.headers.get("content-type", "").startswith("application/json") else {}
+                error_message = error_data.get("message", f"Failed to create new file: {create_response.status_code}")
+                print(f"❌ GitHub API Error: {error_message}")
+                print(f"📋 Error details: {error_data}")
+                print(f"📋 Request URL: {new_file_url}")
+                print(f"📋 Request payload: {create_payload}")
+                raise HTTPException(
+                    status_code=create_response.status_code,
+                    detail=error_message
+                )
+            
+            # Delete old file
+            delete_payload = {
+                "message": f"Delete: {old_file_path.split('/')[-1]}",
+                "sha": file_sha,
+                "branch": docbook_repo.staging_branch,
+                "author": {
+                    "name": author_name,
+                    "email": author_email
+                },
+                "committer": {
+                    "name": author_name,
+                    "email": author_email
+                }
+            }
+            
+            delete_response = await client.delete(
+                old_file_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                json=delete_payload
+            )
+            
+            if delete_response.status_code not in (200, 204):
+                error_data = delete_response.json() if delete_response.headers.get("content-type", "").startswith("application/json") else {}
+                error_message = error_data.get("message", f"Failed to delete old file: {delete_response.status_code}")
+                print(f"❌ GitHub API Error: {error_message}")
+                print(f"📋 Error details: {error_data}")
+                print(f"📋 Request URL: {old_file_url}")
+                print(f"📋 Request payload: {delete_payload}")
+                # Don't raise here since we already created the new file - log the error but continue
+                
+            result = create_response.json()
+            
+            return {
+                "path": new_file_path,
+                "name": new_file_path.split("/")[-1],
+                "type": "file",
+                "content": file_content,
+                "sha": result.get("content", {}).get("sha"),
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error renaming page: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/docbook/structure")
+async def update_structure(
+    request: UpdateStructureRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the documentation structure (reordering, moving files)."""
+    # For now, this is a placeholder that just validates the request
+    # In the future, this could update a SUMMARY.md or docs.json file
+    # to reflect the new structure
+    
+    print(f"📋 Updating structure for {request.org_id}/{request.repo_id}")
+    print(f"Structure items: {len(request.structure)}")
+    
+    # TODO: Implement structure persistence (e.g., update SUMMARY.md)
+    # For now, we just acknowledge the update
+    
+    return {
+        "status": "success",
+        "message": "Structure update acknowledged (persistence not yet implemented)",
+        "structure": request.structure
+    }
+
+
+@router.put("/docbook/bulk-save")
+async def bulk_save(
+    request: BulkSaveRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Commit multiple files in a single commit."""
+    github_token = _require_github_token(user)
+    
+    try:
+        # Get docbook repo
+        docbook_repo = await _get_docbook_repo(db, user, request.org_id)
+        
+        print(f"💾 Bulk saving {len(request.files)} files")
+        
+        # Get user's GitHub identity
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            user_response = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                }
+            )
+            
+            if user_response.status_code != 200:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to fetch user information from GitHub"
+                )
+            
+            user_data = user_response.json()
+            author_name = user_data.get("name") or user_data.get("login", "Pustak User")
+            author_email = user_data.get("email") or f"{user_data.get('id', '')}+{user_data.get('login', 'user')}@users.noreply.github.com"
+            
+            import base64
+            from datetime import datetime, timezone
+            
+            # Get the latest commit SHA for the branch
+            branch_url = f"https://api.github.com/repos/{docbook_repo.docbook_full_name}/git/refs/heads/{request.branch}"
+            branch_response = await client.get(
+                branch_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                }
+            )
+            
+            commit_sha = None
+            if branch_response.status_code == 200:
+                branch_data = branch_response.json()
+                commit_sha = branch_data.get("object", {}).get("sha")
+            
+            # Process each file and create blobs
+            tree_entries = []
+            
+            for file_info in request.files:
+                file_path = file_info.get("path", "")
+                file_content = file_info.get("content", "")
+                
+                # Get current file SHA if it exists
+                file_url = f"https://api.github.com/repos/{docbook_repo.docbook_full_name}/contents/{file_path}"
+                file_response = await client.get(
+                    file_url,
+                    headers={
+                        "Authorization": f"Bearer {github_token}",
+                        "Accept": "application/vnd.github.v3+json",
+                        "User-Agent": "Pustak-AI"
+                    },
+                    params={"ref": request.branch}
+                )
+                
+                sha = None
+                if file_response.status_code == 200:
+                    file_data = file_response.json()
+                    sha = file_data.get("sha")
+                
+                # Create blob for the content
+                blob_url = f"https://api.github.com/repos/{docbook_repo.docbook_full_name}/git/blobs"
+                content_bytes = file_content.encode("utf-8")
+                content_base64 = base64.b64encode(content_bytes).decode("utf-8")
+                
+                blob_payload = {
+                    "content": content_base64,
+                    "encoding": "base64"
+                }
+                
+                blob_response = await client.post(
+                    blob_url,
+                    headers={
+                        "Authorization": f"Bearer {github_token}",
+                        "Accept": "application/vnd.github.v3+json",
+                        "User-Agent": "Pustak-AI"
+                    },
+                    json=blob_payload
+                )
+                
+                if blob_response.status_code not in (200, 201):
+                    error_data = blob_response.json() if blob_response.headers.get("content-type", "").startswith("application/json") else {}
+                    error_message = error_data.get("message", f"Failed to create blob: {blob_response.status_code}")
+                    raise HTTPException(
+                        status_code=blob_response.status_code,
+                        detail=error_message
+                    )
+                
+                blob_data = blob_response.json()
+                blob_sha = blob_data.get("sha")
+                
+                # Add to tree entries
+                tree_entry = {
+                    "path": file_path,
+                    "mode": "100644",
+                    "type": "blob",
+                    "sha": blob_sha
+                }
+                
+                tree_entries.append(tree_entry)
+            
+            # Get base tree SHA from the latest commit
+            base_tree_sha = None
+            if commit_sha:
+                commit_url = f"https://api.github.com/repos/{docbook_repo.docbook_full_name}/git/commits/{commit_sha}"
+                commit_response = await client.get(
+                    commit_url,
+                    headers={
+                        "Authorization": f"Bearer {github_token}",
+                        "Accept": "application/vnd.github.v3+json",
+                        "User-Agent": "Pustak-AI"
+                    }
+                )
+                
+                if commit_response.status_code == 200:
+                    commit_data = commit_response.json()
+                    base_tree_sha = commit_data.get("tree", {}).get("sha")
+            
+            # Create a new tree with all the files
+            tree_url = f"https://api.github.com/repos/{docbook_repo.docbook_full_name}/git/trees"
+            tree_payload = {
+                "tree": tree_entries
+            }
+            
+            if base_tree_sha:
+                tree_payload["base_tree"] = base_tree_sha
+            
+            tree_response = await client.post(
+                tree_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                json=tree_payload
+            )
+            
+            if tree_response.status_code not in (200, 201):
+                error_data = tree_response.json() if tree_response.headers.get("content-type", "").startswith("application/json") else {}
+                error_message = error_data.get("message", f"Failed to create tree: {tree_response.status_code}")
+                raise HTTPException(
+                    status_code=tree_response.status_code,
+                    detail=error_message
+                )
+            
+            tree_data = tree_response.json()
+            new_tree_sha = tree_data.get("sha")
+            
+            # Create a new commit
+            commit_url = f"https://api.github.com/repos/{docbook_repo.docbook_full_name}/git/commits"
+            commit_payload = {
+                "message": request.commit_message,
+                "tree": new_tree_sha,
+                "author": {
+                    "name": author_name,
+                    "email": author_email,
+                    "date": datetime.now(timezone.utc).isoformat()
+                },
+                "committer": {
+                    "name": author_name,
+                    "email": author_email,
+                    "date": datetime.now(timezone.utc).isoformat()
+                }
+            }
+            
+            if commit_sha:
+                commit_payload["parents"] = [commit_sha]
+            
+            commit_response = await client.post(
+                commit_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                json=commit_payload
+            )
+            
+            if commit_response.status_code not in (200, 201):
+                error_data = commit_response.json() if commit_response.headers.get("content-type", "").startswith("application/json") else {}
+                error_message = error_data.get("message", f"Failed to create commit: {commit_response.status_code}")
+                raise HTTPException(
+                    status_code=commit_response.status_code,
+                    detail=error_message
+                )
+            
+            commit_data = commit_response.json()
+            new_commit_sha = commit_data.get("sha")
+            
+            # Update the branch reference
+            ref_url = f"https://api.github.com/repos/{docbook_repo.docbook_full_name}/git/refs/heads/{request.branch}"
+            ref_payload = {
+                "sha": new_commit_sha
+            }
+            
+            ref_response = await client.patch(
+                ref_url,
+                headers={
+                    "Authorization": f"Bearer {github_token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Pustak-AI"
+                },
+                json=ref_payload
+            )
+            
+            if ref_response.status_code not in (200, 201):
+                error_data = ref_response.json() if ref_response.headers.get("content-type", "").startswith("application/json") else {}
+                error_message = error_data.get("message", f"Failed to update branch: {ref_response.status_code}")
+                raise HTTPException(
+                    status_code=ref_response.status_code,
+                    detail=error_message
+                )
+            
+            return {
+                "status": "success",
+                "commit_sha": new_commit_sha,
+                "html_url": f"https://github.com/{docbook_repo.docbook_full_name}/commit/{new_commit_sha}",
+                "files_count": len(request.files)
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error bulk saving: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))

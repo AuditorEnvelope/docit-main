@@ -459,26 +459,26 @@ export default function RepoPage({ params }: RepoPageProps) {
                         <span>Edit</span>
                       </button>
                     )}
-                    {publicUrl && (
-                      <a
-                        href={publicUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 rounded-full bg-blue-500/90 px-4 py-1.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/35 transition hover:bg-blue-500"
-                      >
-                        <Globe2 className="w-4 h-4" />
-                        <span>Preview live docs</span>
-                      </a>
-                    )}
-                    <a
-                      href={githubUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-4 py-1.5 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      <span>View on GitHub</span>
-                    </a>
+                {publicUrl && (
+                  <a
+                    href={publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-full bg-blue-500/90 px-4 py-1.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/35 transition hover:bg-blue-500"
+                  >
+                    <Globe2 className="w-4 h-4" />
+                    <span>Preview live docs</span>
+                  </a>
+                )}
+                <a
+                  href={githubUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-4 py-1.5 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>View on GitHub</span>
+                </a>
                   </>
                 )}
               </div>
@@ -498,7 +498,7 @@ export default function RepoPage({ params }: RepoPageProps) {
                 />
               </div>
             ) : (
-              <MarkdownRenderer content={content} />
+            <MarkdownRenderer content={content} />
             )}
           </div>
         </div>

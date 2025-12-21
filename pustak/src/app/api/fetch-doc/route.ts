@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const RAW_BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
+// Normalize backend URL - remove /api/v1 if it exists, we'll add it back
+const BACKEND_URL = RAW_BACKEND_URL.replace(/\/api\/v1\/?$/, '');
+const API_BASE = `${BACKEND_URL}/api/v1`;
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,13 +31,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Use repo name as-is (frontend should pass fullName)
-    const fullRepoName = repo;
-    console.log('[/api/fetch-doc] Using repo name:', fullRepoName);
+    // Extract orgId from repo (format: orgId/repoName)
+    // e.g., "bajrangbalikijai/pustak-docbook-bajrangbalikijai" -> orgId = "bajrangbalikijai"
+    const [orgId] = repo.split('/');
+    console.log('[/api/fetch-doc] Extracted orgId:', orgId);
+    console.log('[/api/fetch-doc] File path:', filePath);
 
-    // Call backend to fetch file using user's token and full repo name
-    // BACKEND_URL already includes /api/v1 prefix (like other routes)
-    const backendUrl = `${BACKEND_URL}/docs/fetch-file?repo=${encodeURIComponent(fullRepoName)}&filePath=${encodeURIComponent(filePath)}`;
+    // Use the new docbook-specific endpoint that handles folder structure correctly
+    const backendUrl = `${API_BASE}/docbook/fetch-file?org_id=${encodeURIComponent(orgId)}&file_path=${encodeURIComponent(filePath)}&branch=staging`;
     console.log('[/api/fetch-doc] Calling backend:', backendUrl);
     const response = await fetch(
       backendUrl,
