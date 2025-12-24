@@ -22,41 +22,64 @@ export default function BlockNoteEditorClient({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const [isInitialized, setIsInitialized] = useState(false);
+  const lastContentRef = useRef<string>("");
+  const isUpdatingRef = useRef(false);
 
   // Create the editor instance - start with empty, then load markdown
   const editor = useCreateBlockNote({});
 
-  // Initialize editor with markdown content
+  // Initialize editor with markdown content (and re-initialize when content changes)
   useEffect(() => {
-    if (!editor || isInitialized || !initialContent) return;
+    if (!editor) return;
+
+    // Skip if content hasn't changed
+    if (lastContentRef.current === initialContent && isInitialized) {
+      return;
+    }
 
     const initializeContent = async () => {
       try {
+        isUpdatingRef.current = true;
+
         // Use the editor's built-in markdown parser
-        const blocks = editor.tryParseMarkdownToBlocks(initialContent);
+        const blocks = editor.tryParseMarkdownToBlocks(initialContent || "");
         if (blocks && blocks.length > 0) {
           // Replace the document with parsed blocks
           editor.replaceBlocks(editor.document, blocks);
+        } else {
+          // Empty content - clear the editor
+          editor.replaceBlocks(editor.document, []);
         }
+
+        lastContentRef.current = initialContent || "";
         setIsInitialized(true);
+        isUpdatingRef.current = false;
       } catch (error) {
         console.error("Error initializing editor with markdown:", error);
         setIsInitialized(true);
+        isUpdatingRef.current = false;
       }
     };
 
     initializeContent();
-  }, [editor, initialContent, isInitialized]);
+  }, [editor, initialContent]);
 
   // Handle content changes
   useEffect(() => {
     if (!onChangeRef.current || !editable || !editor || !isInitialized) return;
 
     const handleChange = () => {
+      // Don't trigger onChange during initialization/updates
+      if (isUpdatingRef.current) return;
+
       try {
         // Convert blocks back to markdown
         const markdown = editor.blocksToMarkdownLossy(editor.document);
-        onChangeRef.current?.(markdown);
+
+        // Only call onChange if content actually changed
+        if (markdown !== lastContentRef.current) {
+          onChangeRef.current?.(markdown);
+        }
       } catch (error) {
         console.error("Error converting blocks to markdown:", error);
       }
