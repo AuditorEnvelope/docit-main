@@ -1,31 +1,3 @@
-✓ Python version: 3.11.12
-✓ Activated venv
-✓ Environment variables loaded
-
-✅ Starting Pustak AI server...
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📚 API Documentation: http://localhost:8000/docs
-📚 ReDoc:             http://localhost:8000/redoc
-❤️  Health Check:      http://localhost:8000/health
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-INFO:     Will watch for changes in these directories: ['/Users/harshsrivastava/Desktop/doc_ai']
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [47662] using StatReload
-INFO:     Started server process [47665]
-INFO:     Waiting for application startup.
-2025-12-25 20:15:09,521 - app.main - INFO - Starting application...
-📊 Initializing database schema...
-✅ Database schema initialized!
-2025-12-25 20:15:31,008 - app.main - INFO - Starting background event processor...
-2025-12-25 20:15:31,008 - app.main - INFO - Starting event processor...
-INFO:     Application startup complete.
-INFO:     127.0.0.1:63424 - "OPTIONS /api/v1/workspace/sync?commit_message=Update%3A+Document+-+Dec+25%2C+2025%2C+08%3A22+PM HTTP/1.1" 200 OK
-2025-12-25 20:22:29,299 - app.main - INFO - Request: POST http://localhost:8000/api/v1/workspace/sync?commit_message=Update%3A+Document+-+Dec+25%2C+2025%2C+08%3A22+PM
-2025-12-25 20:22:33,810 - httpx - INFO - HTTP Request: GET https://api.github.com/user "HTTP/1.1 200 OK"
-2025-12-25 20:22:34,201 - httpx - INFO - HTTP Request: GET https://api.github.com/repos/bajrangbalikijai/pustak-docbook-bajrangbalikijai/contents/dev/workflow/test.md?ref=staging "HTTP/1.1 404 Not Found"
-2025-12-25 20:22:34,202 - app.main - INFO - Response: POST http://localhost:8000/api/v1/workspace/sync?commit_message=Update%3A+Document+-+Dec+25%2C+2025%2C+08%3A22+PM - Status: 200 - Time: 4902.91ms
-INFO:     127.0.0.1:63424 - "POST /api/v1/workspace/sync?commit_message=Update%3A+Document+-+Dec+25%2C+2025%2C+08%3A22+PM HTTP/1.1" 200 OK
 /**
  * Session Activity Panel - Right Sidebar
  * 

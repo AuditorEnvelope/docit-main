@@ -391,17 +391,47 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           set((state) => {
             if (!state.fileTree) return state;
             
-            const updatedTree = updateNodeRecursive(state.fileTree, nodeId, (node) => ({
-              ...node,
-              title: newTitle,
-              updatedAt: new Date().toISOString(),
-              isEditing: false
-            }));
+            const node = findNodeRecursive(state.fileTree, nodeId);
+            if (!node) return state;
             
-            return {
-              fileTree: updatedTree,
+            // For existing files (not temp), track as delete old + create new
+            const updates: Partial<WorkspaceState> = {
+              fileTree: updateNodeRecursive(state.fileTree, nodeId, (node) => ({
+                ...node,
+                title: newTitle,
+                updatedAt: new Date().toISOString(),
+                isEditing: false
+              })),
               structureDirty: true
             };
+            
+            // If it's a page with existing path (not temp), handle as file rename in Git
+            if (node.type === 'page' && node.path && !node.isTempNode) {
+              // Get old file path
+              const oldPath = node.path;
+              
+              // Build new file path (replace last segment with new title)
+              const pathParts = oldPath.split('/');
+              pathParts[pathParts.length - 1] = `${newTitle}.md`;
+              const newPath = pathParts.join('/');
+              
+              // Update node's path to new path
+              updates.fileTree = updateNodeRecursive(updates.fileTree!, nodeId, (n) => ({
+                ...n,
+                path: newPath
+              }));
+              
+              // Add old file to deletion queue
+              updates.deletedPaths = new Set([...state.deletedPaths, oldPath]);
+              
+              // Add to pending changes (will create new file with new name)
+              updates.pendingChanges = new Set([...state.pendingChanges, nodeId]);
+            } else if (node.type === 'page' && node.isTempNode) {
+              // Temp node - just update title, already in pendingChanges
+              updates.pendingChanges = new Set([...state.pendingChanges, nodeId]);
+            }
+            
+            return { ...state, ...updates };
           });
         },
         
