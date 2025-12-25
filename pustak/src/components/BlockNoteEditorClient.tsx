@@ -22,25 +22,28 @@ export default function BlockNoteEditorClient({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const [isInitialized, setIsInitialized] = useState(false);
-  const lastContentRef = useRef<string>("");
-  const isUpdatingRef = useRef(false);
+  const lastExternalContentRef = useRef<string>("");
+  const isUserTypingRef = useRef(false);
 
-  // Create the editor instance - start with empty, then load markdown
+  // Create the editor instance ONCE - never recreate
   const editor = useCreateBlockNote({});
 
-  // Initialize editor with markdown content (and re-initialize when content changes)
+  // Initialize editor ONLY on mount or external content change (not user typing)
   useEffect(() => {
     if (!editor) return;
 
-    // Skip if content hasn't changed
-    if (lastContentRef.current === initialContent && isInitialized) {
+    // CRITICAL: Skip if user is typing (not an external change)
+    if (isUserTypingRef.current) {
+      return;
+    }
+
+    // Skip if content hasn't actually changed from external source
+    if (lastExternalContentRef.current === initialContent && isInitialized) {
       return;
     }
 
     const initializeContent = async () => {
       try {
-        isUpdatingRef.current = true;
-
         // Use the editor's built-in markdown parser
         const blocks = editor.tryParseMarkdownToBlocks(initialContent || "");
         if (blocks && blocks.length > 0) {
@@ -51,38 +54,41 @@ export default function BlockNoteEditorClient({
           editor.replaceBlocks(editor.document, []);
         }
 
-        lastContentRef.current = initialContent || "";
+        lastExternalContentRef.current = initialContent || "";
         setIsInitialized(true);
-        isUpdatingRef.current = false;
       } catch (error) {
         console.error("Error initializing editor with markdown:", error);
         setIsInitialized(true);
-        isUpdatingRef.current = false;
       }
     };
 
     initializeContent();
-  }, [editor, initialContent]);
+  }, [editor, initialContent, isInitialized]);
 
-  // Handle content changes
+  // Handle content changes from USER TYPING
   useEffect(() => {
     if (!onChangeRef.current || !editable || !editor || !isInitialized) return;
 
     const handleChange = () => {
-      // Don't trigger onChange during initialization/updates
-      if (isUpdatingRef.current) return;
+      // Mark that user is typing (prevents re-initialization)
+      isUserTypingRef.current = true;
 
       try {
         // Convert blocks back to markdown
         const markdown = editor.blocksToMarkdownLossy(editor.document);
 
         // Only call onChange if content actually changed
-        if (markdown !== lastContentRef.current) {
+        if (markdown !== lastExternalContentRef.current) {
           onChangeRef.current?.(markdown);
         }
       } catch (error) {
         console.error("Error converting blocks to markdown:", error);
       }
+
+      // Reset typing flag after short delay
+      setTimeout(() => {
+        isUserTypingRef.current = false;
+      }, 100);
     };
 
     // Subscribe to editor changes

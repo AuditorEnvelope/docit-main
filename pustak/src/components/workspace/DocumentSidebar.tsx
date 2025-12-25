@@ -48,19 +48,11 @@ export function DocumentSidebar({ orgId, repoId, onPageSelect }: DocumentSidebar
 
   return (
     <div className="h-full flex flex-col bg-slate-950/50 border-r border-slate-800/50">
-      {/* Minimal Header */}
+      {/* Minimal Header - No Search */}
       <div className="p-4 border-b border-slate-800/50">
-        {/* Search */}
-        <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search docs..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm bg-slate-900/50 border border-slate-800/50 rounded-lg text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-slate-700 focus:bg-slate-900/70 transition"
-          />
-        </div>
+        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+          Pages
+        </h2>
       </div>
 
       {/* Document Tree */}

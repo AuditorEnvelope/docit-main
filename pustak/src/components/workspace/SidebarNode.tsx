@@ -12,8 +12,9 @@
 'use client';
 
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { FileNode, useWorkspaceStore } from '@/stores/useWorkspaceStore';
-import { ChevronRight, FileText, Folder, FolderOpen, MoreVertical } from 'lucide-react';
+import { ChevronRight, MoreVertical } from 'lucide-react';
 
 interface SidebarNodeProps {
   node: FileNode;
@@ -116,27 +117,33 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
   };
 
   const handleAddPage = () => {
-    const parentId = isFolder ? node.id : node.parentId;
-    addNode(parentId, 'page');
-    setShowContextMenu(false);
-    
-    // Auto-expand parent folder
     if (isFolder) {
+      // Adding inside folder - no afterNodeId
+      addNode(node.id, 'page');
+      // Auto-expand parent folder
       if (!isExpanded) {
         toggleFolder(node.id);
       }
+    } else {
+      // Adding below a page - pass current node ID as afterNodeId
+      addNode(node.parentId, 'page', node.id);
     }
+    setShowContextMenu(false);
   };
 
   const handleAddFolder = () => {
-    const parentId = isFolder ? node.id : node.parentId;
-    addNode(parentId, 'folder');
-    setShowContextMenu(false);
-    
-    // Auto-expand parent folder
-    if (isFolder && !isExpanded) {
-      toggleFolder(node.id);
+    if (isFolder) {
+      // Adding inside folder - no afterNodeId
+      addNode(node.id, 'folder');
+      // Auto-expand parent folder
+      if (!isExpanded) {
+        toggleFolder(node.id);
+      }
+    } else {
+      // Adding below a page - pass current node ID as afterNodeId
+      addNode(node.parentId, 'folder', node.id);
     }
+    setShowContextMenu(false);
   };
 
   const handleRename = () => {
@@ -159,54 +166,63 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
 
   // ========== RENDER ==========
 
-  const indentPadding = level * 16; // 16px per level
+  const baseIndent = 12; // Base left padding
+  const levelIndent = level * 20; // 20px per nesting level
+  const totalIndent = baseIndent + levelIndent;
 
   return (
     <div className="select-none">
-      {/* Node Row */}
+      {/* Node Row - Notion Style (Typography over Icons) */}
       <div
         className={`
-          group relative flex items-center gap-2 px-3 py-2 cursor-pointer
-          hover:bg-slate-800/60 transition-colors
-          ${isActive ? 'bg-blue-500/20 border-l-2 border-blue-400' : ''}
-          ${node.isTempNode ? 'opacity-70' : ''}
+          group relative flex items-center gap-2 py-1.5 cursor-pointer
+          transition-colors duration-150
+          ${
+            isActive
+              ? 'bg-gray-100 dark:bg-slate-800/40'
+              : 'hover:bg-gray-50 dark:hover:bg-slate-800/20'
+          }
+          ${node.isTempNode ? 'opacity-60' : ''}
         `}
-        style={{ paddingLeft: `${indentPadding + 12}px` }}
+        style={{ paddingLeft: `${totalIndent}px` }}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
       >
-        {/* Expand/Collapse Icon (Folders Only) */}
+        {/* Active Indicator Pill - Absolute Left Edge */}
+        {isActive && (
+          <div className="absolute left-0 top-1 bottom-1 w-1 bg-blue-500 rounded-r-full" />
+        )}
+
+        {/* Guide Line for Nested Items */}
+        {level > 0 && (
+          <div
+            className="absolute top-0 bottom-0 border-l border-gray-200 dark:border-slate-700/50 pointer-events-none z-0"
+            style={{ left: `${baseIndent + (level - 1) * 20}px` }}
+          />
+        )}
+
+        {/* Expand/Collapse Button (Folders Only) */}
         {isFolder && (
           <button
-            className="shrink-0 hover:bg-slate-700 rounded p-0.5 transition"
+            className="shrink-0 w-5 h-5 flex items-center justify-center hover:bg-slate-700/50 rounded transition"
             onClick={(e) => {
               e.stopPropagation();
               toggleFolder(node.id);
             }}
           >
             <ChevronRight
-              className={`w-4 h-4 text-slate-400 transition-transform ${
+              className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-200 ${
                 isExpanded ? 'rotate-90' : ''
               }`}
             />
           </button>
         )}
 
-        {/* Icon */}
-        <div className="shrink-0">
-          {isFolder ? (
-            isExpanded ? (
-              <FolderOpen className="w-4 h-4 text-blue-400" />
-            ) : (
-              <Folder className="w-4 h-4 text-slate-400" />
-            )
-          ) : (
-            <FileText className="w-4 h-4 text-slate-400" />
-          )}
-        </div>
+        {/* Spacer for pages (no chevron) */}
+        {!isFolder && <div className="w-5" />}
 
-        {/* Title (Editable) */}
+        {/* Title - Typography Hierarchy (NO ICONS) */}
         <div className="flex-1 min-w-0">
           {isEditing ? (
             <input
@@ -217,16 +233,24 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
               onBlur={handleRenameSubmit}
               onKeyDown={handleRenameKeyDown}
               className="
-                w-full bg-slate-900 border border-blue-400 rounded px-2 py-1
-                text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500
+                w-full bg-white dark:bg-slate-800
+                border border-blue-400 rounded px-2 py-1
+                text-sm text-gray-900 dark:text-white
+                focus:outline-none focus:ring-2 focus:ring-blue-500
               "
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
             <span
               className={`
-                block truncate text-sm
-                ${isActive ? 'text-white font-medium' : 'text-slate-300'}
+                block truncate text-sm transition-colors
+                ${
+                  isFolder
+                    ? 'font-semibold text-gray-900 dark:text-slate-100'
+                    : 'font-normal text-gray-700 dark:text-slate-300'
+                }
+                ${isActive ? 'text-gray-900 dark:text-white' : ''}
+                ${level === 0 && isFolder ? 'text-base' : ''}
                 ${node.isTempNode ? 'italic' : ''}
               `}
             >
@@ -235,18 +259,11 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
           )}
         </div>
 
-        {/* Temp Badge */}
-        {node.isTempNode && (
-          <span className="shrink-0 text-xs text-amber-400 px-1.5 py-0.5 bg-amber-500/10 rounded">
-            New
-          </span>
-        )}
-
-        {/* Context Menu Button */}
+        {/* Context Menu Button - Show on Hover */}
         <button
           className="
             shrink-0 opacity-0 group-hover:opacity-100 transition-opacity
-            hover:bg-slate-700 rounded p-1
+            hover:bg-slate-700/50 rounded p-1
           "
           onClick={(e) => {
             e.stopPropagation();
@@ -257,13 +274,13 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
         </button>
       </div>
 
-      {/* Context Menu */}
-      {showContextMenu && (
+      {/* Context Menu - Rendered via Portal */}
+      {showContextMenu && createPortal(
         <div
           ref={contextMenuRef}
           className="
-            fixed z-50 bg-slate-800 border border-slate-700 rounded-lg shadow-xl
-            py-1 min-w-[180px]
+            fixed z-[100] bg-slate-800 border border-slate-700 rounded-lg shadow-2xl
+            py-2 min-w-[200px] overflow-hidden
           "
           style={{
             left: `${contextMenuPosition.x}px`,
@@ -283,7 +300,8 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
           <ContextMenuItem onClick={handleDelete} variant="danger">
             Delete
           </ContextMenuItem>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Recursive Children (Only if folder and expanded) */}

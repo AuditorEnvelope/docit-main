@@ -46,12 +46,11 @@ export interface ContentCache {
 export interface SyncPayload {
   treeStructure: FileNode;
   modifiedFiles: {
-    pageId: string;
-    path: string;
+    path: string; // Full file path (e.g., "dev/architecture/current.md")
     content: string;
-    action: 'create' | 'update' | 'delete';
+    action: 'create' | 'update';
   }[];
-  deletedNodes: string[]; // IDs of deleted pages/folders
+  deletedNodes: string[]; // File paths to delete
   tempIdMapping?: { [tempId: string]: string }; // Map temp IDs to real IDs after sync
 }
 
@@ -61,8 +60,8 @@ export interface WorkspaceState {
   contentCache: ContentCache;
   activePageId: string | null;
   pendingChanges: Set<string>; // Page IDs with unsaved content
-  structureDirty: boolean; // True if tree was modified
-  deletedQueue: Set<string>; // IDs to delete on sync
+  structureDirty: boolean; // True if tree was modified (add/delete/move/rename)
+  deletedPaths: Set<string>; // File paths to delete on sync
   isSyncing: boolean;
   lastSyncTime: number | null;
   
@@ -73,7 +72,7 @@ export interface WorkspaceState {
   
   // Tree Structure Actions (Instant, No Backend)
   initializeTree: (tree: FileNode) => void;
-  addNode: (parentId: string | null, type: NodeType) => string; // Returns temp ID
+  addNode: (parentId: string | null, type: NodeType, afterNodeId?: string) => string; // Returns temp ID
   deleteNode: (nodeId: string) => void;
   moveNode: (dragId: string, dropId: string, position: 'before' | 'after' | 'inside') => void;
   renameNode: (nodeId: string, newTitle: string) => void;
@@ -104,6 +103,75 @@ export interface WorkspaceState {
 
 function generateTempId(): string {
   return `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+/**
+ * Get the file path for a node to use in Git operations
+ * - For existing nodes: use the stored path field
+ * - For new nodes (temp IDs): build path from tree structure
+ */
+function getNodeFilePath(tree: FileNode, nodeId: string, repoId?: string): string | null {
+  // Find the node first
+  const node = findNodeRecursive(tree, nodeId);
+  if (!node) return null;
+  
+  // If node has a path already (loaded from backend), use it
+  if (node.path) {
+    return node.path;
+  }
+  
+  // For new nodes, build the path
+  // We need to traverse from root to build: {repoId}/docs/path/to/file.md
+  const pathParts: string[] = [];
+  let current: FileNode | null = node;
+  
+  // Traverse up to root, collecting titles
+  while (current && current.id !== 'root') {
+    if (current.type === 'page') {
+      pathParts.unshift(`${current.title}.md`);
+    } else {
+      pathParts.unshift(current.title);
+    }
+    
+    // Find parent
+    if (current.parentId) {
+      current = findNodeRecursive(tree, current.parentId);
+    } else {
+      break;
+    }
+  }
+  
+  // For new nodes, we need repoId to build full path
+  // Since we don't have it here, return relative path and let sync handle it
+  return pathParts.join('/');
+}
+
+/**
+ * Collect all file paths under a node (for folder deletion)
+ * Must build from tree root to get full paths
+ */
+function collectAllPathsFromTree(tree: FileNode, node: FileNode): string[] {
+  const paths: string[] = [];
+  
+  function collectRecursive(n: FileNode): void {
+    if (n.type === 'page') {
+      const path = getNodeFilePath(tree, n.id);
+      if (path) paths.push(path);
+    } else if (n.children.length === 0) {
+      // Empty folder - track .gitkeep
+      const path = getNodeFilePath(tree, n.id);
+      if (path) {
+        // Add .gitkeep to folder path
+        paths.push(`${path}/.gitkeep`);
+      }
+    } else {
+      // Folder with children
+      n.children.forEach(collectRecursive);
+    }
+  }
+  
+  collectRecursive(node);
+  return paths;
 }
 
 function findNodeRecursive(node: FileNode | null, targetId: string): FileNode | null {
@@ -149,10 +217,24 @@ function removeNodeRecursive(node: FileNode, targetId: string): FileNode | null 
 function insertNodeInTree(
   tree: FileNode,
   parentId: string | null,
-  newNode: FileNode
+  newNode: FileNode,
+  afterNodeId?: string
 ): FileNode {
   if (parentId === null || tree.id === parentId) {
     // Add to root or this node's children
+    if (afterNodeId) {
+      // Find the position after the specified node
+      const afterIndex = tree.children.findIndex(child => child.id === afterNodeId);
+      if (afterIndex !== -1) {
+        const newChildren = [...tree.children];
+        newChildren.splice(afterIndex + 1, 0, newNode);
+        return {
+          ...tree,
+          children: newChildren
+        };
+      }
+    }
+    // Default: append to end
     return {
       ...tree,
       children: [...tree.children, newNode]
@@ -161,7 +243,7 @@ function insertNodeInTree(
   
   return {
     ...tree,
-    children: tree.children.map(child => insertNodeInTree(child, parentId, newNode))
+    children: tree.children.map(child => insertNodeInTree(child, parentId, newNode, afterNodeId))
   };
 }
 
@@ -179,7 +261,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         activePageId: null,
         pendingChanges: new Set(),
         structureDirty: false,
-        deletedQueue: new Set(),
+        deletedPaths: new Set(),
         isSyncing: false,
         lastSyncTime: null,
         expandedFolders: new Set<string>(),
@@ -190,7 +272,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           set({ fileTree: tree, structureDirty: false });
         },
         
-        addNode: (parentId, type) => {
+        addNode: (parentId, type, afterNodeId) => {
           const tempId = generateTempId();
           const newNode: FileNode = {
             id: tempId,
@@ -208,9 +290,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           set((state) => {
             if (!state.fileTree) return state;
             
-            const updatedTree = insertNodeInTree(state.fileTree, parentId, newNode);
+            const updatedTree = insertNodeInTree(state.fileTree, parentId, newNode, afterNodeId);
             
-            // If it's a page, initialize content cache
+            // For pages: initialize content cache and mark as pending
             if (type === 'page') {
               return {
                 fileTree: updatedTree,
@@ -228,6 +310,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               };
             }
             
+            // For folders: just mark structure as dirty
+            // The folder will be represented by .gitkeep or by its children's paths
             return {
               fileTree: updatedTree,
               structureDirty: true,
@@ -244,18 +328,44 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           set((state) => {
             if (!state.fileTree) return state;
             
+            // Get the node before deletion to collect its paths
+            const nodeToDelete = findNodeRecursive(state.fileTree, nodeId);
+            if (!nodeToDelete) return state;
+            
+            // Collect all file paths that need to be deleted (with full paths from root)
+            const pathsToDelete = collectAllPathsFromTree(state.fileTree, nodeToDelete);
+            
             const updatedTree = removeNodeRecursive(state.fileTree, nodeId);
             if (!updatedTree) return state;
             
             // Clean up content cache for deleted pages
             const newContentCache = { ...state.contentCache };
-            delete newContentCache[nodeId];
+            const newPendingChanges = new Set(state.pendingChanges);
+            
+            // Remove from cache and pending changes
+            if (nodeToDelete.type === 'page') {
+              delete newContentCache[nodeId];
+              newPendingChanges.delete(nodeId);
+            }
+            
+            // Recursively clean cache for folder children
+            function cleanCache(node: FileNode) {
+              if (node.type === 'page') {
+                delete newContentCache[node.id];
+                newPendingChanges.delete(node.id);
+              }
+              node.children.forEach(cleanCache);
+            }
+            if (nodeToDelete.type === 'folder') {
+              nodeToDelete.children.forEach(cleanCache);
+            }
             
             return {
               fileTree: updatedTree,
               structureDirty: true,
-              deletedQueue: new Set([...state.deletedQueue, nodeId]),
+              deletedPaths: new Set([...state.deletedPaths, ...pathsToDelete]),
               contentCache: newContentCache,
+              pendingChanges: newPendingChanges,
               activePageId: state.activePageId === nodeId ? null : state.activePageId
             };
           });
@@ -313,7 +423,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           set((state) => {
             if (!state.fileTree) return state;
             
-            const updatedTree = insertNodeInTree(state.fileTree, node.parentId, duplicatedNode);
+            const updatedTree = insertNodeInTree(state.fileTree, node.parentId, duplicatedNode, nodeId);
             
             // Copy content if it's a page
             if (node.type === 'page' && state.contentCache[nodeId]) {
@@ -412,23 +522,65 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           set({ isSyncing: true });
           
           try {
-            // Build sync payload
-            const modifiedFiles = Array.from(state.pendingChanges).map(pageId => {
+            // Build list of modified files (pages with content changes)
+            const modifiedFiles: { path: string; content: string; action: 'create' | 'update' }[] = [];
+            
+            // Process pages with content changes
+            for (const pageId of state.pendingChanges) {
               const cached = state.contentCache[pageId];
               const node = state.getNodeById(pageId);
               
-              return {
-                pageId,
-                path: node?.path || `docs/${node?.title || 'untitled'}.md`,
+              if (!node || node.type !== 'page') continue;
+              
+              // Get file path - will use node.path if exists, or build for new nodes
+              let filePath = getNodeFilePath(state.fileTree, pageId);
+              if (!filePath) continue;
+              
+              // For new nodes (temp IDs), prefix with {repoId}/docs/
+              if (node.isTempNode && !filePath.startsWith(`${repoId}/docs/`)) {
+                filePath = `${repoId}/docs/${filePath}`;
+              }
+              
+              modifiedFiles.push({
+                path: filePath,
                 content: cached?.content || '',
-                action: node?.isTempNode ? 'create' : 'update' as const
-              };
-            });
+                action: node.isTempNode ? 'create' : 'update'
+              });
+            }
+            
+            // If tree structure changed, collect .gitkeep files for empty folders
+            if (state.structureDirty) {
+              function collectEmptyFolders(node: FileNode): void {
+                if (node.type === 'folder' && node.children.length === 0 && node.id !== 'root') {
+                  // Get folder path
+                  let folderPath = getNodeFilePath(state.fileTree, node.id);
+                  if (!folderPath) return;
+                  
+                  // For new folders, prefix with {repoId}/docs/
+                  if (node.isTempNode && !folderPath.startsWith(`${repoId}/docs/`)) {
+                    folderPath = `${repoId}/docs/${folderPath}`;
+                  }
+                  
+                  modifiedFiles.push({
+                    path: `${folderPath}/.gitkeep`,
+                    content: '',
+                    action: node.isTempNode ? 'create' : 'update'
+                  });
+                }
+                
+                // Recursively check children
+                for (const child of node.children) {
+                  collectEmptyFolders(child);
+                }
+              }
+              
+              collectEmptyFolders(state.fileTree);
+            }
             
             const payload: SyncPayload = {
               treeStructure: state.fileTree,
               modifiedFiles,
-              deletedNodes: Array.from(state.deletedQueue)
+              deletedNodes: Array.from(state.deletedPaths)
             };
             
             // Default commit message
@@ -489,7 +641,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
                   contentCache: updatedCache,
                   pendingChanges: new Set(),
                   structureDirty: false,
-                  deletedQueue: new Set(),
+                  deletedPaths: new Set(),
                   isSyncing: false,
                   lastSyncTime: Date.now()
                 };
@@ -499,7 +651,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               set({
                 pendingChanges: new Set(),
                 structureDirty: false,
-                deletedQueue: new Set(),
+                deletedPaths: new Set(),
                 isSyncing: false,
                 lastSyncTime: Date.now()
               });
@@ -516,7 +668,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           set({
             pendingChanges: new Set(),
             structureDirty: false,
-            deletedQueue: new Set()
+            deletedPaths: new Set()
           });
         },
         
@@ -555,8 +707,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         
         hasUnsavedChanges: () => {
           const state = get();
-          return state.pendingChanges.size > 0 || state.structureDirty || state.deletedQueue.size > 0;
-        }
+          return state.pendingChanges.size > 0 || state.structureDirty || state.deletedPaths.size > 0;
+        },
       }),
       {
         name: 'workspace-storage',

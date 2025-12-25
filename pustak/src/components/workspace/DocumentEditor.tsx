@@ -46,6 +46,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
   const [isCommitting, setIsCommitting] = useState(false);
   const lastSavedRef = useRef<string>('');
   const editorKeyRef = useRef<string>('');
+  const lastLoadedPageRef = useRef<string>(''); // Track which page was last loaded
 
   const activePage = activePageId ? getNodeById(activePageId) : null;
   const cachedContent = activePageId ? contentCache[activePageId] : null;
@@ -61,8 +62,15 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
     [updateContent]
   );
 
-  // Load content when active page changes
+  // Load content when active page changes (NOT when content changes)
   useEffect(() => {
+    // Skip if we've already loaded this page
+    if (lastLoadedPageRef.current === activePageId) {
+      return;
+    }
+
+    lastLoadedPageRef.current = activePageId;
+
     if (activePageId && cachedContent) {
       const content = cachedContent.content || '';
       setEditorContent(content);
@@ -169,50 +177,9 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
   const changeCount = pendingChanges.size + (structureDirty ? 1 : 0);
 
   return (
-    <div className="h-full flex flex-col bg-slate-950">
-      {/* Minimal Header - GitBook Style */}
-      <div className="flex-shrink-0 border-b border-slate-800/50 bg-slate-900/30 backdrop-blur-sm">
-        <div className="px-6 py-3 flex items-center justify-between">
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-semibold text-white truncate">
-              {activePage.title}
-            </h1>
-            <p className="text-xs text-slate-400 mt-0.5 truncate">
-              {activePage.path || 'Untitled document'}
-            </p>
-          </div>
-
-          {/* Status & Actions */}
-          <div className="flex items-center gap-3 ml-4">
-            {isSaving && (
-              <span className="flex items-center gap-2 text-xs text-slate-400">
-                <Clock className="w-3.5 h-3.5 animate-pulse" />
-                Saving...
-              </span>
-            )}
-            
-            {!isSaving && hasChanges && (
-              <button
-                onClick={() => setIsCommitModalOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-1.5 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition shadow-lg shadow-blue-500/20"
-              >
-                <Save className="w-3.5 h-3.5" />
-                Save Changes {changeCount > 0 && `(${changeCount})`}
-              </button>
-            )}
-
-            {!isSaving && !hasChanges && (
-              <span className="flex items-center gap-2 text-xs text-emerald-400">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Saved
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Editor Area */}
-      <div className="flex-1 overflow-hidden bg-slate-950">
+    <div className="h-full flex flex-col">
+      {/* Editor Content - Centered "Paper" Style */}
+      <div className="flex-1 bg-slate-950">
         {isLoading ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center text-slate-400">
@@ -221,13 +188,13 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
             </div>
           </div>
         ) : (
-          <div className="h-full w-full max-w-4xl mx-auto px-8 py-8">
+          <div className="max-w-3xl mx-auto px-8 py-12">
             <BlockNoteEditor
               key={editorKeyRef.current || activePageId}
               initialContent={editorContent}
               onChange={handleContentChange}
               editable={true}
-              className="h-full"
+              className="min-h-screen"
             />
           </div>
         )}
