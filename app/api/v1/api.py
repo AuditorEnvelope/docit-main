@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 # Import all endpoint routers
 from .endpoints import (
@@ -15,6 +15,7 @@ from .endpoints import (
     webhooks,
 )
 from app.webhooks.github import router as github_webhook_router
+from app.webhooks.razorpay import router as razorpay_webhook_router
 
 # Create main API router
 api_router = APIRouter()
@@ -88,6 +89,17 @@ api_router.include_router(
     tags=["Webhooks"],
     responses={
         202: {"description": "Webhook accepted for processing"},
+        400: {"description": "Invalid request"},
+        401: {"description": "Unauthorized"},
+        500: {"description": "Internal server error"}
+    },
+)
+api_router.include_router(
+    razorpay_webhook_router,
+    prefix="/razorpay",
+    tags=["Webhooks"],
+    responses={
+        200: {"description": "Webhook processed"},
         400: {"description": "Invalid request"},
         401: {"description": "Unauthorized"},
         500: {"description": "Internal server error"}

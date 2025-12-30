@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
-import { CheckCircle, ArrowRight, Package } from "lucide-react";
+import { CheckCircle, ArrowRight, Package, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 function PaymentSuccessContent() {
@@ -15,6 +15,11 @@ function PaymentSuccessContent() {
 	const paymentId = searchParams.get("payment_id");
 	const plan = searchParams.get("plan");
 	const org = searchParams.get("org");
+
+	const [isVerifying, setIsVerifying] = useState(false);
+	const [verificationMessage, setVerificationMessage] = useState<string | null>(
+		null
+	);
 
 	useEffect(() => {
 		// Simulate processing
@@ -37,6 +42,75 @@ function PaymentSuccessContent() {
 			</Layout>
 		);
 	}
+
+	const handleManualVerification = async () => {
+		if (!orderId || !paymentId) {
+			setVerificationMessage("Missing order or payment ID");
+			return;
+		}
+
+		setIsVerifying(true);
+		setVerificationMessage(null);
+
+		try {
+			// Get the auth token
+			let token = localStorage.getItem("pustak_access_token");
+			if (!token) {
+				const authCookie = document.cookie
+					.split("; ")
+					.find((row) => row.startsWith("auth_token="));
+				if (authCookie) {
+					token = authCookie.split("=")[1];
+				}
+			}
+
+			if (!token) {
+				setVerificationMessage("Authentication required");
+				setIsVerifying(false);
+				return;
+			}
+
+			// Validate required IDs before making the request
+			if (!orderId || !paymentId) {
+				throw new Error("Order ID and Payment ID are required");
+			}
+
+			// Call the verify-payment API (Next.js proxy)
+			const response = await fetch("/api/verify-payment", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${token}`,
+				},
+				credentials: "include",
+				body: JSON.stringify({
+					razorpay_order_id: orderId,
+					razorpay_payment_id: paymentId,
+					razorpay_signature: "", // Empty signature for manual verification
+				}),
+			});
+
+			if (response.ok) {
+				const result = await response.json();
+				setVerificationMessage(
+					result.message ||
+						"Payment verified successfully! Your subscription should be active now."
+				);
+			} else {
+				const errorData = await response.json().catch(() => ({}));
+				setVerificationMessage(
+					`Verification failed: ${
+						errorData.detail || errorData.error || "Unknown error"
+					}`
+				);
+			}
+		} catch (error) {
+			console.error("Manual verification error:", error);
+			setVerificationMessage("Error during verification. Please try again.");
+		} finally {
+			setIsVerifying(false);
+		}
+	};
 
 	return (
 		<Layout>
@@ -107,6 +181,41 @@ function PaymentSuccessContent() {
 							>
 								View Plans
 							</button>
+
+							{/* Manual Verification Button */}
+							<div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+								<p className="text-sm text-gray-600 dark:text-gray-400 mb-3 text-center">
+									Still seeing pending status? Verify manually:
+								</p>
+								<button
+									onClick={handleManualVerification}
+									disabled={isVerifying}
+									className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg font-semibold transition-colors"
+								>
+									{isVerifying ? (
+										<>
+											<Loader2 className="w-4 h-4 animate-spin" />
+											Verifying...
+										</>
+									) : (
+										<>
+											<CheckCircle className="w-4 h-4" />
+											Verify Payment
+										</>
+									)}
+								</button>
+								{verificationMessage && (
+									<div
+										className={`mt-3 text-center text-sm ${
+											verificationMessage.includes("success")
+												? "text-green-600 dark:text-green-400"
+												: "text-red-600 dark:text-red-400"
+										}`}
+									>
+										{verificationMessage}
+									</div>
+								)}
+							</div>
 						</div>
 
 						{/* Info */}

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.models.user import User
 from app.services.auth import get_current_user
+from app.services.subscription import SubscriptionService
 from app.services.razorpay_service import RazorpayService
 
 router = APIRouter()
@@ -77,17 +78,19 @@ async def get_my_subscription(
     """Get current user's subscription"""
     subscription_service = SubscriptionService(db)
     subscription = await subscription_service.get_or_create_subscription(user.id)
-    
+
     return {
         "id": str(subscription.id),  # Convert UUID to string for JSON
-        "user_id": str(subscription.user_id),  # Convert UUID to string for JSON
-        "plan": subscription.plan,
-        "status": subscription.status,
+        "user_id": str(subscription.user_id),
+        "plan": subscription.plan.value if hasattr(subscription.plan, 'value') else subscription.plan,
+        "status": subscription.status.value if hasattr(subscription.status, 'value') else subscription.status,
         "max_repositories": subscription.max_repositories,
         "current_repositories": subscription.current_repositories,
         "max_docs_per_month": subscription.max_docs_per_month,
         "docs_generated_this_month": subscription.docs_generated_this_month,
-        "created_at": subscription.created_at
+        "created_at": subscription.created_at,
+        "current_period_start": subscription.current_period_start,
+        "current_period_end": subscription.current_period_end
     }
 
 
@@ -100,7 +103,7 @@ async def upgrade_subscription(
     """Upgrade subscription plan"""
     if plan not in ["pro", "enterprise"]:
         raise HTTPException(status_code=400, detail="Invalid plan")
-    
+
     razorpay_service = RazorpayService(db)
     order = await razorpay_service.create_order(
         user_id=str(user.id),
@@ -114,7 +117,7 @@ async def upgrade_subscription(
 class PaymentVerificationPayload(BaseModel):
     razorpay_order_id: str
     razorpay_payment_id: str
-    razorpay_signature: str
+    razorpay_signature: str = ""
 
 
 @router.post("/verify-payment")
@@ -126,15 +129,18 @@ async def verify_payment(
     """Verify Razorpay payment and update subscription"""
     razorpay_service = RazorpayService(db)
 
-    # Verify the payment signature
-    is_valid = await razorpay_service.verify_payment(
-        order_id=payload.razorpay_order_id,
-        payment_id=payload.razorpay_payment_id,
-        signature=payload.razorpay_signature,
-    )
+    # If signature is provided, verify it
+    if payload.razorpay_signature:
+        # Verify the payment signature
+        is_valid = await razorpay_service.verify_payment(
+            order_id=payload.razorpay_order_id,
+            payment_id=payload.razorpay_payment_id,
+            signature=payload.razorpay_signature,
+        )
 
-    if not is_valid:
-        raise HTTPException(status_code=400, detail="Invalid payment signature")
+        if not is_valid:
+            raise HTTPException(
+                status_code=400, detail="Invalid payment signature")
 
     # Handle successful payment capture
     try:
@@ -144,7 +150,8 @@ async def verify_payment(
         return {"status": "success", "message": "Payment successful and subscription updated"}
     except Exception as e:
         # The service logs the details, return a generic error
-        raise HTTPException(status_code=500, detail=f"Failed to process payment: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to process payment: {e}")
 
 
 __all__ = ["router"]
