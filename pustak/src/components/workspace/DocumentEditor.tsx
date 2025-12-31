@@ -17,7 +17,10 @@ import {
   AlertCircle, 
   Loader2,
   CheckCircle2,
-  FileText
+  FileText,
+  Sparkles,
+  ArrowRight,
+  BookOpen
 } from 'lucide-react';
 import { debounce } from '@/lib/utils';
 
@@ -46,7 +49,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
   const [isCommitting, setIsCommitting] = useState(false);
   const lastSavedRef = useRef<string>('');
   const editorKeyRef = useRef<string>('');
-  const lastLoadedPageRef = useRef<string>(''); // Track which page was last loaded
+  const lastLoadedPageRef = useRef<string | null>(''); // Track which page was last loaded
 
   const activePage = activePageId ? getNodeById(activePageId) : null;
   const cachedContent = activePageId ? contentCache[activePageId] : null;
@@ -62,74 +65,104 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
     [updateContent]
   );
 
-  // Load content when active page changes (NOT when content changes)
+  // Load content when active page changes OR when cache is updated (for revert)
   useEffect(() => {
-    // Skip if we've already loaded this page
-    if (lastLoadedPageRef.current === activePageId) {
-      return;
-    }
-
-    lastLoadedPageRef.current = activePageId;
-
-    if (activePageId && cachedContent) {
-      const content = cachedContent.content || '';
-      setEditorContent(content);
-      lastSavedRef.current = content;
-      editorKeyRef.current = `${activePageId}-${Date.now()}`;
-      setIsLoading(false);
-    } else if (activePageId && activePage) {
-      setIsLoading(true);
-      const fetchContent = async () => {
-        if (!activePage.path) {
-          setEditorContent('');
-          setIsLoading(false);
-          return;
-        }
-        
-        try {
-          const token = localStorage.getItem('pustak_access_token');
-          if (!token) {
-            setEditorContent('');
-            setIsLoading(false);
-            return;
-          }
-          
-          const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-          const baseUrl = BACKEND_URL.includes('/api/v1') ? BACKEND_URL : `${BACKEND_URL}/api/v1`;
-          const url = `${baseUrl}/workspace/${orgId}/${repoId}/page?path=${encodeURIComponent(activePage.path)}`;
-          
-          const response = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${token}` },
-          });
-          
-          if (!response.ok) {
-            setEditorContent('');
-            setIsLoading(false);
-            return;
-          }
-          
-          const data = await response.json();
-          const content = data.content || '';
-          loadPageContent(activePageId, content);
-          setEditorContent(content);
-          lastSavedRef.current = content;
-          editorKeyRef.current = `${activePageId}-${Date.now()}`;
-          setIsLoading(false);
-        } catch (error) {
-          console.error('[DocumentEditor] Error fetching content:', error);
-          setEditorContent('');
-          setIsLoading(false);
-        }
-      };
-      
-      fetchContent();
-    } else {
+    if (!activePageId) {
       setEditorContent('');
       lastSavedRef.current = '';
       editorKeyRef.current = '';
       setIsLoading(false);
+      return;
+    }
+
+    // Page changed - always load
+    if (lastLoadedPageRef.current !== activePageId) {
+      lastLoadedPageRef.current = activePageId;
+    }
+
+    // If we have cached content, use it
+    if (cachedContent) {
+      const content = cachedContent.content || '';
+      // Only update if content actually changed (prevents unnecessary re-renders)
+      if (content !== lastSavedRef.current) {
+        setEditorContent(content);
+        lastSavedRef.current = content;
+        editorKeyRef.current = `${activePageId}-${Date.now()}`;
+      }
+      setIsLoading(false);
+      return;
+    }
+
+    // No cache - fetch from server
+    if (activePage) {
+        setIsLoading(true);
+        const fetchContent = async () => {
+          if (!activePage.path) {
+            setEditorContent('');
+            setIsLoading(false);
+            return;
+          }
+          
+          try {
+            const token = localStorage.getItem('pustak_access_token');
+            if (!token) {
+              setEditorContent('');
+              setIsLoading(false);
+              return;
+            }
+            
+            const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+            const baseUrl = BACKEND_URL.includes('/api/v1') ? BACKEND_URL : `${BACKEND_URL}/api/v1`;
+            const url = `${baseUrl}/workspace/${orgId}/${repoId}/page?path=${encodeURIComponent(activePage.path)}`;
+            
+            const response = await fetch(url, {
+              headers: { 'Authorization': `Bearer ${token}` },
+            });
+            
+            if (!response.ok) {
+              setEditorContent('');
+              setIsLoading(false);
+              return;
+            }
+            
+            const data = await response.json();
+            const content = data.content || '';
+            loadPageContent(activePageId, content);
+            setEditorContent(content);
+            lastSavedRef.current = content;
+            editorKeyRef.current = `${activePageId}-${Date.now()}`;
+            setIsLoading(false);
+          } catch (error) {
+            console.error('[DocumentEditor] Error fetching content:', error);
+            setEditorContent('');
+            setIsLoading(false);
+          }
+        };
+        
+        fetchContent();
     }
   }, [activePageId, cachedContent, activePage, loadPageContent, orgId, repoId]);
+
+  // Separate effect to detect revert (cache content changed but not dirty)
+  useEffect(() => {
+    if (!activePageId || !cachedContent) return;
+    
+    // If cached content changed but is NOT dirty, it was reverted
+    const currentCachedContent = cachedContent.content || '';
+    const isReverted = 
+      lastSavedRef.current !== currentCachedContent && 
+      !cachedContent.isDirty &&
+      lastLoadedPageRef.current === activePageId; // Same page
+    
+    if (isReverted) {
+      // Only update if content actually changed (not empty to empty)
+      if (currentCachedContent !== lastSavedRef.current) {
+        setEditorContent(currentCachedContent);
+        lastSavedRef.current = currentCachedContent;
+        editorKeyRef.current = `${activePageId}-${Date.now()}`;
+      }
+    }
+  }, [activePageId, cachedContent]);
 
   // Handle content change
   const handleContentChange = useCallback((markdown: string) => {
@@ -162,13 +195,50 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
 
   if (!activePage) {
     return (
-      <div className="h-full flex items-center justify-center bg-slate-950">
-        <div className="text-center text-slate-400 max-w-md">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800/50 flex items-center justify-center">
-            <FileText className="w-8 h-8 text-slate-500" />
+      <div className="h-full flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+        <div className="text-center max-w-2xl px-6">
+          {/* Animated Icon */}
+          <div className="relative mx-auto mb-8">
+            <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full animate-pulse" />
+            <div className="relative w-24 h-24 mx-auto rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center ring-1 ring-blue-500/30">
+              <BookOpen className="w-12 h-12 text-blue-400" />
+            </div>
           </div>
-          <p className="text-lg font-medium mb-2">No document selected</p>
-          <p className="text-sm">Select a document from the sidebar to start editing</p>
+
+          {/* Welcome Text */}
+          <h2 className="text-3xl font-bold text-white mb-4 tracking-tight">
+            Welcome to Your Workspace
+          </h2>
+          <p className="text-lg text-slate-400 mb-8 leading-relaxed">
+            Select a document from the sidebar to start editing, or create a new one to begin documenting your project.
+          </p>
+
+          {/* Quick Tips */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-12">
+            <div className="group p-6 rounded-xl bg-slate-800/30 border border-slate-700/50 hover:border-blue-500/50 transition-all">
+              <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Sparkles className="w-5 h-5 text-blue-400" />
+              </div>
+              <h3 className="text-sm font-semibold text-white mb-2">Rich Editor</h3>
+              <p className="text-xs text-slate-400">Write with Markdown or use the visual editor</p>
+            </div>
+
+            <div className="group p-6 rounded-xl bg-slate-800/30 border border-slate-700/50 hover:border-emerald-500/50 transition-all">
+              <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-emerald-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              </div>
+              <h3 className="text-sm font-semibold text-white mb-2">Auto-Save</h3>
+              <p className="text-xs text-slate-400">Your changes are saved automatically</p>
+            </div>
+
+            <div className="group p-6 rounded-xl bg-slate-800/30 border border-slate-700/50 hover:border-purple-500/50 transition-all">
+              <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-purple-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <ArrowRight className="w-5 h-5 text-purple-400" />
+              </div>
+              <h3 className="text-sm font-semibold text-white mb-2">Quick Publish</h3>
+              <p className="text-xs text-slate-400">Commit and publish with one click</p>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -188,7 +258,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
             </div>
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto px-8 py-12">
+          <div className="max-w-4xl mx-auto px-6 py-8">
             <BlockNoteEditor
               key={editorKeyRef.current || activePageId}
               initialContent={editorContent}

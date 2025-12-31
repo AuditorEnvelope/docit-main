@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
-import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
+import { useWorkspaceStore, type FileNode } from '@/stores/useWorkspaceStore';
 import { DocumentSidebar } from './DocumentSidebar';
 import { DocumentEditor } from './DocumentEditor';
 import { SessionActivity } from './SessionActivity';
@@ -54,7 +54,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
   const getBreadcrumb = () => {
     if (!activePage) return [];
     const path = [];
-    let current = activePage;
+    let current: FileNode | null = activePage;
     while (current && current.id !== 'root') {
       path.unshift(current.title);
       if (current.parentId) {
@@ -109,10 +109,22 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
         console.log('[UnifiedWorkspace] Received tree data:', data);
         initializeTree(data.tree);
 
-        // Auto-select first page if available
-        if (data.tree?.children?.length > 0) {
-          const firstPage = data.tree.children.find((node: any) => node.type === 'page');
+        // Auto-select first page if available (recursively search)
+        const findFirstPage = (node: any): any => {
+          if (node.type === 'page') return node;
+          if (node.children && node.children.length > 0) {
+            for (const child of node.children) {
+              const found = findFirstPage(child);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+
+        if (data.tree) {
+          const firstPage = findFirstPage(data.tree);
           if (firstPage) {
+            console.log('[UnifiedWorkspace] Auto-selecting first page:', firstPage.title);
             setActivePageId(firstPage.id);
           }
         }
@@ -155,58 +167,58 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
     <div className="h-screen w-screen overflow-hidden bg-slate-950 flex flex-col">
       {/* Top Navigation Bar */}
       <header className="flex-shrink-0 z-50 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800/50">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center space-x-4">
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <div className="flex items-center space-x-3">
             <div className="flex items-center space-x-2">
-              <BookOpen className="w-6 h-6 text-blue-400" />
-              <h1 className="text-xl font-bold text-white">Pustak</h1>
-              <span className="text-xs bg-blue-900 text-blue-200 px-2 py-1 rounded-full">
+              <BookOpen className="w-5 h-5 text-blue-400" />
+              <h1 className="text-lg font-bold text-white">Pustak</h1>
+              <span className="text-[10px] bg-blue-900 text-blue-200 px-1.5 py-0.5 rounded-full">
                 Beta
               </span>
             </div>
 
             {/* Breadcrumb */}
             {breadcrumb.length > 0 && (
-              <div className="hidden md:flex items-center space-x-2 text-sm text-slate-400">
+              <div className="hidden md:flex items-center space-x-1.5 text-xs text-slate-400">
                 <span>/</span>
                 {breadcrumb.map((item, index) => (
                   <span key={index} className="flex items-center">
                     <span className={index === breadcrumb.length - 1 ? 'text-white font-medium' : ''}>
                       {item}
                     </span>
-                    {index < breadcrumb.length - 1 && <span className="mx-2">/</span>}
+                    {index < breadcrumb.length - 1 && <span className="mx-1.5">/</span>}
                   </span>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1.5">
             {/* Status Indicator */}
             {hasChanges && (
               <button
                 onClick={() => setIsCommitModalOpen(true)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition"
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition"
               >
-                <span className="w-2 h-2 bg-orange-400 rounded-full" />
+                <span className="w-1.5 h-1.5 bg-orange-400 rounded-full" />
                 Publish {changeCount > 0 && `(${changeCount})`}
               </button>
             )}
             {/* Search Button */}
             <button
-              className="flex items-center space-x-2 px-3 py-2 text-sm text-slate-400 border border-slate-700 rounded-md hover:bg-slate-800 transition-colors"
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-slate-400 border border-slate-700 rounded-md hover:bg-slate-800 transition-colors"
             >
-              <Search className="w-4 h-4" />
+              <Search className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Search docs...</span>
-              <kbd className="hidden sm:inline text-xs bg-slate-700 px-1 rounded">⌘K</kbd>
+              <kbd className="hidden sm:inline text-[10px] bg-slate-700 px-1 rounded">⌘K</kbd>
             </button>
 
             {/* Theme Toggle */}
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              className="p-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             >
-              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
             {/* User Menu */}
@@ -214,16 +226,16 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
               <div className="relative">
                 <button
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  className="flex items-center space-x-2 p-1 rounded-full hover:bg-slate-800 transition-colors"
+                  className="flex items-center space-x-1.5 p-0.5 rounded-full hover:bg-slate-800 transition-colors"
                 >
                   {user.avatar_url ? (
                     <img
                       src={user.avatar_url}
                       alt={user.name || user.username || 'User'}
-                      className="w-8 h-8 rounded-full border-2 border-blue-500"
+                      className="w-6 h-6 rounded-full border-2 border-blue-500"
                     />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-bold">
+                    <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold">
                       {(user.name || user.username || 'U')[0].toUpperCase()}
                     </div>
                   )}
@@ -236,17 +248,17 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                       className="fixed inset-0 z-40"
                       onClick={() => setUserMenuOpen(false)}
                     />
-                    <div className="absolute right-0 mt-2 w-64 bg-slate-800 rounded-lg shadow-xl border border-slate-700 z-50">
+                    <div className="absolute right-0 mt-2 w-56 bg-slate-800 rounded-lg shadow-xl border border-slate-700 z-50">
                       {/* User Info */}
-                      <div className="p-4 border-b border-slate-700">
-                        <p className="font-semibold text-white">
+                      <div className="p-3 border-b border-slate-700">
+                        <p className="font-semibold text-white text-sm">
                           {user.name || user.username}
                         </p>
-                        <p className="text-sm text-slate-400">
+                        <p className="text-xs text-slate-400">
                           {user.email || `@${user.username}`}
                         </p>
                         <div className="mt-2">
-                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
+                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
                             user.plan === 'free' ? 'bg-slate-700 text-slate-300' :
                             user.plan === 'pro' ? 'bg-blue-900/30 text-blue-400' :
                             user.plan === 'team' ? 'bg-purple-900/30 text-purple-400' :
@@ -259,13 +271,13 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                       </div>
 
                       {/* Menu Items */}
-                      <div className="py-2">
+                      <div className="py-1.5">
                         <button
                           onClick={() => {
                             setUserMenuOpen(false);
                             router.push('/dashboard');
                           }}
-                          className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
                         >
                           <User className="w-4 h-4" />
                           Dashboard
@@ -275,7 +287,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                             setUserMenuOpen(false);
                             router.push('/pricing');
                           }}
-                          className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
                         >
                           <Crown className="w-4 h-4" />
                           Upgrade Plan
@@ -285,7 +297,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                             setUserMenuOpen(false);
                             router.push('/settings');
                           }}
-                          className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
                         >
                           <Settings className="w-4 h-4" />
                           Settings
@@ -293,13 +305,13 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                       </div>
 
                       {/* Logout */}
-                      <div className="border-t border-slate-700 py-2">
+                      <div className="border-t border-slate-700 py-1.5">
                         <button
                           onClick={() => {
                             setUserMenuOpen(false);
                             logout();
                           }}
-                          className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:bg-red-900/20 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/20 transition-colors"
                         >
                           <LogOut className="w-4 h-4" />
                           Logout
@@ -324,7 +336,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
       {/* Workspace Content */}
       <div className="flex-1 relative">
         {/* Left Sidebar - Independent Scroll */}
-        <div className="fixed left-0 top-[57px] bottom-0 w-[280px] border-r border-slate-800/50 overflow-y-auto">
+        <div className="fixed left-0 top-[57px] bottom-0 w-[220px] border-r border-slate-800/50 overflow-y-auto">
           <DocumentSidebar
             orgId={orgId}
             repoId={repoId}
@@ -333,13 +345,13 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
         </div>
 
         {/* Center Editor - Independent Scroll (Leave space for right sidebar) */}
-        <div className="fixed left-[280px] right-[280px] top-[57px] bottom-0 overflow-y-auto">
+        <div className="fixed left-[220px] right-[280px] top-[57px] bottom-0 overflow-y-auto">
           <DocumentEditor orgId={orgId} repoId={repoId} />
         </div>
 
         {/* Right Sidebar - Session Activity (fixed to account for navbar) */}
         <div className="fixed right-0 top-[57px] bottom-0">
-          <SessionActivity />
+          <SessionActivity onPublishClick={() => setIsCommitModalOpen(true)} />
         </div>
       </div>
 
@@ -348,7 +360,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
         isOpen={isCommitModalOpen}
         onClose={() => setIsCommitModalOpen(false)}
         onCommit={handleCommit}
-        pageTitle={activePage?.title || 'Document'}
+        pageTitle={activePage?.title ?? 'Document'}
         isLoading={isCommitting}
       />
     </div>

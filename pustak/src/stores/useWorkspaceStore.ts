@@ -38,6 +38,7 @@ export interface FileNode {
 export interface ContentCache {
   [pageId: string]: {
     content: string; // Markdown content
+    originalContent?: string; // Original content from server (for revert)
     lastModified: number; // Timestamp
     isDirty: boolean; // Has unsaved changes
   };
@@ -62,6 +63,15 @@ export interface WorkspaceState {
   pendingChanges: Set<string>; // Page IDs with unsaved content
   structureDirty: boolean; // True if tree was modified (add/delete/move/rename)
   deletedPaths: Set<string>; // File paths to delete on sync
+  deletedNodes: Record<string, { 
+    id: string; 
+    title: string; 
+    path: string; 
+    timestamp: number;
+    node: FileNode; // Full node structure for restoration
+    parentId: string | null; // Parent ID to restore to
+    siblingIndex?: number; // Position among siblings
+  }>; // Deleted node info for UI display and restoration
   isSyncing: boolean;
   lastSyncTime: number | null;
   
@@ -90,6 +100,8 @@ export interface WorkspaceState {
   // Sync Actions
   syncWorkspace: (orgId: string, repoId: string, token: string, commitMessage?: string) => Promise<void>;
   clearPendingChanges: () => void;
+  revertChanges: (pageId: string) => Promise<void>; // Revert changes to a specific page
+  restoreDeletedNode: (nodeId: string) => void; // Restore a deleted file/folder (like Git restore)
   
   // Utility
   getNodeById: (nodeId: string) => FileNode | null;
@@ -262,17 +274,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         pendingChanges: new Set(),
         structureDirty: false,
         deletedPaths: new Set(),
+        deletedNodes: {},
         isSyncing: false,
         lastSyncTime: null,
         expandedFolders: new Set<string>(),
         
         // ========== TREE ACTIONS ==========
         
-        initializeTree: (tree) => {
+        initializeTree: (tree: FileNode) => {
           set({ fileTree: tree, structureDirty: false });
         },
         
-        addNode: (parentId, type, afterNodeId) => {
+        addNode: (parentId: string | null, type: NodeType, afterNodeId?: string) => {
           const tempId = generateTempId();
           const newNode: FileNode = {
             id: tempId,
@@ -287,7 +300,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             updatedAt: new Date().toISOString(),
           };
           
-          set((state) => {
+          set((state: WorkspaceState) => {
             if (!state.fileTree) return state;
             
             const updatedTree = insertNodeInTree(state.fileTree, parentId, newNode, afterNodeId);
@@ -324,8 +337,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           return tempId;
         },
         
-        deleteNode: (nodeId) => {
-          set((state) => {
+        deleteNode: (nodeId: string) => {
+          set((state: WorkspaceState) => {
             if (!state.fileTree) return state;
             
             // Get the node before deletion to collect its paths
@@ -334,6 +347,67 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             
             // Collect all file paths that need to be deleted (with full paths from root)
             const pathsToDelete = collectAllPathsFromTree(state.fileTree, nodeToDelete);
+            
+            // Store deleted node info for UI display and restoration (before deletion)
+            const newDeletedNodes = { ...state.deletedNodes };
+            const timestamp = Date.now();
+            
+            // Find parent and sibling index for restoration
+            let parentId: string | null = null;
+            let siblingIndex: number | undefined = undefined;
+            
+            // Find parent by searching tree
+            function findParent(current: FileNode, targetId: string, currentParent: FileNode | null = null): { parent: FileNode | null; index: number } | null {
+              if (current.id === targetId) {
+                return { parent: currentParent, index: currentParent ? currentParent.children.findIndex(c => c.id === targetId) : -1 };
+              }
+              for (let i = 0; i < current.children.length; i++) {
+                const child = current.children[i];
+                if (child.id === targetId) {
+                  return { parent: current, index: i };
+                }
+                const found = findParent(child, targetId, current);
+                if (found) return found;
+              }
+              return null;
+            }
+            
+            const parentInfo = findParent(state.fileTree, nodeId);
+            if (parentInfo) {
+              parentId = parentInfo.parent?.id || null;
+              siblingIndex = parentInfo.index >= 0 ? parentInfo.index : undefined;
+            }
+            
+            // Store full node structure for restoration (deep clone)
+            const nodeClone = JSON.parse(JSON.stringify(nodeToDelete));
+            newDeletedNodes[nodeId] = {
+              id: nodeToDelete.id,
+              title: nodeToDelete.title,
+              path: getNodeFilePath(state.fileTree, nodeId) || nodeToDelete.path || '',
+              timestamp: timestamp,
+              node: nodeClone, // Full node structure
+              parentId: parentId,
+              siblingIndex: siblingIndex
+            };
+            
+            // Also store info for all children (for UI display)
+            function storeDeletedInfo(node: FileNode) {
+              if (node.type === 'page' && node.id !== nodeId) {
+                const path = getNodeFilePath(state.fileTree, node.id) || node.path || '';
+                newDeletedNodes[node.id] = {
+                  id: node.id,
+                  title: node.title,
+                  path: path,
+                  timestamp: timestamp,
+                  node: JSON.parse(JSON.stringify(node)), // Full node structure
+                  parentId: node.parentId || null,
+                  siblingIndex: undefined
+                };
+              }
+              // Recursively store children
+              node.children.forEach(storeDeletedInfo);
+            }
+            storeDeletedInfo(nodeToDelete);
             
             const updatedTree = removeNodeRecursive(state.fileTree, nodeId);
             if (!updatedTree) return state;
@@ -364,6 +438,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               fileTree: updatedTree,
               structureDirty: true,
               deletedPaths: new Set([...state.deletedPaths, ...pathsToDelete]),
+              deletedNodes: newDeletedNodes,
               contentCache: newContentCache,
               pendingChanges: newPendingChanges,
               activePageId: state.activePageId === nodeId ? null : state.activePageId
@@ -371,8 +446,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           });
         },
         
-        moveNode: (dragId, dropId, position) => {
-          set((state) => {
+        moveNode: (dragId: string, dropId: string, position: 'before' | 'after' | 'inside') => {
+          set((state: WorkspaceState) => {
             if (!state.fileTree) return state;
             
             // This is a simplified version - full implementation would need:
@@ -387,8 +462,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           });
         },
         
-        renameNode: (nodeId, newTitle) => {
-          set((state) => {
+        renameNode: (nodeId: string, newTitle: string) => {
+          set((state: WorkspaceState) => {
             if (!state.fileTree) return state;
             
             const node = findNodeRecursive(state.fileTree, nodeId);
@@ -435,7 +510,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           });
         },
         
-        duplicateNode: (nodeId) => {
+        duplicateNode: (nodeId: string) => {
           const node = get().getNodeById(nodeId);
           if (!node) return '';
           
@@ -450,7 +525,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             children: [] // Don't duplicate children for simplicity
           };
           
-          set((state) => {
+          set((state: WorkspaceState) => {
             if (!state.fileTree) return state;
             
             const updatedTree = insertNodeInTree(state.fileTree, node.parentId, duplicatedNode, nodeId);
@@ -482,30 +557,35 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         
         // ========== CONTENT ACTIONS ==========
         
-        setActivePageId: (pageId) => {
+        setActivePageId: (pageId: string | null) => {
           set({ activePageId: pageId });
         },
         
-        updateContent: (pageId, content) => {
-          set((state) => ({
-            contentCache: {
-              ...state.contentCache,
-              [pageId]: {
-                content,
-                lastModified: Date.now(),
-                isDirty: true
-              }
-            },
-            pendingChanges: new Set([...state.pendingChanges, pageId])
-          }));
+        updateContent: (pageId: string, content: string) => {
+          set((state: WorkspaceState) => {
+            const existing = state.contentCache[pageId];
+            return {
+              contentCache: {
+                ...state.contentCache,
+                [pageId]: {
+                  content,
+                  originalContent: existing?.originalContent, // Preserve original
+                  lastModified: Date.now(),
+                  isDirty: true
+                }
+              },
+              pendingChanges: new Set([...state.pendingChanges, pageId])
+            };
+          });
         },
         
-        loadPageContent: (pageId, content) => {
-          set((state) => ({
+        loadPageContent: (pageId: string, content: string) => {
+          set((state: WorkspaceState) => ({
             contentCache: {
               ...state.contentCache,
               [pageId]: {
                 content,
+                originalContent: content, // Store original for revert
                 lastModified: Date.now(),
                 isDirty: false
               }
@@ -515,8 +595,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         
         // ========== EDITING STATE ==========
         
-        setNodeEditing: (nodeId, isEditing) => {
-          set((state) => {
+        setNodeEditing: (nodeId: string, isEditing: boolean) => {
+          set((state: WorkspaceState) => {
             if (!state.fileTree) return state;
             
             const updatedTree = updateNodeRecursive(state.fileTree, nodeId, (node) => ({
@@ -528,8 +608,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           });
         },
         
-        toggleFolder: (folderId) => {
-          set((state) => {
+        toggleFolder: (folderId: string) => {
+          set((state: WorkspaceState) => {
             const newExpanded = new Set(state.expandedFolders);
             if (newExpanded.has(folderId)) {
               newExpanded.delete(folderId);
@@ -542,7 +622,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         
         // ========== SYNC ACTIONS ==========
         
-        syncWorkspace: async (orgId, repoId, token, commitMessage) => {
+        syncWorkspace: async (orgId: string, repoId: string, token: string, commitMessage?: string) => {
           const state = get();
           
           if (!state.fileTree || state.isSyncing) {
@@ -643,7 +723,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             
             // Update temp IDs with real IDs from server
             if (result.temp_id_mapping) {
-              set((state) => {
+              set((state: WorkspaceState) => {
                 let updatedTree = state.fileTree;
                 let updatedCache = { ...state.contentCache };
                 
@@ -672,6 +752,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
                   pendingChanges: new Set(),
                   structureDirty: false,
                   deletedPaths: new Set(),
+              deletedNodes: {},
                   isSyncing: false,
                   lastSyncTime: Date.now()
                 };
@@ -682,6 +763,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
                 pendingChanges: new Set(),
                 structureDirty: false,
                 deletedPaths: new Set(),
+                deletedNodes: {},
                 isSyncing: false,
                 lastSyncTime: Date.now()
               });
@@ -698,18 +780,151 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           set({
             pendingChanges: new Set(),
             structureDirty: false,
-            deletedPaths: new Set()
+            deletedPaths: new Set(),
+            deletedNodes: {}
+          });
+        },
+        
+        restoreDeletedNode: (nodeId: string) => {
+          set((state: WorkspaceState) => {
+            if (!state.fileTree) return state;
+            
+            const deletedInfo = state.deletedNodes[nodeId];
+            if (!deletedInfo || !deletedInfo.node) return state;
+            
+            // Restore the node back to the tree
+            const nodeToRestore = { ...deletedInfo.node };
+            nodeToRestore.parentId = deletedInfo.parentId; // Ensure parentId is set
+            const parentId = deletedInfo.parentId;
+            
+            // Insert node back into tree at original position
+            let restoredTree: FileNode | null = null;
+            
+            if (parentId === null || parentId === state.fileTree.id) {
+              // Root level - insert at specific index if available
+              if (deletedInfo.siblingIndex !== undefined && deletedInfo.siblingIndex >= 0) {
+                const newChildren = [...state.fileTree.children];
+                newChildren.splice(deletedInfo.siblingIndex, 0, nodeToRestore);
+                restoredTree = {
+                  ...state.fileTree,
+                  children: newChildren
+                };
+              } else {
+                // Append to end
+                restoredTree = insertNodeInTree(state.fileTree, parentId, nodeToRestore);
+              }
+            } else {
+              // Find the sibling before the original position to restore after it
+              const parent = findNodeRecursive(state.fileTree, parentId);
+              if (parent && deletedInfo.siblingIndex !== undefined && deletedInfo.siblingIndex > 0) {
+                const siblingBefore = parent.children[deletedInfo.siblingIndex - 1];
+                if (siblingBefore) {
+                  restoredTree = insertNodeInTree(state.fileTree, parentId, nodeToRestore, siblingBefore.id);
+                } else {
+                  restoredTree = insertNodeInTree(state.fileTree, parentId, nodeToRestore);
+                }
+              } else {
+                restoredTree = insertNodeInTree(state.fileTree, parentId, nodeToRestore);
+              }
+            }
+            
+            if (!restoredTree) return state;
+            
+            // Remove from deletedNodes and deletedPaths (including all children)
+            const newDeletedNodes = { ...state.deletedNodes };
+            const newDeletedPaths = new Set(state.deletedPaths);
+            
+            // Remove this node and all its children from deletedNodes and deletedPaths
+            function removeFromDeleted(node: FileNode) {
+              delete newDeletedNodes[node.id];
+              const path = getNodeFilePath(restoredTree, node.id) || node.path || '';
+              if (path) {
+                newDeletedPaths.delete(path);
+              }
+              node.children.forEach(removeFromDeleted);
+            }
+            removeFromDeleted(nodeToRestore);
+            
+            return {
+              fileTree: restoredTree,
+              structureDirty: true,
+              deletedNodes: newDeletedNodes,
+              deletedPaths: newDeletedPaths
+            };
+          });
+        },
+        
+        revertChanges: async (pageId: string) => {
+          const state = get();
+          const node = state.getNodeById(pageId);
+          if (!node || node.type !== 'page') return;
+          
+          // Remove from pending changes
+          const newPendingChanges = new Set(state.pendingChanges);
+          newPendingChanges.delete(pageId);
+          
+          // If it's a temp node (newly created), delete it entirely
+          if (node.isTempNode) {
+            if (!state.fileTree) return;
+            
+            const updatedTree = removeNodeRecursive(state.fileTree, pageId);
+            if (!updatedTree) return;
+            
+            const newContentCache = { ...state.contentCache };
+            delete newContentCache[pageId];
+            
+            set({
+              fileTree: updatedTree,
+              contentCache: newContentCache,
+              pendingChanges: newPendingChanges,
+              activePageId: state.activePageId === pageId ? null : state.activePageId
+            });
+            return;
+          }
+          
+          // For existing pages, restore original content
+          const cached = state.contentCache[pageId];
+          if (!cached) {
+            set({ pendingChanges: newPendingChanges });
+            return;
+          }
+          
+          // Get original content - if undefined, it means it was never loaded properly
+          // In that case, keep current content (don't make blank)
+          let originalContent = cached.originalContent;
+          
+          // If originalContent is undefined (not set), don't revert - keep current content
+          // This prevents blanking out content when originalContent wasn't properly initialized
+          if (originalContent === undefined) {
+            console.warn('[revertChanges] originalContent is undefined, keeping current content');
+            originalContent = cached.content; // Keep current instead of blanking
+          }
+          
+          // Use originalContent (which is now guaranteed to be defined)
+          const revertedContent = originalContent;
+          
+          const newContentCache = { ...state.contentCache };
+          newContentCache[pageId] = {
+            ...cached,
+            content: revertedContent,
+            originalContent: revertedContent, // Update original to current after revert
+            isDirty: false
+          };
+          
+          set({
+            contentCache: newContentCache,
+            pendingChanges: newPendingChanges
           });
         },
         
         // ========== UTILITY ==========
         
-        getNodeById: (nodeId) => {
+        getNodeById: (nodeId: string) => {
           const state = get();
           return findNodeRecursive(state.fileTree, nodeId);
         },
         
-        getNodePath: (nodeId) => {
+        getNodePath: (nodeId: string) => {
           const path: FileNode[] = [];
           const state = get();
           

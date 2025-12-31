@@ -166,8 +166,8 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
 
   // ========== RENDER ==========
 
-  const baseIndent = 12; // Base left padding
-  const levelIndent = level * 20; // 20px per nesting level
+  const baseIndent = 8; // Base left padding (reduced)
+  const levelIndent = level * 16; // 16px per nesting level (reduced)
   const totalIndent = baseIndent + levelIndent;
 
   return (
@@ -175,7 +175,7 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
       {/* Node Row - Notion Style (Typography over Icons) */}
       <div
         className={`
-          group relative flex items-center gap-2 py-1.5 cursor-pointer
+          group relative flex items-center gap-1.5 py-1 cursor-pointer
           transition-colors duration-150
           ${
             isActive
@@ -198,21 +198,21 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
         {level > 0 && (
           <div
             className="absolute top-0 bottom-0 border-l border-gray-200 dark:border-slate-700/50 pointer-events-none z-0"
-            style={{ left: `${baseIndent + (level - 1) * 20}px` }}
+            style={{ left: `${baseIndent + (level - 1) * 16}px` }}
           />
         )}
 
         {/* Expand/Collapse Button (Folders Only) */}
         {isFolder && (
           <button
-            className="shrink-0 w-5 h-5 flex items-center justify-center hover:bg-slate-700/50 rounded transition"
+            className="shrink-0 w-4 h-4 flex items-center justify-center hover:bg-slate-700/50 rounded transition"
             onClick={(e) => {
               e.stopPropagation();
               toggleFolder(node.id);
             }}
           >
             <ChevronRight
-              className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-200 ${
+              className={`w-3 h-3 text-slate-500 transition-transform duration-200 ${
                 isExpanded ? 'rotate-90' : ''
               }`}
             />
@@ -220,7 +220,7 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
         )}
 
         {/* Spacer for pages (no chevron) */}
-        {!isFolder && <div className="w-5" />}
+        {!isFolder && <div className="w-4" />}
 
         {/* Title - Typography Hierarchy (NO ICONS) */}
         <div className="flex-1 min-w-0">
@@ -234,8 +234,8 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
               onKeyDown={handleRenameKeyDown}
               className="
                 w-full bg-white dark:bg-slate-800
-                border border-blue-400 rounded px-2 py-1
-                text-sm text-gray-900 dark:text-white
+                border border-blue-400 rounded px-1.5 py-0.5
+                text-xs text-gray-900 dark:text-white
                 focus:outline-none focus:ring-2 focus:ring-blue-500
               "
               onClick={(e) => e.stopPropagation()}
@@ -243,14 +243,14 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
           ) : (
             <span
               className={`
-                block truncate text-sm transition-colors
+                block truncate text-xs transition-colors
                 ${
                   isFolder
                     ? 'font-semibold text-gray-900 dark:text-slate-100'
                     : 'font-normal text-gray-700 dark:text-slate-300'
                 }
                 ${isActive ? 'text-gray-900 dark:text-white' : ''}
-                ${level === 0 && isFolder ? 'text-base' : ''}
+                ${level === 0 && isFolder ? 'text-sm' : ''}
                 ${node.isTempNode ? 'italic' : ''}
               `}
             >
@@ -263,14 +263,14 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
         <button
           className="
             shrink-0 opacity-0 group-hover:opacity-100 transition-opacity
-            hover:bg-slate-700/50 rounded p-1
+            hover:bg-slate-700/50 rounded p-0.5
           "
           onClick={(e) => {
             e.stopPropagation();
             handleContextMenu(e as any);
           }}
         >
-          <MoreVertical className="w-4 h-4 text-slate-400" />
+          <MoreVertical className="w-3.5 h-3.5 text-slate-400" />
         </button>
       </div>
 
@@ -333,7 +333,7 @@ function ContextMenuItem({ onClick, variant = 'default', children }: ContextMenu
   return (
     <button
       className={`
-        w-full text-left px-3 py-2 text-sm transition-colors
+        w-full text-left px-2.5 py-1.5 text-xs transition-colors
         ${
           variant === 'danger'
             ? 'text-red-400 hover:bg-red-500/10'

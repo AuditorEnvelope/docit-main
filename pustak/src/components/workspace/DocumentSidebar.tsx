@@ -47,16 +47,16 @@ export function DocumentSidebar({ orgId, repoId, onPageSelect }: DocumentSidebar
   const filteredTree = fileTree ? filterTree(fileTree) : null;
 
   return (
-    <div className="h-full flex flex-col bg-slate-950/50 border-r border-slate-800/50">
+    <div className="h-full flex flex-col bg-slate-950/50 border-r border-slate-800/50 text-sm">
       {/* Minimal Header - No Search */}
-      <div className="p-4 border-b border-slate-800/50">
-        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+      <div className="p-3 border-b border-slate-800/50">
+        <h2 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
           Pages
         </h2>
       </div>
 
       {/* Document Tree */}
-      <div className="flex-1 overflow-y-auto py-2 px-2">
+      <div className="flex-1 overflow-y-auto py-1.5 px-1.5">
         {filteredTree ? (
           <div className="space-y-1">
             {filteredTree.children.map((child: any) => (
