@@ -181,9 +181,10 @@ class Payment(Base):
     # Payment info
     amount = Column(Numeric(10, 2), nullable=False)
     currency = Column(String(3), default="INR", nullable=False)
+    # Store as VARCHAR(20) to match actual DB schema, not PostgreSQL enum
     status = Column(
-        SQLEnum(PaymentStatus),
-        default=PaymentStatus.PENDING,
+        String(20),
+        default=PaymentStatus.PENDING.value,
         nullable=False
     )
 

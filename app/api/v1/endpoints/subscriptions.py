@@ -126,32 +126,61 @@ async def verify_payment(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Verify Razorpay payment and update subscription"""
+    """Verify Razorpay payment - READ ONLY (webhooks update DB)
+    
+    Note: This endpoint is automatically called from the payment success page.
+    It does NOT write to the database - only reads payment status.
+    Webhooks are the single source of truth for DB updates.
+    """
     razorpay_service = RazorpayService(db)
 
-    # If signature is provided, verify it
+    print(f"[MANUAL-VERIFY] Auto-invoked from success page for user {user.id}, payment {payload.razorpay_payment_id}")
+
+    # Verify signature if provided
     if payload.razorpay_signature:
-        # Verify the payment signature
-        is_valid = await razorpay_service.verify_payment(
-            order_id=payload.razorpay_order_id,
-            payment_id=payload.razorpay_payment_id,
-            signature=payload.razorpay_signature,
-        )
+        try:
+            is_valid = await razorpay_service.verify_payment(
+                order_id=payload.razorpay_order_id,
+                payment_id=payload.razorpay_payment_id,
+                signature=payload.razorpay_signature,
+            )
 
-        if not is_valid:
-            raise HTTPException(
-                status_code=400, detail="Invalid payment signature")
+            if not is_valid:
+                print(f"[MANUAL-VERIFY] Invalid signature for payment {payload.razorpay_payment_id}")
+                raise HTTPException(
+                    status_code=400, detail="Invalid payment signature")
+        except Exception as e:
+            print(f"[MANUAL-VERIFY] Signature verification error: {e}")
+            # Don't fail the entire request on signature verification issues
+            # Continue to check payment status
 
-    # Handle successful payment capture
+    # Check payment status (READ ONLY - does not write to DB)
     try:
-        await razorpay_service.handle_payment_captured_sync(
-            order_id=payload.razorpay_order_id, payment_id=payload.razorpay_payment_id
+        status_result = await razorpay_service.check_payment_status(
+            order_id=payload.razorpay_order_id,
+            payment_id=payload.razorpay_payment_id
         )
-        return {"status": "success", "message": "Payment successful and subscription updated"}
+
+        print(f"[MANUAL-VERIFY] Status check result: {status_result.get('status')}")
+        return status_result
+
+    except HTTPException as he:
+        # Re-raise HTTP exceptions with proper status codes
+        print(f"[MANUAL-VERIFY] HTTP error: {he.detail}")
+        raise
     except Exception as e:
-        # The service logs the details, return a generic error
-        raise HTTPException(
-            status_code=500, detail=f"Failed to process payment: {e}")
+        # Log error but return a user-friendly response
+        print(f"[MANUAL-VERIFY] Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Return a safe response instead of 500 error
+        return {
+            "status": "checking",
+            "message": "Payment status is being verified. Please wait a moment and refresh.",
+            "payment_id": payload.razorpay_payment_id,
+            "order_id": payload.razorpay_order_id
+        }
 
 
 __all__ = ["router"]

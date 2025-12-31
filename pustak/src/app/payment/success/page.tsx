@@ -92,10 +92,41 @@ function PaymentSuccessContent() {
 
 			if (response.ok) {
 				const result = await response.json();
-				setVerificationMessage(
-					result.message ||
-						"Payment verified successfully! Your subscription should be active now."
-				);
+				
+				// Handle different statuses
+				if (result.status === "completed") {
+					setVerificationMessage(
+						"✅ Payment processed! Your subscription is active."
+					);
+				} else if (result.status === "pending_webhook") {
+					setVerificationMessage(
+						"⏳ Payment captured! Webhook is processing your subscription. Please refresh in a moment."
+					);
+					// Auto-refresh after 3 seconds
+					setTimeout(() => {
+						window.location.reload();
+					}, 3000);
+				} else if (result.status === "checking") {
+					setVerificationMessage(
+						"🔍 Payment status is being verified. Please wait a moment and refresh."
+					);
+					// Auto-refresh after 3 seconds
+					setTimeout(() => {
+						window.location.reload();
+					}, 3000);
+				} else if (result.status === "pending") {
+					setVerificationMessage(
+						"⏳ Payment is pending. Please wait a moment and try again."
+					);
+				} else if (result.status === "failed") {
+					setVerificationMessage(
+						"❌ Payment failed. Please contact support or try again."
+					);
+				} else {
+					setVerificationMessage(
+						result.message || `Status: ${result.status}`
+					);
+				}
 			} else {
 				const errorData = await response.json().catch(() => ({}));
 				setVerificationMessage(
