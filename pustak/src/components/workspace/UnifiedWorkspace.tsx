@@ -24,7 +24,7 @@ interface UnifiedWorkspaceProps {
 }
 
 export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
-  const { fileTree, initializeTree, setActivePageId, activePageId, getNodeById, pendingChanges, structureDirty, syncWorkspace, hasUnsavedChanges } = useWorkspaceStore();
+  const { fileTree, initializeTree, setActivePageId, activePageId, getNodeById, pendingChanges, structureDirty, syncWorkspace, hasUnsavedChanges, deletedNodes } = useWorkspaceStore();
   const { token, user, isAuthenticated, logout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -47,7 +47,10 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
   };
 
   const activePage = activePageId ? getNodeById(activePageId) : null;
-  const changeCount = pendingChanges.size + (structureDirty ? 1 : 0);
+  // Calculate total changes: content changes + structure changes + deletions
+  const contentChanges = pendingChanges.size;
+  const deletionCount = deletedNodes ? Object.keys(deletedNodes).length : 0;
+  const changeCount = contentChanges + (structureDirty ? 1 : 0) + deletionCount;
   const hasChanges = hasUnsavedChanges();
 
   // Get breadcrumb path
@@ -166,51 +169,75 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
   return (
     <div className="h-screen w-screen overflow-hidden bg-slate-950 flex flex-col">
       {/* Top Navigation Bar */}
-      <header className="flex-shrink-0 z-50 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800/50">
-        <div className="flex items-center justify-between px-4 py-2.5">
-          <div className="flex items-center space-x-3">
-            <div className="flex items-center space-x-2">
-              <BookOpen className="w-5 h-5 text-blue-400" />
+      <header className="flex-shrink-0 z-50 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800/50">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center space-x-4 min-w-0 flex-1">
+            {/* Left Section: Pustak Branding */}
+            <div className="flex items-center space-x-2 shrink-0">
+              <BookOpen className="w-5 h-5 text-blue-400 shrink-0" />
               <h1 className="text-lg font-bold text-white">Pustak</h1>
-              <span className="text-[10px] bg-blue-900 text-blue-200 px-1.5 py-0.5 rounded-full">
+              <span className="text-[10px] bg-blue-900 text-blue-200 px-1.5 py-0.5 rounded-full shrink-0">
                 Beta
               </span>
             </div>
 
-            {/* Breadcrumb */}
+            {/* Divider */}
+            <div className="h-6 w-px bg-slate-700/50 shrink-0" />
+
+            {/* WORKSPACE Section - Prominent */}
+            <div className="flex items-center space-x-2.5 shrink-0">
+              {/* WORKSPACE Label - Always Visible */}
+              <div className="px-2.5 py-1 bg-slate-800/60 border border-slate-700/50 rounded-md">
+                <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                  Workspace
+                </span>
+              </div>
+              
+              {/* Org/Repo Badge */}
+              <div className="flex items-center shrink-0">
+                <div className="px-3 py-1.5 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20 border border-blue-500/30 rounded-lg backdrop-blur-sm">
+                  <span className="text-xs font-semibold bg-gradient-to-r from-blue-300 via-purple-300 to-blue-300 bg-clip-text text-transparent">
+                    {orgId} <span className="text-slate-500/60">/</span> {repoId}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Breadcrumb - Right Section */}
             {breadcrumb.length > 0 && (
-              <div className="hidden md:flex items-center space-x-1.5 text-xs text-slate-400">
-                <span>/</span>
+              <div className="hidden lg:flex items-center space-x-1.5 text-xs text-slate-400 min-w-0 flex-1 ml-2">
+                <span className="text-slate-600">/</span>
                 {breadcrumb.map((item, index) => (
-                  <span key={index} className="flex items-center">
-                    <span className={index === breadcrumb.length - 1 ? 'text-white font-medium' : ''}>
+                  <span key={index} className="flex items-center shrink-0">
+                    <span className={index === breadcrumb.length - 1 ? 'text-white font-medium' : 'text-slate-400'}>
                       {item}
                     </span>
-                    {index < breadcrumb.length - 1 && <span className="mx-1.5">/</span>}
+                    {index < breadcrumb.length - 1 && <span className="mx-1.5 text-slate-600">/</span>}
                   </span>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="flex items-center space-x-1.5">
-            {/* Status Indicator */}
+          <div className="flex items-center space-x-2 shrink-0">
+            {/* Publish Button - Only show when there are actual changes */}
             {hasChanges && (
               <button
                 onClick={() => setIsCommitModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all shadow-lg shadow-blue-500/20 shrink-0"
               >
-                <span className="w-1.5 h-1.5 bg-orange-400 rounded-full" />
-                Publish {changeCount > 0 && `(${changeCount})`}
+                <span className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
+                <span className="hidden sm:inline">Publish</span>
+                {changeCount > 0 && <span className="text-[10px]">({changeCount})</span>}
               </button>
             )}
-            {/* Search Button */}
+            {/* Search Button - Compact */}
             <button
-              className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-slate-400 border border-slate-700 rounded-md hover:bg-slate-800 transition-colors"
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-slate-400 border border-slate-700 rounded-md hover:bg-slate-800 hover:border-slate-600 transition-colors shrink-0"
             >
-              <Search className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Search docs...</span>
-              <kbd className="hidden sm:inline text-[10px] bg-slate-700 px-1 rounded">⌘K</kbd>
+              <Search className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden md:inline">Search</span>
+              <kbd className="hidden lg:inline text-[10px] bg-slate-700 px-1 rounded">⌘K</kbd>
             </button>
 
             {/* Theme Toggle */}
@@ -336,7 +363,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
       {/* Workspace Content */}
       <div className="flex-1 relative">
         {/* Left Sidebar - Independent Scroll */}
-        <div className="fixed left-0 top-[57px] bottom-0 w-[220px] border-r border-slate-800/50 overflow-y-auto">
+        <div className="fixed left-0 top-[60px] bottom-0 w-[220px] border-r border-slate-800/50 overflow-y-auto">
           <DocumentSidebar
             orgId={orgId}
             repoId={repoId}
@@ -345,12 +372,12 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
         </div>
 
         {/* Center Editor - Independent Scroll (Leave space for right sidebar) */}
-        <div className="fixed left-[220px] right-[280px] top-[57px] bottom-0 overflow-y-auto">
+        <div className="fixed left-[220px] right-[280px] top-[60px] bottom-0 overflow-y-auto">
           <DocumentEditor orgId={orgId} repoId={repoId} />
         </div>
 
         {/* Right Sidebar - Session Activity (fixed to account for navbar) */}
-        <div className="fixed right-0 top-[57px] bottom-0">
+        <div className="fixed right-0 top-[60px] bottom-0">
           <SessionActivity onPublishClick={() => setIsCommitModalOpen(true)} />
         </div>
       </div>

@@ -952,7 +952,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         
         hasUnsavedChanges: () => {
           const state = get();
-          return state.pendingChanges.size > 0 || state.structureDirty || state.deletedPaths.size > 0;
+          // Check for actual changes: content changes, structure changes, or deletions
+          const hasContentChanges = state.pendingChanges.size > 0;
+          const hasStructureChanges = state.structureDirty && state.fileTree !== null;
+          const hasDeletions = state.deletedPaths.size > 0 || Object.keys(state.deletedNodes).length > 0;
+          return hasContentChanges || hasStructureChanges || hasDeletions;
         },
       }),
       {
