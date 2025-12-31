@@ -34,6 +34,10 @@ interface OrgSummary {
 }
 
 type StepStatus = "complete" | "current" | "upcoming";
+type DocbookLinkStatusState = {
+  status: "idle" | "linking" | "linked" | "not_found" | "failed";
+  error?: string;
+};
 
 export default function OnboardingPage() {
   const { user, token, loading, isAuthenticated, markOnboardingComplete } =
@@ -49,14 +53,22 @@ export default function OnboardingPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [pollingWriterApp, setPollingWriterApp] = useState(false);
   const [progressIndex, setProgressIndex] = useState(0);
+  const [stateLoaded, setStateLoaded] = useState(false);
+  const [forceOnboarding, setForceOnboarding] = useState(false);
+  const [docbookLinkStatuses, setDocbookLinkStatuses] = useState<
+    Record<string, DocbookLinkStatusState>
+  >({});
+  const docbookPollRefs = useRef<Record<string, ReturnType<typeof setInterval> | null>>({});
+  const docbookPollAttempts = useRef<Record<string, number>>({});
   const writerPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const writerPollAttempts = useRef(0);
   const autoCompletionTriggered = useRef(false);
 
   const MAX_WRITER_POLL_ATTEMPTS = 12; // roughly 1 minute at 5s interval
+  const MAX_DOCBOOK_POLL_ATTEMPTS = 24; // roughly 2 minutes at 5s interval
 
   const primaryOrg = useMemo(() => orgs[0] || "", [orgs]);
-  const shouldBypassOnboarding = Boolean(user?.is_onboarding_complete);
+  const shouldBypassOnboarding = Boolean(user?.is_onboarding_complete && !forceOnboarding);
 
   useEffect(() => {
     if (loading) return;
@@ -65,10 +77,10 @@ export default function OnboardingPage() {
       return;
     }
 
-    if (shouldBypassOnboarding) {
+    if (shouldBypassOnboarding && stateLoaded) {
       router.replace("/dashboard");
     }
-  }, [isAuthenticated, loading, router, shouldBypassOnboarding]);
+  }, [isAuthenticated, loading, router, shouldBypassOnboarding, stateLoaded]);
 
   useEffect(() => {
     if (!(loading || refreshing)) {
@@ -94,6 +106,7 @@ export default function OnboardingPage() {
         if (!options?.silent) {
           setRefreshing(true);
         }
+        setStateLoaded(false);
         const orgsRes = await fetch(`${API_BASE}/user/organizations`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -168,6 +181,38 @@ export default function OnboardingPage() {
         );
 
         setOrgSummaries(summaries);
+
+        setDocbookLinkStatuses((prev) => {
+          const next: Record<string, DocbookLinkStatusState> = {};
+          for (const orgId of orgIds) {
+            const summary = summaries[orgId];
+            if (summary?.docbook_repo) {
+              next[orgId] = { status: "linked" };
+            } else if (prev[orgId] && prev[orgId].status !== "linked") {
+              next[orgId] = prev[orgId];
+            } else {
+              next[orgId] = { status: "idle" };
+            }
+          }
+          return next;
+        });
+
+        if (user?.is_onboarding_complete) {
+          const shouldForce =
+            !orgIds.length ||
+            orgIds.some((orgId) => {
+              const summary = summaries[orgId];
+              if (!summary) return true;
+              const hasDocbook = Boolean(summary.docbook_repo);
+              const writerReady = Boolean(
+                summary.writer_app_installed && summary.writer_app_has_access
+              );
+              return !hasDocbook || !writerReady;
+            });
+          setForceOnboarding(shouldForce);
+        } else {
+          setForceOnboarding(false);
+        }
       }
       } catch (error) {
         console.error("Error loading onboarding state", error);
@@ -175,9 +220,10 @@ export default function OnboardingPage() {
         if (!options?.silent) {
           setRefreshing(false);
         }
+        setStateLoaded(true);
       }
     },
-    [token]
+    [token, user?.is_onboarding_complete]
   );
 
   const stopWriterPolling = useCallback(() => {
@@ -247,11 +293,8 @@ export default function OnboardingPage() {
   );
 
   useEffect(() => {
-    if (shouldBypassOnboarding) {
-      return;
-    }
     loadState();
-  }, [loadState, shouldBypassOnboarding]);
+  }, [loadState]);
 
   useEffect(() => {
     if (!orgs.length) {
@@ -293,12 +336,173 @@ export default function OnboardingPage() {
     : "upcoming";
 
   const canFinish = hasConnectedOrg && hasLinkedDocbook && writerAppReady;
+  const activeOrgId = selectedOrg || primaryOrg || "";
+  const currentLinkStatus = activeOrgId
+    ? docbookLinkStatuses[activeOrgId]
+    : undefined;
 
   useEffect(() => {
     if (!canFinish) {
       autoCompletionTriggered.current = false;
     }
   }, [canFinish]);
+
+  const attemptAutoLinkDocbook = useCallback(
+    async (orgId: string): Promise<"linked" | "not_found" | "failed"> => {
+      if (!token) {
+        return "failed";
+      }
+
+      const sanitizedOrg = orgId.toLowerCase().replace(/[^a-z0-9-]/g, "");
+      const repoName = `pustak-docbook-${sanitizedOrg}`;
+
+      setDocbookLinkStatuses((prev) => ({
+        ...prev,
+        [orgId]: { status: "linking" },
+      }));
+
+      try {
+        const response = await fetch(`${API_BASE}/docbook/link-repo`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            org_id: orgId,
+            docbook_repo_name: repoName,
+          }),
+        });
+
+        if (response.status === 404) {
+          setDocbookLinkStatuses((prev) => ({
+            ...prev,
+            [orgId]: { status: "not_found" },
+          }));
+          return "not_found";
+        }
+
+        if (!response.ok) {
+          const detail = (await response.json().catch(() => ({}))) as {
+            detail?: string;
+          };
+          setDocbookLinkStatuses((prev) => ({
+            ...prev,
+            [orgId]: {
+              status: "failed",
+              error: detail.detail || "Failed to link docbook repository",
+            },
+          }));
+          return "failed";
+        }
+
+        setDocbookLinkStatuses((prev) => ({
+          ...prev,
+          [orgId]: { status: "linked" },
+        }));
+        await loadState({ silent: true });
+        return "linked";
+      } catch (error) {
+        setDocbookLinkStatuses((prev) => ({
+          ...prev,
+          [orgId]: {
+            status: "failed",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Unexpected error while linking docbook",
+          },
+        }));
+        return "failed";
+      }
+      return "failed";
+    },
+    [API_BASE, loadState, token]
+  );
+
+  const stopDocbookPolling = useCallback((orgId: string) => {
+    const existing = docbookPollRefs.current[orgId];
+    if (existing) {
+      clearInterval(existing);
+      docbookPollRefs.current[orgId] = null;
+    }
+    docbookPollAttempts.current[orgId] = 0;
+  }, []);
+
+  const startDocbookPolling = useCallback(
+    (orgId: string) => {
+      if (!orgId) return;
+      if (docbookPollRefs.current[orgId]) return;
+
+      docbookPollAttempts.current[orgId] = 0;
+
+      const poll = async () => {
+        docbookPollAttempts.current[orgId] =
+          (docbookPollAttempts.current[orgId] ?? 0) + 1;
+
+        const result = await attemptAutoLinkDocbook(orgId);
+
+        if (result === "linked") {
+          stopDocbookPolling(orgId);
+          return;
+        }
+
+        if (docbookPollAttempts.current[orgId] >= MAX_DOCBOOK_POLL_ATTEMPTS) {
+          stopDocbookPolling(orgId);
+        }
+      };
+
+      void poll();
+      docbookPollRefs.current[orgId] = setInterval(() => {
+        void poll();
+      }, 5000);
+    },
+    [attemptAutoLinkDocbook, stopDocbookPolling]
+  );
+
+  useEffect(() => {
+    if (
+      !stateLoaded ||
+      refreshing ||
+      !hasConnectedOrg ||
+      hasLinkedDocbook ||
+      !activeOrgId
+    ) {
+      return;
+    }
+
+    const status = docbookLinkStatuses[activeOrgId]?.status;
+    if (!status || status === "idle") {
+      void attemptAutoLinkDocbook(activeOrgId);
+    }
+  }, [
+    activeOrgId,
+    attemptAutoLinkDocbook,
+    docbookLinkStatuses,
+    hasConnectedOrg,
+    hasLinkedDocbook,
+    refreshing,
+    stateLoaded,
+  ]);
+
+  useEffect(() => {
+    Object.entries(docbookPollRefs.current).forEach(([orgId]) => {
+      const status = docbookLinkStatuses[orgId]?.status;
+      if (status === "linked" || status === "failed") {
+        stopDocbookPolling(orgId);
+      }
+    });
+  }, [docbookLinkStatuses, stopDocbookPolling]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(docbookPollRefs.current).forEach((intervalId) => {
+        if (intervalId) {
+          clearInterval(intervalId);
+        }
+      });
+    };
+  }, []);
 
   useEffect(() => {
     if (
@@ -545,36 +749,84 @@ export default function OnboardingPage() {
                     </div>
                   ) : (
                     <div className="space-y-5">
-                      <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-5 text-left">
-                        <p className="text-sm font-semibold text-blue-200">Manual setup required</p>
-                        <p className="mt-2 text-sm text-blue-100/90">
-                          Create a private repository named
-                          <code className="mx-2 rounded bg-blue-500/20 px-2 py-1 font-mono text-xs text-blue-50">
-                            {suggestedDocbookName}
-                          </code>
-                          inside your organization, then link it to Pustak.
-                        </p>
-                        <p className="mt-2 text-xs text-blue-200/80">
-                          Tip: include a README so the repository is initialized properly.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <a
-                          href={`https://github.com/new?name=${suggestedDocbookName}&private=true&description=Pustak%20Docbook%20Repository`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:shadow-xl"
-                        >
-                          Create on GitHub
-                          <ArrowRight size={16} />
-                        </a>
-                        <button
-                          onClick={() => setShowDocbookModal(true)}
-                          className="inline-flex items-center gap-2 rounded-full border border-slate-600/60 bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:border-blue-400/60 hover:bg-slate-900/80"
-                        >
-                          Link existing docbook
-                        </button>
-                      </div>
+                      {currentLinkStatus?.status === "linking" ||
+                      currentLinkStatus?.status === "idle" ? (
+                        <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-5 text-sm text-blue-100/90 flex items-center gap-3">
+                          <Loader2 className="h-5 w-5 animate-spin text-blue-200" />
+                          <span>
+                            Checking your GitHub organization for an existing docbook repository and linking it automatically...
+                          </span>
+                        </div>
+                      ) : null}
+
+                      {currentLinkStatus?.status === "failed" ? (
+                        <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-5 text-sm text-red-100 space-y-3">
+                          <p className="font-semibold">Failed to verify docbook repository automatically.</p>
+                          <p>{currentLinkStatus.error || "Please try again or link manually."}</p>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button
+                              onClick={() => attemptAutoLinkDocbook(activeOrgId)}
+                              className="inline-flex items-center gap-2 rounded-full bg-red-500/80 px-4 py-2 text-xs font-semibold text-white transition hover:bg-red-500"
+                            >
+                              Retry automatic link
+                            </button>
+                            <button
+                              onClick={() => setShowDocbookModal(true)}
+                              className="inline-flex items-center gap-2 rounded-full border border-slate-600/60 bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:border-red-400/60 hover:bg-slate-900/80"
+                            >
+                              Link manually
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {currentLinkStatus?.status === "not_found" ? (
+                        <div className="space-y-5">
+                          <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-5 text-left">
+                            <p className="text-sm font-semibold text-blue-200">Manual setup required</p>
+                            <p className="mt-2 text-sm text-blue-100/90">
+                              Create a private repository named
+                              <code className="mx-2 rounded bg-blue-500/20 px-2 py-1 font-mono text-xs text-blue-50">
+                                {suggestedDocbookName}
+                              </code>
+                              inside your organization, then link it to Pustak.
+                            </p>
+                            <p className="mt-2 text-xs text-blue-200/80">
+                              Tip: include a README so the repository is initialized properly.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button
+                              onClick={() => {
+                                if (!activeOrgId) return;
+                                startDocbookPolling(activeOrgId);
+                                const url = `https://github.com/new?name=${suggestedDocbookName}&private=true&description=Pustak%20Docbook%20Repository`;
+                                window.open(url, "_blank", "noopener,noreferrer");
+                              }}
+                              disabled={docbookLinkStatuses[activeOrgId]?.status === "linking"}
+                              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                              Create on GitHub
+                              <ArrowRight size={16} />
+                            </button>
+                            <button
+                              onClick={() => setShowDocbookModal(true)}
+                              className="inline-flex items-center gap-2 rounded-full border border-slate-600/60 bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:border-blue-400/60 hover:bg-slate-900/80"
+                            >
+                              Link manually
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (!activeOrgId) return;
+                                startDocbookPolling(activeOrgId);
+                              }}
+                              className="inline-flex items-center gap-2 rounded-full border border-blue-400/60 bg-slate-900 px-4 py-2 text-xs font-semibold text-blue-100 transition hover:border-blue-300/80 hover:bg-slate-900/70"
+                            >
+                              Refresh status
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   )
                 ) : (
@@ -706,6 +958,7 @@ export default function OnboardingPage() {
           isOpen={showDocbookModal}
           onClose={() => setShowDocbookModal(false)}
           orgId={currentSummary.org}
+          accessToken={token}
           onSuccess={handleDocbookLinked}
         />
       )}

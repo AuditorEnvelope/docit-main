@@ -221,13 +221,20 @@ def create_application() -> FastAPI:
         "http://127.0.0.1:8000",
     ]
     
-    # Add configured origins if any
+    # Add configured origins if any (filter out wildcard patterns)
     if settings.BACKEND_CORS_ORIGINS:
-        cors_origins.extend([str(origin) for origin in settings.BACKEND_CORS_ORIGINS])
+        for origin in settings.BACKEND_CORS_ORIGINS:
+            origin_str = str(origin)
+            if not origin_str.startswith("https://*."):
+                cors_origins.append(origin_str)
+    
+    # Build regex pattern for wildcard subdomains
+    origin_regex = r"^https://[a-zA-Z0-9-]+\.docbook\.site$"
     
     application.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
+        allow_origin_regex=origin_regex,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -16,6 +16,25 @@ export default function DocPersonaSelector({
   backendUrl = "http://localhost:8000",
   userToken,
 }: DocPersonaSelectorProps) {
+  // Extract actual repo name if it contains org/repo format
+  const normalizedRepoId = useMemo(() => {
+    console.log('🔍 DocPersonaSelector received repoId:', repoId);
+    
+    // If repoId is in the format "org/repo", use it directly
+    if (repoId && repoId.includes('/')) {
+      return repoId;
+    }
+    
+    // If repoId has multiple segments (like org/repo/settings), extract org/repo
+    const segments = repoId.split('/');
+    if (segments.length >= 2) {
+      const result = `${segments[0]}/${segments[1]}`;
+      console.log('🔍 Normalized repoId to:', result);
+      return result;
+    }
+    
+    return repoId;
+  }, [repoId]);
   const [selectedPersona, setSelectedPersona] = useState<string>("internal");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -36,7 +55,7 @@ export default function DocPersonaSelector({
       setLoading(true);
       try {
         const response = await fetch(
-          `${apiBase}/repositories/${encodeURIComponent(repoId)}/doc-persona`,
+          `${apiBase}/repositories/${encodeURIComponent(normalizedRepoId)}/doc-persona`,
           {
             headers: {
               Authorization: `Bearer ${userToken}`,
@@ -56,7 +75,7 @@ export default function DocPersonaSelector({
     };
 
     fetchPersona();
-  }, [repoId, userToken, apiBase]);
+  }, [normalizedRepoId, userToken, apiBase]);
 
   const handleSave = async () => {
     if (!userToken) {
@@ -71,7 +90,7 @@ export default function DocPersonaSelector({
     try {
       const response = await fetch(
         `${apiBase}/repositories/${encodeURIComponent(
-          repoId
+          normalizedRepoId
         )}/doc-persona?doc_persona=${encodeURIComponent(selectedPersona)}`,
         {
           method: "POST",

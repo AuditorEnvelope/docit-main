@@ -3,10 +3,14 @@
 from typing import Optional
 
 from sqlalchemy import select
+import logging
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.docbook import DocbookRepo
+
+
+logger = logging.getLogger(__name__)
 
 
 class DocbookService:
@@ -16,14 +20,54 @@ class DocbookService:
         self.db = db
 
     async def get_repo(self, user_id: str | UUID, org_id: str) -> Optional[DocbookRepo]:
+        """Return the docbook repo linked to the org, attempting user match first."""
+
         user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
 
-        stmt = select(DocbookRepo).where(DocbookRepo.user_id == user_uuid, DocbookRepo.org_id == org_id)
+        stmt = select(DocbookRepo).where(
+            DocbookRepo.user_id == user_uuid,
+            DocbookRepo.org_id == org_id,
+            DocbookRepo.is_active.is_(True),
+        )
         result = await self.db.execute(stmt)
-        return result.scalar_one_or_none()
+        repo = result.scalar_one_or_none()
+
+        if repo:
+            logger.info(
+                "[docbook-service] matched docbook repo for org %s via user %s",
+                org_id,
+                user_uuid,
+            )
+            return repo
+
+        logger.info(
+            "[docbook-service] no user-specific docbook repo for org %s and user %s; falling back to org lookup",
+            org_id,
+            user_uuid,
+        )
+
+        stmt = select(DocbookRepo).where(
+            DocbookRepo.org_id == org_id,
+            DocbookRepo.is_active.is_(True),
+        )
+        result = await self.db.execute(stmt)
+        repo = result.scalar_one_or_none()
+
+        if repo:
+            logger.info(
+                "[docbook-service] fallback matched docbook repo for org %s (stored for user %s)",
+                org_id,
+                repo.user_id,
+            )
+
+        return repo
 
     async def get_repo_by_org(self, org_id: str) -> Optional[DocbookRepo]:
-        stmt = select(DocbookRepo).where(DocbookRepo.org_id == org_id, DocbookRepo.is_active.is_(True))
+        from sqlalchemy import func
+        stmt = select(DocbookRepo).where(
+            func.lower(DocbookRepo.org_id) == org_id.lower(),
+            DocbookRepo.is_active.is_(True)
+        )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 

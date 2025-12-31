@@ -103,30 +103,57 @@ async function markOnboardingCompleteRemotely(token: string): Promise<boolean> {
   }
 }
 
-function OnboardingRedirect({ children }: { children: ReactNode }) {
+function OnboardingRedirect({
+  children,
+  isDocbookHost,
+}: {
+  children: ReactNode;
+  isDocbookHost: boolean;
+}) {
   const { loading, isAuthenticated, user, token, markOnboardingComplete } =
     useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [status, setStatus] = useState<"checking" | "redirecting" | "ready">(
-    "checking"
+    () => (isDocbookHost ? "ready" : "checking")
   );
   const [progressIndex, setProgressIndex] = useState(0);
   const completionAttemptedRef = useRef(false);
 
-  const { isOnboardingRoute, isPublicRoute } = useMemo(() => {
-    const current = pathname || "";
-    return {
-      isOnboardingRoute: current.startsWith("/onboarding"),
-      isPublicRoute:
-        current === "" ||
-        current === "/" ||
-        current.startsWith("/auth/") ||
-        current === "/login",
-    };
-  }, [pathname]);
+  const { isOnboardingRoute, isPublicRoute, isDocsRoute, isNotFoundRoute } =
+    useMemo(() => {
+      const current = pathname || "";
+      const normalized = current.replace(/\/+$|^$/, (match) =>
+        match === "" ? "/" : ""
+      );
+      const docsRoute =
+        normalized === "/docs" || normalized.startsWith("/docs/");
+      const notFoundRoute = normalized === "/404";
+      return {
+        isOnboardingRoute: normalized.startsWith("/onboarding"),
+        isPublicRoute:
+          normalized === "" ||
+          normalized === "/" ||
+          normalized.startsWith("/auth/") ||
+          normalized === "/login" ||
+          docsRoute ||
+          notFoundRoute,
+        isDocsRoute: docsRoute,
+        isNotFoundRoute: notFoundRoute,
+      };
+    }, [pathname]);
 
   useEffect(() => {
+    if (isDocbookHost) {
+      setStatus("ready");
+      return;
+    }
+
+    if (isDocsRoute || isNotFoundRoute) {
+      setStatus("ready");
+      return;
+    }
+
     if (loading) {
       setStatus(isPublicRoute && !isAuthenticated ? "ready" : "checking");
       return;
@@ -203,6 +230,7 @@ function OnboardingRedirect({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [
+    isDocbookHost,
     isAuthenticated,
     isOnboardingRoute,
     isPublicRoute,
@@ -213,7 +241,12 @@ function OnboardingRedirect({ children }: { children: ReactNode }) {
     markOnboardingComplete,
   ]);
 
-  const showSplash = status !== "ready" && !isOnboardingRoute;
+  const showSplash =
+    status !== "ready" &&
+    !isOnboardingRoute &&
+    !isDocsRoute &&
+    !isNotFoundRoute &&
+    !isDocbookHost;
 
   useEffect(() => {
     if (!showSplash) return;
@@ -237,7 +270,13 @@ function OnboardingRedirect({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({
+  children,
+  isDocbookHost = false,
+}: {
+  children: ReactNode;
+  isDocbookHost?: boolean;
+}) {
   return (
     <ThemeProvider
       attribute="class"
@@ -246,7 +285,9 @@ export function Providers({ children }: { children: ReactNode }) {
       disableTransitionOnChange
     >
       <AuthProvider>
-        <OnboardingRedirect>{children}</OnboardingRedirect>
+        <OnboardingRedirect isDocbookHost={isDocbookHost}>
+          {children}
+        </OnboardingRedirect>
       </AuthProvider>
     </ThemeProvider>
   );

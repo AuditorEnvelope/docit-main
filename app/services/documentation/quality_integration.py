@@ -146,7 +146,24 @@ class QualityValidationWrapper:
 
     def save_quality_report(self, repo_dir: str, quality: DocumentationQuality) -> None:
         report = self.checker.generate_quality_report(quality)
-        report_path = Path(repo_dir) / "docs" / "QUALITY_REPORT.md"
+        base_docs_path = Path(repo_dir) / "docs"
+        
+        # Check if we're using the new persona-based structure
+        personas = ["internal", "dev"]
+        persona_paths = [base_docs_path / persona for persona in personas if (base_docs_path / persona).exists()]
+        
+        if persona_paths:
+            # New structure: Save to internal persona directory if it exists
+            internal_path = base_docs_path / "internal"
+            if internal_path.exists():
+                report_path = internal_path / "QUALITY_REPORT.md"
+            else:
+                # Fall back to first available persona
+                report_path = persona_paths[0] / "QUALITY_REPORT.md"
+        else:
+            # Legacy structure: Save to base docs directory
+            report_path = base_docs_path / "QUALITY_REPORT.md"
+        
         try:
             report_path.parent.mkdir(parents=True, exist_ok=True)
             report_path.write_text(report, encoding="utf-8")
@@ -159,23 +176,49 @@ def read_generated_docs(repo_dir: str) -> Dict[str, str]:
     """Collect generated documentation artefacts from disk."""
 
     docs: Dict[str, str] = {}
-    docs_path = Path(repo_dir) / "docs"
+    base_docs_path = Path(repo_dir) / "docs"
+    
+    # Check if we're using the new persona-based structure
+    personas = ["internal", "dev"]
+    persona_paths = [base_docs_path / persona for persona in personas if (base_docs_path / persona).exists()]
+    
+    if persona_paths:
+        # New structure: Read from persona-specific directories
+        # Prioritize internal docs for quality checks
+        internal_path = base_docs_path / "internal"
+        if internal_path.exists():
+            docs_path = internal_path
+        else:
+            # Fall back to first available persona
+            docs_path = persona_paths[0]
+            
+        print(f"📚 Reading docs from persona directory: {docs_path.name}")
+    else:
+        # Legacy structure: Read from base docs directory
+        docs_path = base_docs_path
+        print("📚 Reading docs from legacy directory structure")
 
+    # Read architecture docs
     arch = docs_path / "architecture" / "current.md"
     if arch.exists():
         docs["architecture"] = arch.read_text(encoding="utf-8")
 
+    # Read workflow docs
     workflow = docs_path / "workflow" / "current.md"
     if workflow.exists():
         docs["workflow"] = workflow.read_text(encoding="utf-8")
 
+    # Read API docs
     api_doc = docs_path / "api.md"
     if api_doc.exists():
         docs["api"] = api_doc.read_text(encoding="utf-8")
 
+    # Read README (from repo root or docs directory)
     readme_path = Path(repo_dir) / "README.md"
     if readme_path.exists():
         docs["readme"] = readme_path.read_text(encoding="utf-8")
+    elif (docs_path / "README.md").exists():
+        docs["readme"] = (docs_path / "README.md").read_text(encoding="utf-8")
 
     return docs
 

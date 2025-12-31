@@ -38,8 +38,11 @@ export default function RepositorySettingsPage({ params }: SettingsPageProps) {
         const resolvedParams = await params;
         const slug = resolvedParams.slug;
 
+        console.log('🔍 Settings page received slug:', slug);
+        
         // Extract repo name from slug
         const repoPath = slug.join("/");
+        console.log('🔍 Constructed repo path:', repoPath);
 
         if (!isMounted) return;
 

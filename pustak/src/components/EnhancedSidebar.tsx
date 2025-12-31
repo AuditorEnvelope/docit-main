@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { mapDocbookPathToDocsSlug } from "@/lib/docsPathMapper";
 
 interface SidebarProps {
   onClose: () => void;
@@ -186,34 +187,31 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
     safeSetExpandedFolders((draft) => {
       docbooks.forEach((docbook) => {
-        const encodedDocbook = docbook.fullName
-          .split("/")
-          .map((segment) => encodeURIComponent(segment))
-          .join("/");
-        const baseHref = `/repo/${encodedDocbook}`;
-        if (!pathname.startsWith(baseHref)) {
-          return;
-        }
+        const traverse = (items: DocbookFile[], basePath: string[] = []) => {
+          items.forEach((item) => {
+            const itemPath = [...basePath, item.name];
 
-        const remainder = pathname.slice(baseHref.length).replace(/^\//, "");
-        if (!remainder) {
-          return;
-        }
+            if (item.type === "file") {
+              const docRoute = mapDocbookPathToDocsSlug({
+                org: docbook.orgId,
+                pathSegments: itemPath,
+              });
 
-        const decodedSegments = remainder
-          .split("/")
-          .filter(Boolean)
-          .map((segment) => decodeURIComponent(segment));
+              if (docRoute && pathname === docRoute.href) {
+                for (let i = 1; i < itemPath.length; i += 1) {
+                  draft.add(itemPath.slice(0, i).join("/"));
+                }
+              }
+              return;
+            }
 
-        const cumulative: string[] = [];
-        decodedSegments.forEach((segment, index) => {
-          // Skip last segment (file) to only expand folders
-          if (index === decodedSegments.length - 1) {
-            return;
-          }
-          cumulative.push(segment);
-          draft.add(cumulative.join("/"));
-        });
+            if (item.files && item.files.length > 0) {
+              traverse(item.files, itemPath);
+            }
+          });
+        };
+
+        traverse(docbook.folders);
       });
     });
   }, [pathname, docbooks]);
@@ -222,21 +220,12 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
   const renderFileTree = (
     items: DocbookFile[],
     basePath: string[] = [],
-    docbookFullName: string
+    docbook: DocbookRepo
   ): JSX.Element => {
-    const repoHrefBase = `/repo/${docbookFullName
-      .split("/")
-      .map((segment) => encodeURIComponent(segment))
-      .join("/")}`;
-
-    const toEncodedPath = (segments: string[]) =>
-      segments.map((segment) => encodeURIComponent(segment)).join("/");
-
     return (
       <div className="space-y-1">
         {items.map((item) => {
           if (basePath.length === 0 && item.type === "file") {
-            // Skip top-level files like README.md; only show folders at root
             return null;
           }
 
@@ -245,9 +234,16 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
           const isExpanded = expandedFolders.has(itemKey);
 
           if (item.type === "file") {
-            // Clickable file link using actual file path
-            const encodedFilePath = toEncodedPath(itemPath);
-            const href = `${repoHrefBase}/${encodedFilePath}`;
+            const docRoute = mapDocbookPathToDocsSlug({
+              org: docbook.orgId,
+              pathSegments: itemPath,
+            });
+
+            if (!docRoute) {
+              return null;
+            }
+
+            const href = docRoute.href;
 
             return (
               <Link
@@ -260,49 +256,49 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                     : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
                 }`}
               >
-                <FileText className="h-3 w-3 text-blue-300/80" />
-                <span className="truncate">{item.name}</span>
+                <FileText className="h-3 w-3 text-blue-300/80 flex-shrink-0" />
+                <span className="truncate overflow-hidden text-ellipsis">{item.name}</span>
               </Link>
             );
-          } else {
-            // Expandable folder
-            const lowerName = item.name.toLowerCase();
-            const defaultHref =
-              lowerName === "architecture" || lowerName === "workflow"
-                ? `${repoHrefBase}/${toEncodedPath([
-                    ...itemPath,
-                    "current.md",
-                  ])}`
-                : undefined;
-
-            return (
-              <div key={itemKey} className="space-y-1">
-                <button
-                  onClick={() => toggleFolder(itemKey, defaultHref)}
-                  className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800/60"
-                >
-                  <div className="flex items-center gap-2">
-                    <Folder className="h-3 w-3 text-blue-300" />
-                    <span className="font-medium text-slate-100">
-                      {item.name}
-                    </span>
-                  </div>
-                  <span
-                    className={`transition-transform ${
-                      isExpanded ? "rotate-180" : "rotate-0"
-                    }`}
-                  >
-                    <ChevronDown className="h-3 w-3" />
-                  </span>
-                </button>
-                {isExpanded && item.files && (
-                  <div className="ml-3 border-l border-slate-800/60 pl-3">
-                    {renderFileTree(item.files, itemPath, docbookFullName)}
-                  </div>
-                )}
-              </div>
-            );
           }
+
+          const lowerName = item.name.toLowerCase();
+          const defaultDocRoute =
+            lowerName === "architecture" || lowerName === "workflow"
+              ? mapDocbookPathToDocsSlug({
+                  org: docbook.orgId,
+                  pathSegments: [...itemPath, "current.md"],
+                })
+              : null;
+          const defaultHref = defaultDocRoute?.href;
+
+          return (
+            <div key={itemKey} className="space-y-1">
+              <button
+                onClick={() => toggleFolder(itemKey, defaultHref)}
+                className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800/60"
+              >
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <Folder className="h-3 w-3 text-blue-300 flex-shrink-0" />
+                  <span className="font-medium text-slate-100 truncate overflow-hidden text-ellipsis">
+                    {item.name}
+                  </span>
+                </div>
+                <span
+                  className={`transition-transform flex-shrink-0 ${
+                    isExpanded ? "rotate-180" : "rotate-0"
+                  }`}
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </span>
+              </button>
+              {isExpanded && item.files && (
+                <div className="ml-3 border-l border-slate-800/60 pl-3">
+                  {renderFileTree(item.files, itemPath, docbook)}
+                </div>
+              )}
+            </div>
+          );
         })}
       </div>
     );
@@ -336,25 +332,25 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
             </p>
           </div>
         </div>
-        <div className="relative mt-5 space-y-3 rounded-3xl border border-slate-800/70 bg-slate-950/80 p-4 shadow-inner shadow-blue-950/40">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-            <Sparkles className="h-4 w-4 text-blue-300 animate-pulse" />
+        <div className="relative mt-5 space-y-2 rounded-2xl border border-slate-800/70 bg-slate-950/80 p-3 shadow-inner shadow-blue-950/40">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-100">
+            <Sparkles className="h-3 w-3 text-blue-300 animate-pulse" />
             Orchestrate delightful docs in minutes
           </div>
-          <p className="text-[12px] leading-relaxed text-slate-400">
+          <p className="text-[9px] leading-relaxed text-slate-400">
             Pustak automates docbook staging so every product team ships architecture, workflow, and changelog updates with the same polish as their code.
           </p>
-          <div className="grid gap-2 text-[11px] text-slate-300 sm:grid-cols-3">
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-800/80 bg-slate-900/70 px-3 py-2 transition duration-300 hover:border-blue-500/50 hover:bg-slate-900/90">
-              <Globe2 className="h-3.5 w-3.5 text-emerald-300" />
+          <div className="grid gap-1.5 text-[9px] text-slate-300 sm:grid-cols-3">
+            <div className="flex items-center gap-1.5 rounded-xl border border-slate-800/80 bg-slate-900/70 px-2 py-1.5 transition duration-300 hover:border-blue-500/50 hover:bg-slate-900/90">
+              <Globe2 className="h-3 w-3 text-emerald-300" />
               Multi-org ready
             </div>
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-800/80 bg-slate-900/70 px-3 py-2 transition duration-300 hover:border-blue-500/50 hover:bg-slate-900/90">
-              <ShieldCheck className="h-3.5 w-3.5 text-sky-300" />
+            <div className="flex items-center gap-1.5 rounded-xl border border-slate-800/80 bg-slate-900/70 px-2 py-1.5 transition duration-300 hover:border-blue-500/50 hover:bg-slate-900/90">
+              <ShieldCheck className="h-3 w-3 text-sky-300" />
               Secure doc pipelines
             </div>
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-800/80 bg-slate-900/70 px-3 py-2 transition duration-300 hover:border-blue-500/50 hover:bg-slate-900/90">
-              <Zap className="h-3.5 w-3.5 text-amber-300" />
+            <div className="flex items-center gap-1.5 rounded-xl border border-slate-800/80 bg-slate-900/70 px-2 py-1.5 transition duration-300 hover:border-blue-500/50 hover:bg-slate-900/90">
+              <Zap className="h-3 w-3 text-amber-300" />
               AI-guided updates
             </div>
           </div>
@@ -366,7 +362,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
   return (
     <div className="flex h-full flex-col border-r border-slate-800/70 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100">
       {/* Header */}
-      <div className="relative overflow-hidden border-b border-slate-800/70 px-5 py-6">
+      <div className="relative overflow-hidden border-b border-slate-800/70 px-3 py-4">
         <div
           className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.35),_transparent_55%)]"
           aria-hidden
@@ -376,41 +372,41 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
           aria-hidden
         />
         <div className="relative flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl bg-blue-500/20 p-2.5 ring-1 ring-inset ring-blue-400/40">
-              <BookOpen className="h-6 w-6 text-blue-300" />
+          <div className="flex items-center gap-2">
+            <div className="rounded-xl bg-blue-500/20 p-1.5 ring-1 ring-inset ring-blue-400/40">
+              <BookOpen className="h-4 w-4 text-blue-300" />
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
+              <p className="text-[8px] uppercase tracking-[0.15em] text-slate-400">
                 Workspace
               </p>
-              <h2 className="text-lg font-semibold text-white sm:text-xl">
+              <h2 className="text-xs font-semibold text-white">
                 Pustak Docs Hub
               </h2>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-full border border-slate-700/70 bg-slate-900/70 p-2 text-slate-400 transition hover:border-slate-500/70 hover:text-white"
+            className="rounded-full border border-slate-700/70 bg-slate-900/70 p-1.5 text-slate-400 transition hover:border-slate-500/70 hover:text-white"
             aria-label="Close sidebar"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3 w-3" />
           </button>
         </div>
-        <div className="relative mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-slate-800/70 bg-slate-950/70 p-3 text-[11px] text-slate-400">
-          <div className="flex flex-col gap-1">
-            <span className="uppercase tracking-[0.2em]">Docbooks</span>
-            <span className="text-lg font-semibold text-white">
+        <div className="relative mt-3 grid grid-cols-2 gap-2 rounded-xl border border-slate-800/70 bg-slate-950/70 p-2 text-[8px] text-slate-400">
+          <div className="flex flex-col gap-0.5">
+            <span className="uppercase tracking-[0.15em]">Docbooks</span>
+            <span className="text-sm font-semibold text-white">
               {docbooks.length}
             </span>
           </div>
-          <div className="flex flex-col gap-1 text-right">
-            <span className="uppercase tracking-[0.2em]">Generated</span>
-            <span className="text-lg font-semibold text-emerald-300">
+          <div className="flex flex-col gap-0.5 text-right">
+            <span className="uppercase tracking-[0.15em]">Generated</span>
+            <span className="text-sm font-semibold text-emerald-300">
               {docbooks.filter((docbook) => docbook.hasGeneratedDocs).length}
             </span>
           </div>
-          <div className="col-span-2 text-[10px] leading-relaxed text-slate-500">
+          <div className="col-span-2 text-[8px] leading-relaxed text-slate-500">
             Navigate your staging documentation and jump straight into
             architecture, workflows, and change logs.
           </div>
@@ -418,7 +414,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
       </div>
 
       {/* Content */}
-      <nav className="flex-1 space-y-4 overflow-y-auto px-5 py-4 scrollbar-thin scrollbar-track-slate-900 scrollbar-thumb-slate-700/70">
+      <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-3 scrollbar-thin scrollbar-track-slate-900 scrollbar-thumb-slate-700/70">
         {docbooks.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-700/70 bg-slate-900/40 p-6 text-center">
             <p className="text-sm font-medium text-slate-200">
@@ -453,11 +449,11 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                   </div>
                   <div className="relative flex items-start justify-between gap-3">
                     <div>
-                      <div className="inline-flex items-center gap-2 rounded-full border border-blue-400/40 bg-blue-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-200">
-                        <GitBranch className="h-3 w-3" />
+                      <div className="inline-flex items-center gap-2 rounded-full border border-blue-400/40 bg-blue-500/10 px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.2em] text-blue-200">
+                        <GitBranch className="h-2.5 w-2.5" />
                         {docbook.orgId}
                       </div>
-                      <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                      <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
                         {docbook.hasDocbook
                           ? "Linked docbook repository"
                           : "Docbook repository missing"}
@@ -525,16 +521,12 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                         </button>
                       </div>
                     ) : (
-                      <div className="space-y-3 rounded-2xl border border-slate-800/70 bg-slate-900/80 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                      <div className="space-y-3 rounded-2xl border border-slate-800/70 bg-slate-900/80 p-3">
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                           Staging file map
                         </p>
                         <div className="space-y-2">
-                          {renderFileTree(
-                            docbook.folders,
-                            [],
-                            docbook.fullName
-                          )}
+                          {renderFileTree(docbook.folders, [], docbook)}
                         </div>
                       </div>
                     )}
@@ -547,7 +539,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-slate-800/70 px-5 py-4 text-[11px] text-slate-500">
+      <div className="border-t border-slate-800/70 px-3 py-2.5 text-[8px] text-slate-500">
         <div className="flex items-center justify-between">
           <span>Powered by Pustak v1.0.0</span>
           <button

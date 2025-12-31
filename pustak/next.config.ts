@@ -13,8 +13,26 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Optimize images
   images: {
-    domains: ['avatars.githubusercontent.com', 'github.com'],
+    domains: ["avatars.githubusercontent.com", "github.com"],
   },
+  async headers() {
+    return [
+      {
+        source: "/render-docs/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-store, must-revalidate",
+          },
+          {
+            key: "Pragma",
+            value: "no-cache",
+          },
+        ],
+      },
+    ];
+  },
+
 };
 
 export default nextConfig;

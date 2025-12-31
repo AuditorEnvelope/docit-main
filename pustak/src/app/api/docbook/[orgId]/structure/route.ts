@@ -5,14 +5,11 @@ const BACKEND_URL =
 
 export async function GET(
   request: NextRequest,
-  context: { params: { orgId: string } | Promise<{ orgId: string }> }
+  context: { params: Promise<{ orgId: string }> }
 ) {
   try {
-    // Handle both direct params and Promise<params>
-    const params = await (context.params instanceof Promise
-      ? context.params
-      : Promise.resolve(context.params));
-    const { orgId } = params;
+    // Await params before accessing properties
+    const { orgId } = await context.params;
     const branch = request.nextUrl.searchParams.get("branch") || "staging";
     const authHeader = request.headers.get("authorization");
 
