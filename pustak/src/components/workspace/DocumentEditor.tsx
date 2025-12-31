@@ -98,6 +98,11 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
         setIsLoading(true);
         const fetchContent = async () => {
           if (!activePage.path) {
+            console.error('[DocumentEditor] ❌ No path for page:', {
+              pageId: activePageId,
+              title: activePage.title,
+              page: activePage
+            });
             setEditorContent('');
             setIsLoading(false);
             return;
@@ -106,6 +111,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
           try {
             const token = localStorage.getItem('pustak_access_token');
             if (!token) {
+              console.error('[DocumentEditor] ❌ No auth token');
               setEditorContent('');
               setIsLoading(false);
               return;
@@ -115,11 +121,33 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
             const baseUrl = BACKEND_URL.includes('/api/v1') ? BACKEND_URL : `${BACKEND_URL}/api/v1`;
             const url = `${baseUrl}/workspace/${orgId}/${repoId}/page?path=${encodeURIComponent(activePage.path)}`;
             
+            console.log('[DocumentEditor] 🔍 Fetching content:', {
+              url,
+              path: activePage.path,
+              pageId: activePageId,
+              title: activePage.title,
+              orgId,
+              repoId
+            });
+            
             const response = await fetch(url, {
               headers: { 'Authorization': `Bearer ${token}` },
             });
             
+            console.log('[DocumentEditor] 📡 Response:', {
+              status: response.status,
+              statusText: response.statusText,
+              ok: response.ok
+            });
+            
             if (!response.ok) {
+              const errorText = await response.text().catch(() => '');
+              console.error('[DocumentEditor] ❌ API Error:', {
+                status: response.status,
+                statusText: response.statusText,
+                error: errorText.substring(0, 500),
+                url
+              });
               setEditorContent('');
               setIsLoading(false);
               return;
@@ -127,13 +155,25 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
             
             const data = await response.json();
             const content = data.content || '';
-            loadPageContent(activePageId, content);
-            setEditorContent(content);
-            lastSavedRef.current = content;
-            editorKeyRef.current = `${activePageId}-${Date.now()}`;
+            
+            console.log('[DocumentEditor] ✅ Content received:', {
+              contentLength: content.length,
+              hasContent: !!content,
+              path: data.path
+            });
+            
+            if (content) {
+              loadPageContent(activePageId, content);
+              setEditorContent(content);
+              lastSavedRef.current = content;
+              editorKeyRef.current = `${activePageId}-${Date.now()}`;
+              console.log('[DocumentEditor] ✅ Content loaded successfully!');
+            } else {
+              console.warn('[DocumentEditor] ⚠️ Empty content received');
+            }
             setIsLoading(false);
           } catch (error) {
-            console.error('[DocumentEditor] Error fetching content:', error);
+            console.error('[DocumentEditor] ❌ Fetch error:', error);
             setEditorContent('');
             setIsLoading(false);
           }

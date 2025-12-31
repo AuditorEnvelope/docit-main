@@ -110,11 +110,7 @@ export function PublishToLiveButton({
       <button
         onClick={() => setShowConfirm(true)}
         disabled={publishing || disabled}
-        className={`${fullWidth ? "w-full" : ""} inline-flex items-center justify-center gap-2 rounded-xl border transition ${
-          hasPublished
-            ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30"
-            : "border-purple-400/40 bg-purple-500/20 text-purple-100 hover:bg-purple-500/30"
-        } px-4 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed`}
+        className={`${fullWidth ? "w-full" : ""} inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium transition-all bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 hover:border-yellow-500/50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer`}
       >
         {publishing ? (
           <>

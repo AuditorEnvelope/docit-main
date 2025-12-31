@@ -393,7 +393,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             // Also store info for all children (for UI display)
             function storeDeletedInfo(node: FileNode) {
               if (node.type === 'page' && node.id !== nodeId) {
-                const path = getNodeFilePath(state.fileTree, node.id) || node.path || '';
+                const path = state.fileTree ? getNodeFilePath(state.fileTree, node.id) || node.path || '' : node.path || '';
                 newDeletedNodes[node.id] = {
                   id: node.id,
                   title: node.title,
@@ -837,7 +837,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             // Remove this node and all its children from deletedNodes and deletedPaths
             function removeFromDeleted(node: FileNode) {
               delete newDeletedNodes[node.id];
-              const path = getNodeFilePath(restoredTree, node.id) || node.path || '';
+              const path = restoredTree ? getNodeFilePath(restoredTree, node.id) || node.path || '' : node.path || '';
               if (path) {
                 newDeletedPaths.delete(path);
               }

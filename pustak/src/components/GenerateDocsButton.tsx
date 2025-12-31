@@ -194,13 +194,9 @@ export function GenerateDocsButton({
     <button
       onClick={handleGenerate}
       disabled={isGenerating}
-      className={`flex cursor-pointer items-center space-x-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-        fullWidth ? "w-full justify-center" : ""
-      } ${
-        hasDocsFolder
-          ? "bg-purple-50 dark:bg-purple-900/20 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40"
-          : "bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-100 dark:hover:bg-yellow-900/40"
-      } disabled:opacity-50 disabled:cursor-not-allowed`}
+      className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium transition-all ${
+        fullWidth ? "w-full" : ""
+      } bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 hover:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed`}
     >
       {hasDocsFolder ? (
         <>
