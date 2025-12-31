@@ -127,14 +127,15 @@ async def verify_payment(
     db: AsyncSession = Depends(get_db),
 ):
     """Verify Razorpay payment - READ ONLY (webhooks update DB)
-    
+
     Note: This endpoint is automatically called from the payment success page.
     It does NOT write to the database - only reads payment status.
     Webhooks are the single source of truth for DB updates.
     """
     razorpay_service = RazorpayService(db)
 
-    print(f"[MANUAL-VERIFY] Auto-invoked from success page for user {user.id}, payment {payload.razorpay_payment_id}")
+    print(
+        f"[MANUAL-VERIFY] Auto-invoked from success page for user {user.id}, payment {payload.razorpay_payment_id}")
 
     # Verify signature if provided
     if payload.razorpay_signature:
@@ -146,7 +147,8 @@ async def verify_payment(
             )
 
             if not is_valid:
-                print(f"[MANUAL-VERIFY] Invalid signature for payment {payload.razorpay_payment_id}")
+                print(
+                    f"[MANUAL-VERIFY] Invalid signature for payment {payload.razorpay_payment_id}")
                 raise HTTPException(
                     status_code=400, detail="Invalid payment signature")
         except Exception as e:
@@ -161,7 +163,8 @@ async def verify_payment(
             payment_id=payload.razorpay_payment_id
         )
 
-        print(f"[MANUAL-VERIFY] Status check result: {status_result.get('status')}")
+        print(
+            f"[MANUAL-VERIFY] Status check result: {status_result.get('status')}")
         return status_result
 
     except HTTPException as he:
@@ -173,7 +176,7 @@ async def verify_payment(
         print(f"[MANUAL-VERIFY] Unexpected error: {e}")
         import traceback
         traceback.print_exc()
-        
+
         # Return a safe response instead of 500 error
         return {
             "status": "checking",

@@ -245,8 +245,10 @@ class RazorpayService:
             try:
                 if event_type == 'payment.authorized':
                     # Log but don't process - wait for payment.captured
-                    payment_id = payload_data.get('payment', {}).get('entity', {}).get('id')
-                    print(f"🕑 [WEBHOOK] payment.authorized - Payment {payment_id} authorized, waiting for capture")
+                    payment_id = payload_data.get(
+                        'payment', {}).get('entity', {}).get('id')
+                    print(
+                        f"🕑 [WEBHOOK] payment.authorized - Payment {payment_id} authorized, waiting for capture")
                     return {'status': 'acknowledged', 'event_type': event_type}
                 elif event_type == 'payment.captured':
                     await self.handle_payment_captured(
@@ -398,7 +400,8 @@ class RazorpayService:
         order_id = payment.get("order_id")
         razorpay_payment_id = payment.get("id")
 
-        print(f"[WEBHOOK] payment.captured - Order: {order_id}, Payment: {razorpay_payment_id}")
+        print(
+            f"[WEBHOOK] payment.captured - Order: {order_id}, Payment: {razorpay_payment_id}")
 
         if not order_id or not razorpay_payment_id:
             print("⚠️ [WEBHOOK] payment.captured - Missing order_id or payment_id")
@@ -406,7 +409,8 @@ class RazorpayService:
 
         # IDEMPOTENCY CHECK - prevents duplicate processing
         if await self.payment_exists(razorpay_payment_id):
-            print(f"ℹ️ [WEBHOOK] payment.captured - Payment {razorpay_payment_id} already processed (idempotent skip)")
+            print(
+                f"ℹ️ [WEBHOOK] payment.captured - Payment {razorpay_payment_id} already processed (idempotent skip)")
             return
 
         try:
@@ -420,26 +424,32 @@ class RazorpayService:
                         user_email = notes.get("user_email")
                         plan_name = notes.get("plan_name")
                     except Exception as e:
-                        print(f"⚠️ [WEBHOOK] payment.captured - Could not fetch order notes: {e}")
+                        print(
+                            f"⚠️ [WEBHOOK] payment.captured - Could not fetch order notes: {e}")
                         # Try to get info from existing payment record
-                        stmt = select(Payment).where(Payment.razorpay_order_id == order_id)
+                        stmt = select(Payment).where(
+                            Payment.razorpay_order_id == order_id)
                         result = await self.db.execute(stmt)
                         existing = result.scalar_one_or_none()
                         if existing:
                             user_id = str(existing.user_id)
                             plan_name = existing.plan_name
-                            print(f"✅ [WEBHOOK] payment.captured - Retrieved info from DB: user={user_id}, plan={plan_name}")
+                            print(
+                                f"✅ [WEBHOOK] payment.captured - Retrieved info from DB: user={user_id}, plan={plan_name}")
 
             if not all([user_id, plan_name]):
-                print(f"⚠️ [WEBHOOK] payment.captured - Missing required data for order {order_id}")
+                print(
+                    f"⚠️ [WEBHOOK] payment.captured - Missing required data for order {order_id}")
                 return
 
-            print(f"💳 [WEBHOOK] payment.captured - Processing for user {user_id}, plan {plan_name}")
+            print(
+                f"💳 [WEBHOOK] payment.captured - Processing for user {user_id}, plan {plan_name}")
 
             # NO transaction block - use session provided by caller (webhook endpoint)
             await self._process_payment_data(payment, user_id, user_email, plan_name)
 
-            print(f"✅ [WEBHOOK] payment.captured - Payment {razorpay_payment_id} processed successfully")
+            print(
+                f"✅ [WEBHOOK] payment.captured - Payment {razorpay_payment_id} processed successfully")
 
         except Exception as e:
             print(f"❌ [WEBHOOK] payment.captured - Error: {e}")
@@ -451,13 +461,13 @@ class RazorpayService:
         """Handle order paid event - typically follows payment.captured"""
         order_id = order.get('id')
         print(f"[WEBHOOK] order.paid - Order: {order_id}")
-        
+
         # Order paid is typically redundant after payment.captured
         # Check if payment already processed
         if not order_id:
             print("⚠️ [WEBHOOK] order.paid - Missing order_id")
             return
-        
+
         # Check if this order has a completed payment
         # Use .value to get string value from enum for VARCHAR comparison
         stmt = select(Payment).where(
@@ -466,11 +476,13 @@ class RazorpayService:
         )
         result = await self.db.execute(stmt)
         existing_payment = result.scalar_one_or_none()
-        
+
         if existing_payment:
-            print(f"ℹ️ [WEBHOOK] order.paid - Order {order_id} already processed via payment.captured (idempotent skip)")
+            print(
+                f"ℹ️ [WEBHOOK] order.paid - Order {order_id} already processed via payment.captured (idempotent skip)")
         else:
-            print(f"⚠️ [WEBHOOK] order.paid - No completed payment found for order {order_id}, may need payment.captured first")
+            print(
+                f"⚠️ [WEBHOOK] order.paid - No completed payment found for order {order_id}, may need payment.captured first")
 
     async def verify_payment(self, order_id: str, payment_id: str, signature: str) -> bool:
         """Verify Razorpay payment signature"""

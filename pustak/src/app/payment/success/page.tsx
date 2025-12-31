@@ -92,7 +92,7 @@ function PaymentSuccessContent() {
 
 			if (response.ok) {
 				const result = await response.json();
-				
+
 				// Handle different statuses
 				if (result.status === "completed") {
 					setVerificationMessage(
@@ -123,9 +123,7 @@ function PaymentSuccessContent() {
 						"❌ Payment failed. Please contact support or try again."
 					);
 				} else {
-					setVerificationMessage(
-						result.message || `Status: ${result.status}`
-					);
+					setVerificationMessage(result.message || `Status: ${result.status}`);
 				}
 			} else {
 				const errorData = await response.json().catch(() => ({}));
