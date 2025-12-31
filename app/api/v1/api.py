@@ -13,6 +13,7 @@ from .endpoints import (
     docbook,
     docs,
     webhooks,
+    workspace,
 )
 from app.webhooks.github import router as github_webhook_router
 
@@ -121,4 +122,11 @@ api_router.include_router(
     prefix="/health",
     tags=["Health"],
     responses={200: {"description": "Service status"}},
+)
+
+# Workspace endpoints (requires auth)
+api_router.include_router(
+    workspace.router,
+    tags=["Workspace"],
+    responses={404: {"description": "Not found"}},
 )

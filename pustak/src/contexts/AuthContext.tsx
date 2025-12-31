@@ -49,6 +49,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
         const storedUser = localStorage.getItem(USER_KEY);
+        
+        console.log('[AuthContext] Initializing auth...', { hasToken: !!accessToken, hasUser: !!storedUser });
 
         if (accessToken && storedUser) {
           // Verify token is still valid
@@ -57,6 +59,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               Authorization: `Bearer ${accessToken}`,
             },
           });
+          
+          console.log('[AuthContext] Token verification response:', response.status);
 
           if (response.ok) {
             const userData = await response.json();
@@ -67,16 +71,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser));
             setUser(normalizedUser);
             setToken(accessToken);
+            console.log('[AuthContext] Auth initialized successfully');
           } else {
             // Token invalid, clear storage
+            console.warn('[AuthContext] Token invalid, clearing auth');
             clearAuth();
           }
+        } else {
+          console.warn('[AuthContext] No stored credentials found');
         }
       } catch (error) {
         console.error("Auth initialization error:", error);
         clearAuth();
       } finally {
         setLoading(false);
+        console.log('[AuthContext] Auth init complete');
       }
     };
 
