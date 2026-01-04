@@ -63,7 +63,7 @@ export function Layout({ children }: LayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors">
+    <div className="min-h-screen bg-white dark:bg-[#0B0D11] transition-colors">
       {/* Mobile sidebar overlay */}
       {!hideNavigation && sidebarOpen && (
         <div
@@ -94,7 +94,7 @@ export function Layout({ children }: LayoutProps) {
       {/* Main content */}
       <div className={!hideNavigation && sidebarPinned ? "lg:pl-64" : ""}>
         {/* Header */}
-        <header className="sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700">
+        <header className="sticky top-0 z-30 bg-white/80 dark:backdrop-blur-md dark:bg-black/40 backdrop-blur-sm border-b border-gray-200 dark:border-white/5">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center space-x-4">
               {!hideNavigation && (
@@ -192,9 +192,9 @@ export function Layout({ children }: LayoutProps) {
                             className="fixed inset-0 z-40"
                             onClick={() => setUserMenuOpen(false)}
                           />
-                          <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50">
+                          <div className="absolute right-0 mt-2 w-64 backdrop-blur-md bg-white dark:bg-black/60 rounded-lg shadow-xl border border-gray-200 dark:border-white/10 z-50">
                             {/* User Info */}
-                            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                            <div className="p-4 border-b border-gray-200 dark:border-white/5">
                               <p className="font-semibold text-gray-900 dark:text-white">
                                 {user.name || user.username}
                               </p>
@@ -221,7 +221,7 @@ export function Layout({ children }: LayoutProps) {
                                   setUserMenuOpen(false);
                                   router.push('/dashboard');
                                 }}
-                                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-all duration-200"
                               >
                                 <User className="w-4 h-4" />
                                 Dashboard
@@ -231,7 +231,7 @@ export function Layout({ children }: LayoutProps) {
                                   setUserMenuOpen(false);
                                   router.push('/pricing');
                                 }}
-                                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-all duration-200"
                               >
                                 <Crown className="w-4 h-4" />
                                 Upgrade Plan
@@ -241,7 +241,7 @@ export function Layout({ children }: LayoutProps) {
                                   setUserMenuOpen(false);
                                   router.push('/settings');
                                 }}
-                                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-all duration-200"
                               >
                                 <Settings className="w-4 h-4" />
                                 Settings
@@ -249,7 +249,7 @@ export function Layout({ children }: LayoutProps) {
                             </div>
 
                             {/* Logout */}
-                            <div className="border-t border-gray-200 dark:border-gray-700 py-2">
+                            <div className="border-t border-gray-200 dark:border-white/5 py-2">
                               <button
                                 onClick={() => {
                                   setUserMenuOpen(false);

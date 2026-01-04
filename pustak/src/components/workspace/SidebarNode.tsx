@@ -175,12 +175,12 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
       {/* Node Row - Notion Style (Typography over Icons) */}
       <div
         className={`
-          group relative flex items-center gap-1.5 py-1 cursor-pointer
-          transition-colors duration-150
+          group relative flex items-center gap-1.5 py-1.5 cursor-pointer
+          transition-all duration-200
           ${
             isActive
-              ? 'bg-gray-100 dark:bg-slate-800/40'
-              : 'hover:bg-gray-50 dark:hover:bg-slate-800/20'
+              ? 'text-blue-400'
+              : 'text-slate-400 hover:text-slate-300 hover:bg-white/5'
           }
           ${node.isTempNode ? 'opacity-60' : ''}
         `}
@@ -189,9 +189,9 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
       >
-        {/* Active Indicator Pill - Absolute Left Edge */}
+        {/* Active Indicator - Vertical Pill (2px bar) */}
         {isActive && (
-          <div className="absolute left-0 top-1 bottom-1 w-1 bg-blue-500 rounded-r-full" />
+          <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-400" />
         )}
 
         {/* Guide Line for Nested Items */}
@@ -205,7 +205,7 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
         {/* Expand/Collapse Button (Folders Only) */}
         {isFolder && (
           <button
-            className="shrink-0 w-4 h-4 flex items-center justify-center hover:bg-slate-700/50 rounded transition"
+            className="shrink-0 w-4 h-4 flex items-center justify-center hover:bg-white/5 rounded transition-all duration-200"
             onClick={(e) => {
               e.stopPropagation();
               toggleFolder(node.id);
@@ -246,12 +246,12 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
                 block truncate text-xs transition-colors
                 ${
                   isFolder
-                    ? 'font-semibold text-gray-900 dark:text-slate-100'
-                    : 'font-normal text-gray-700 dark:text-slate-300'
+                    ? 'font-semibold'
+                    : 'font-normal'
                 }
-                ${isActive ? 'text-gray-900 dark:text-white' : ''}
+                ${isActive ? 'text-blue-400' : 'text-slate-400'}
                 ${level === 0 && isFolder ? 'text-sm' : ''}
-                ${node.isTempNode ? 'italic' : ''}
+                ${node.isTempNode ? 'italic opacity-60' : ''}
               `}
             >
               {node.title}
@@ -263,14 +263,14 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
         <button
           className="
             shrink-0 opacity-0 group-hover:opacity-100 transition-opacity
-            hover:bg-slate-700/50 rounded p-0.5
+            hover:bg-white/5 rounded p-0.5
           "
           onClick={(e) => {
             e.stopPropagation();
             handleContextMenu(e as any);
           }}
         >
-          <MoreVertical className="w-3.5 h-3.5 text-slate-400" />
+          <MoreVertical className="w-3.5 h-3.5 text-slate-500" />
         </button>
       </div>
 
@@ -293,10 +293,10 @@ export function SidebarNode({ node, level, onNodeClick }: SidebarNodeProps) {
           <ContextMenuItem onClick={handleAddFolder}>
             Add Folder {isFolder ? 'Inside' : 'Below'}
           </ContextMenuItem>
-          <div className="h-px bg-slate-700 my-1" />
+          <div className="h-px bg-white/5 my-1" />
           <ContextMenuItem onClick={handleRename}>Rename</ContextMenuItem>
           <ContextMenuItem onClick={handleDuplicate}>Duplicate</ContextMenuItem>
-          <div className="h-px bg-slate-700 my-1" />
+          <div className="h-px bg-white/5 my-1" />
           <ContextMenuItem onClick={handleDelete} variant="danger">
             Delete
           </ContextMenuItem>
@@ -333,11 +333,11 @@ function ContextMenuItem({ onClick, variant = 'default', children }: ContextMenu
   return (
     <button
       className={`
-        w-full text-left px-2.5 py-1.5 text-xs transition-colors
+        w-full text-left px-2.5 py-1.5 text-xs transition-all duration-200
         ${
           variant === 'danger'
             ? 'text-red-400 hover:bg-red-500/10'
-            : 'text-slate-200 hover:bg-slate-700'
+            : 'text-slate-300 hover:bg-white/5'
         }
       `}
       onClick={onClick}

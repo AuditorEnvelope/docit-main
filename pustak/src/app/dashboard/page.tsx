@@ -509,11 +509,9 @@ export default function DashboardPage() {
   return (
     <OnboardingGuard>
       <Layout>
-        <div className="min-h-screen bg-slate-950">
+        <div className="min-h-screen bg-[#0B0D11]">
         <div className="mx-auto px-6 py-8 space-y-8">
-          <section className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 px-5 py-6 shadow-[0_30px_70px_-40px_rgba(59,130,246,0.55)]">
-            <div className="absolute inset-0 -translate-x-1/3 translate-y-1/4 scale-125 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.35),_transparent_55%)] blur-3xl opacity-70" aria-hidden />
-            <div className="absolute inset-0 translate-x-1/3 -translate-y-1/4 scale-125 bg-[radial-gradient(circle_at_bottom_right,_rgba(124,58,237,0.35),_transparent_55%)] blur-3xl opacity-70" aria-hidden />
+          <section className="relative overflow-hidden rounded-2xl border border-white/5 px-5 py-6">
             <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                 <div className="relative shrink-0">
@@ -551,13 +549,13 @@ export default function DashboardPage() {
                         href={`https://github.com/${user.username}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800/60 px-2.5 py-0.5 text-[10px] font-semibold text-slate-100 hover:border-blue-400 hover:text-white transition"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-white/5 px-2.5 py-0.5 text-[10px] font-semibold text-slate-300 hover:border-white/10 hover:bg-white/5 transition-all duration-200"
                       >
                         <Github className="h-2.5 w-2.5" />@{user.username}
                       </a>
                     )}
                   </div>
-                  <p className="max-w-xl text-xs text-slate-300">
+                  <p className="max-w-xl text-xs text-slate-400 leading-relaxed">
                     Welcome back! Track repository coverage, monitor pending doc reviews, and jump straight into actions tailored to your organization.
                   </p>
                 </div>
@@ -573,7 +571,7 @@ export default function DashboardPage() {
                 </button>
                 <button
                   onClick={logout}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-4 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-rose-400 hover:text-rose-200"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-white/5 px-4 py-1.5 text-xs font-semibold text-slate-300 transition-all duration-200 hover:border-rose-400/50 hover:bg-rose-500/10 hover:text-rose-200"
                 >
                   <LogOut className="h-3 w-3" />
                   Logout
@@ -582,9 +580,10 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="group relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-lg transition hover:border-blue-400/60">
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-blue-500/15 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" aria-hidden />
+          {/* Step 3: Bento Grid Layout */}
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-4">
+            {/* Hero Card - Repositories (Span 2) */}
+            <div className="group relative overflow-hidden rounded-xl border border-white/5 p-4 transition-all duration-200 hover:border-white/10 hover:bg-white/5 md:col-span-2 lg:col-span-2">
               <div className="relative space-y-4">
                 <div className="flex items-center gap-2">
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/15 text-blue-300">
@@ -594,21 +593,47 @@ export default function DashboardPage() {
                     Repositories
                   </h3>
                 </div>
-                <p className="text-3xl font-semibold text-white">
-                  {loadingRepos ? (
-                    <Loader2 className="h-6 w-6 animate-spin text-blue-300" />
-                  ) : (
-                    repositories.length
-                  )}
-                </p>
-                <p className="text-sm text-slate-400">
+                {/* Visual Widget - Ring Chart */}
+                <div className="relative w-16 h-16 mx-auto mb-2">
+                  <svg className="w-16 h-16 transform -rotate-90">
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                      className="text-white/5"
+                    />
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="28"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                      strokeDasharray={`${(repositories.length / Math.max(repositories.length, 10)) * 175.9} 175.9`}
+                      className="text-blue-400 transition-all duration-500"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-2xl font-bold text-white">
+                      {loadingRepos ? (
+                        <Loader2 className="h-5 w-5 animate-spin text-blue-300" />
+                      ) : (
+                        repositories.length
+                      )}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 text-center">
                   Connected via Reader App
                 </p>
               </div>
             </div>
 
-            <div className="group relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-lg transition hover:border-emerald-400/60">
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-emerald-500/15 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" aria-hidden />
+            {/* Documented Card */}
+            <div className="group relative overflow-hidden rounded-xl border border-white/5 p-4 transition-all duration-200 hover:border-white/10 hover:bg-white/5">
               <div className="relative space-y-3">
                 <div className="flex items-center gap-2">
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-300">
@@ -618,14 +643,29 @@ export default function DashboardPage() {
                     Documented
                   </h3>
                 </div>
-                <p className="text-3xl font-semibold text-white">{documentedCount}</p>
+                {/* Visual Widget - Progress Bar */}
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-3xl font-bold text-white">{documentedCount}</span>
+                    <span className="text-xs text-slate-500">
+                      {repositories.length > 0 ? Math.round((documentedCount / repositories.length) * 100) : 0}%
+                    </span>
+                  </div>
+                  <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all duration-500"
+                      style={{ width: `${repositories.length > 0 ? (documentedCount / repositories.length) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
                 <p className="text-xs text-slate-400">
                   Repositories with generated docs
                 </p>
               </div>
             </div>
 
-            <div className="group relative overflow-hidden rounded-xl border border-purple-500/40 bg-gradient-to-br from-purple-900/70 via-slate-900/70 to-indigo-900/60 p-4 shadow-[0_35px_80px_-55px_rgba(109,40,217,0.75)]">
+            {/* Pending Reviews Card - Visual Widget */}
+            <div className="group relative overflow-hidden rounded-xl border border-white/5 p-4 transition-all duration-200 hover:border-white/10 hover:bg-white/5">
               <div className="relative space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -658,29 +698,32 @@ export default function DashboardPage() {
                   </button>
                 </div>
 
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-semibold text-purple-100">
-                    {pendingReviewsDisabled ? (
-                      "—"
-                    ) : pendingReviewsLoading ? (
-                      <Loader2 className="h-6 w-6 animate-spin text-purple-200" />
-                    ) : (
-                      pendingReviewsCount
-                    )}
-                  </span>
-                  {!pendingReviewsDisabled && !pendingReviewsLoading && (
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                        pendingReviewsCount === 0
-                          ? "bg-emerald-400/20 text-emerald-200"
-                          : "bg-purple-400/20 text-purple-100"
-                      }`}
-                    >
-                      {pendingReviewsCount === 0
-                        ? "All clear"
-                        : `${pendingReviewsCount} waiting`}
+                {/* Visual Widget - Sparkline Graph */}
+                <div className="space-y-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-bold text-white">
+                      {pendingReviewsDisabled ? (
+                        "—"
+                      ) : pendingReviewsLoading ? (
+                        <Loader2 className="h-6 w-6 animate-spin text-purple-200" />
+                      ) : (
+                        pendingReviewsCount
+                      )}
                     </span>
-                  )}
+                    {!pendingReviewsDisabled && !pendingReviewsLoading && (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                          pendingReviewsCount === 0
+                            ? "bg-emerald-400/20 text-emerald-200"
+                            : "bg-purple-400/20 text-purple-100"
+                        }`}
+                      >
+                        {pendingReviewsCount === 0
+                          ? "All clear"
+                          : `${pendingReviewsCount} waiting`}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <p className="text-xs text-purple-100/80">
@@ -753,18 +796,19 @@ export default function DashboardPage() {
           </section>
           */}
 
-          <section className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-[0_25px_60px_-45px_rgba(15,23,42,0.85)]">
-            <div className="border-b border-slate-800/80 px-5 py-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          {/* Step 2: Editorial Typography */}
+          <section className="rounded-2xl border border-white/5">
+            <div className="border-b border-white/5 px-5 py-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800/70 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-white/5 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500">
                   Repository overview
                 </div>
-                <h2 className="mt-2 text-xl font-semibold text-white">
+                <h2 className="mt-2 text-2xl font-bold text-white tracking-tight leading-tight">
                   {selectedOrg
                     ? `Docs coverage inside ${selectedOrg}`
                     : "Connect an organization to start managing repositories."}
                 </h2>
-                <p className="text-xs text-slate-400">
+                <p className="text-sm text-slate-400 leading-relaxed max-w-2xl">
                   Search, filter, and trigger doc generation directly from these tiles.
                 </p>
               </div>
@@ -776,7 +820,7 @@ export default function DashboardPage() {
                     placeholder="Search repositories…"
                     value={repoSearchQuery}
                     onChange={(event) => setRepoSearchQuery(event.target.value)}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-900/80 py-2 pl-9 pr-3 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60"
+                    className="w-full rounded-xl border border-white/5 bg-white/5 py-2 pl-9 pr-3 text-xs text-slate-300 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-white/10 transition-all duration-200"
                     disabled={!repositories.length}
                   />
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-600">
@@ -789,7 +833,7 @@ export default function DashboardPage() {
                     <select
                       value={selectedOrg}
                       onChange={(event) => setSelectedOrg(event.target.value)}
-                      className="appearance-none rounded-xl border border-slate-700 bg-slate-900/80 py-2 pl-3 pr-8 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/60"
+                      className="appearance-none rounded-xl border border-white/5 bg-white/5 py-2 pl-3 pr-8 text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/60 focus:border-white/10 transition-all duration-200"
                     >
                       {connectedOrgs.map((org) => (
                         <option key={org} value={org}>
@@ -812,7 +856,7 @@ export default function DashboardPage() {
                   <span>Loading organizations…</span>
                 </div>
               ) : !connectedOrgs.length ? (
-                <div className="space-y-4 rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 px-8 py-12 text-center text-slate-300">
+                <div className="space-y-4 rounded-2xl border border-dashed border-white/10 px-8 py-12 text-center text-slate-400">
                   <p className="text-lg font-semibold text-white">
                     You haven&apos;t connected any organizations yet.
                   </p>
@@ -837,9 +881,9 @@ export default function DashboardPage() {
                   {errorMessage}
                 </div>
               ) : !filteredRepositories.length ? (
-                <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/70 px-6 py-12 text-center text-slate-300">
-                  <p className="text-lg font-semibold text-white">No repositories match your search</p>
-                  <p className="text-sm text-slate-400">
+                <div className="space-y-3 rounded-2xl border border-white/5 px-6 py-12 text-center text-slate-400">
+                  <p className="text-lg font-bold text-white tracking-tight">No repositories match your search</p>
+                  <p className="text-sm text-slate-400 leading-relaxed">
                     Modify filters or update GitHub permissions to include more repositories.
                   </p>
                 </div>
@@ -895,24 +939,19 @@ export default function DashboardPage() {
                     return (
                       <div
                         key={fullName}
-                        className={`group relative flex min-h-[320px] flex-col overflow-hidden rounded-xl border bg-gradient-to-br shadow-lg transition-all duration-300 ${
+                        className={`group relative flex min-h-[320px] flex-col overflow-hidden rounded-xl border transition-all duration-200 ${
                           isDocbookRepo 
-                            ? 'border-blue-500/30 from-blue-950/40 via-slate-900/60 to-slate-900/40 hover:border-blue-500/50 hover:shadow-blue-500/20'
-                            : 'border-slate-800/60 from-slate-900/70 via-slate-900/60 to-slate-900/50 hover:border-slate-700/70 hover:shadow-slate-700/10'
+                            ? 'border-blue-500/20 hover:border-blue-500/40 hover:bg-white/5'
+                            : 'border-white/5 hover:border-white/10 hover:bg-white/5'
                         }`}
                       >
-                        {/* Ambient glow effects */}
-                        <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100">
-                          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.15),_transparent_50%)]" />
-                          <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_rgba(16,185,129,0.1),_transparent_50%)]" />
-                        </div>
                         
                         <div className="relative flex h-full flex-col p-4">
                           {/* Header */}
-                          <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-slate-800/50">
+                          <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-white/5">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
-                                <h3 className="text-lg font-bold text-white truncate">
+                                <h3 className="text-lg font-bold text-white truncate tracking-tight">
                                   {displayName}
                                 </h3>
                                 {hasDocs && (
@@ -951,7 +990,7 @@ export default function DashboardPage() {
                                     }
                                   }
                                 }}
-                                className="p-1 rounded-md hover:bg-slate-800/60 transition-all cursor-pointer"
+                                className="p-1 rounded-md hover:bg-white/5 transition-all duration-200 cursor-pointer"
                                 title="Repository Settings"
                               >
                                 <Settings className="h-3.5 w-3.5 text-slate-400 hover:text-white transition-colors" />
@@ -961,11 +1000,11 @@ export default function DashboardPage() {
 
                           {/* Metadata Grid */}
                           <div className="mb-3 grid grid-cols-2 gap-3">
-                            <div className="rounded-lg bg-slate-800/30 border border-slate-700/30 px-3 py-2">
+                            <div className="rounded-lg border border-white/5 px-3 py-2 hover:bg-white/5 transition-all duration-200">
                               <p className="text-slate-500 text-[9px] uppercase tracking-wider mb-1">Persona</p>
                               <p className="text-white font-semibold text-xs">{formatPersona(repo.doc_persona)}</p>
                             </div>
-                            <div className="rounded-lg bg-slate-800/30 border border-slate-700/30 px-3 py-2">
+                            <div className="rounded-lg border border-white/5 px-3 py-2 hover:bg-white/5 transition-all duration-200">
                               <p className="text-slate-500 text-[9px] uppercase tracking-wider mb-1">Last documented</p>
                               <p className="text-white font-semibold text-[10px]">{formatDateTime(repo.last_documented_at)}</p>
                             </div>
@@ -974,17 +1013,17 @@ export default function DashboardPage() {
                           {/* Activity Chart */}
                           <div className="mb-4">
                             <p className="text-slate-500 text-[9px] uppercase tracking-wider mb-2">Activity (14 days)</p>
-                            <div className="flex items-end justify-between gap-1 h-12 rounded-lg bg-slate-900/50 border border-slate-800/40 p-2">
+                            <div className="flex items-end justify-between gap-1 h-12 rounded-lg border border-white/5 p-2">
                               {activityData.map((value, idx) => {
                                 const height = Math.max((value / maxActivity) * 100, 8);
                                 const isHighlight = idx === 8;
                                 return (
                                   <div
                                     key={idx}
-                                    className={`flex-1 rounded-sm transition-all hover:opacity-80 ${
+                                    className={`flex-1 rounded-sm transition-all duration-200 ${
                                       isHighlight
-                                        ? 'bg-blue-500 shadow-lg shadow-blue-500/50'
-                                        : 'bg-slate-700/50 hover:bg-slate-600/50'
+                                        ? 'bg-blue-400 hover:bg-blue-500'
+                                        : 'bg-white/10 hover:bg-white/20'
                                     }`}
                                     style={{ height: `${height}%` }}
                                     title={`Activity: ${value}`}
@@ -1012,10 +1051,10 @@ export default function DashboardPage() {
                                 router.push(docsHref);
                               }}
                               disabled={viewDocsDisabled}
-                              className={`group relative col-span-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-semibold transition-all overflow-hidden ${
+                              className={`group relative col-span-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-semibold transition-all duration-200 overflow-hidden ${
                                 viewDocsDisabled
-                                  ? "cursor-not-allowed bg-slate-800/30 text-slate-500 border border-slate-700/40"
-                                  : "cursor-pointer bg-blue-500/15 text-blue-300 border border-blue-500/25 hover:bg-blue-500/25 hover:border-blue-500/40 hover:shadow-lg hover:shadow-blue-500/20"
+                                  ? "cursor-not-allowed bg-white/5 text-slate-500 border border-white/5"
+                                  : "cursor-pointer bg-blue-500/10 text-blue-300 border border-blue-500/20 hover:bg-blue-500/20 hover:border-blue-500/40"
                               }`}
                             >
                               {!viewDocsDisabled && (

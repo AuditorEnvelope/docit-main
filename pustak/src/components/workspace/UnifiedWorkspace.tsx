@@ -167,9 +167,9 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-slate-950 flex flex-col">
-      {/* Top Navigation Bar */}
-      <header className="flex-shrink-0 z-50 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800/50">
+    <div className="h-screen w-screen overflow-hidden bg-[#0B0D11] flex flex-col">
+      {/* Top Navigation Bar - Glassmorphism */}
+      <header className="flex-shrink-0 z-50 backdrop-blur-md bg-black/40 border-b border-white/5">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center space-x-4 min-w-0 flex-1">
             {/* Left Section: Pustak Branding */}
@@ -182,34 +182,34 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
             </div>
 
             {/* Divider */}
-            <div className="h-6 w-px bg-slate-700/50 shrink-0" />
+            <div className="h-6 w-px bg-white/5 shrink-0" />
 
             {/* WORKSPACE Section - Prominent */}
             <div className="flex items-center space-x-2.5 shrink-0">
-              {/* WORKSPACE Label - Always Visible */}
-              <div className="px-2.5 py-1 bg-slate-800/60 border border-slate-700/50 rounded-md">
-                <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+              {/* WORKSPACE Label - Borderless */}
+              <div className="px-2.5 py-1 border border-white/5 rounded-md">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   Workspace
                 </span>
               </div>
               
-              {/* Org/Repo Badge */}
+              {/* Org/Repo Badge - Borderless */}
               <div className="flex items-center shrink-0">
-                <div className="px-3 py-1.5 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20 border border-blue-500/30 rounded-lg backdrop-blur-sm">
-                  <span className="text-xs font-semibold bg-gradient-to-r from-blue-300 via-purple-300 to-blue-300 bg-clip-text text-transparent">
-                    {orgId} <span className="text-slate-500/60">/</span> {repoId}
+                <div className="px-3 py-1.5 border border-white/5 rounded-lg">
+                  <span className="text-xs font-semibold text-slate-300">
+                    {orgId} <span className="text-slate-500">/</span> {repoId}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Breadcrumb - Right Section */}
+            {/* Breadcrumb - Subtle & Clickable */}
             {breadcrumb.length > 0 && (
-              <div className="hidden lg:flex items-center space-x-1.5 text-xs text-slate-400 min-w-0 flex-1 ml-2">
+              <div className="hidden lg:flex items-center space-x-1.5 text-xs text-slate-500 min-w-0 flex-1 ml-2">
                 <span className="text-slate-600">/</span>
                 {breadcrumb.map((item, index) => (
                   <span key={index} className="flex items-center shrink-0">
-                    <span className={index === breadcrumb.length - 1 ? 'text-white font-medium' : 'text-slate-400'}>
+                    <span className={`${index === breadcrumb.length - 1 ? 'text-slate-300 font-medium' : 'text-slate-500 hover:text-slate-400 cursor-pointer'} transition-colors`}>
                       {item}
                     </span>
                     {index < breadcrumb.length - 1 && <span className="mx-1.5 text-slate-600">/</span>}
@@ -237,13 +237,13 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
             >
               <Search className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden md:inline">Search</span>
-              <kbd className="hidden lg:inline text-[10px] bg-slate-700 px-1 rounded">⌘K</kbd>
+              <kbd className="hidden lg:inline text-[10px] bg-white/5 border border-white/5 px-1 rounded">⌘K</kbd>
             </button>
 
             {/* Theme Toggle */}
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/5 transition-all duration-200"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -253,7 +253,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
               <div className="relative">
                 <button
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  className="flex items-center space-x-1.5 p-0.5 rounded-full hover:bg-slate-800 transition-colors"
+                  className="flex items-center space-x-1.5 p-0.5 rounded-full hover:bg-white/5 transition-all duration-200"
                 >
                   {user.avatar_url ? (
                     <img
@@ -277,7 +277,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                     />
                     <div className="absolute right-0 mt-2 w-56 bg-slate-800 rounded-lg shadow-xl border border-slate-700 z-50">
                       {/* User Info */}
-                      <div className="p-3 border-b border-slate-700">
+                      <div className="p-3 border-b border-white/5">
                         <p className="font-semibold text-white text-sm">
                           {user.name || user.username}
                         </p>
@@ -286,7 +286,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                         </p>
                         <div className="mt-2">
                           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                            user.plan === 'free' ? 'bg-slate-700 text-slate-300' :
+                            user.plan === 'free' ? 'bg-white/5 text-slate-300' :
                             user.plan === 'pro' ? 'bg-blue-900/30 text-blue-400' :
                             user.plan === 'team' ? 'bg-purple-900/30 text-purple-400' :
                             'bg-gradient-to-r from-yellow-400 to-orange-500 text-white'
@@ -304,7 +304,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                             setUserMenuOpen(false);
                             router.push('/dashboard');
                           }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 transition-all duration-200"
                         >
                           <User className="w-4 h-4" />
                           Dashboard
@@ -314,7 +314,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                             setUserMenuOpen(false);
                             router.push('/pricing');
                           }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 transition-all duration-200"
                         >
                           <Crown className="w-4 h-4" />
                           Upgrade Plan
@@ -324,7 +324,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                             setUserMenuOpen(false);
                             router.push('/settings');
                           }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 transition-all duration-200"
                         >
                           <Settings className="w-4 h-4" />
                           Settings
@@ -332,7 +332,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                       </div>
 
                       {/* Logout */}
-                      <div className="border-t border-slate-700 py-1.5">
+                      <div className="border-t border-white/5 py-1.5">
                         <button
                           onClick={() => {
                             setUserMenuOpen(false);
@@ -361,9 +361,9 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
       </header>
 
       {/* Workspace Content */}
-      <div className="flex-1 relative">
-        {/* Left Sidebar - Independent Scroll */}
-        <div className="fixed left-0 top-[60px] bottom-0 w-[220px] border-r border-slate-800/50 overflow-y-auto">
+      <div className="flex-1 relative bg-[#0B0D11]">
+        {/* Left Sidebar - Glassmorphism */}
+        <div className="fixed left-0 top-[60px] bottom-0 w-[220px] backdrop-blur-md bg-black/40 border-r border-white/5 overflow-y-auto z-20">
           <DocumentSidebar
             orgId={orgId}
             repoId={repoId}
@@ -371,8 +371,8 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
           />
         </div>
 
-        {/* Center Editor - Independent Scroll (Leave space for right sidebar) */}
-        <div className="fixed left-[220px] right-[280px] top-[60px] bottom-0 overflow-y-auto">
+        {/* Center Editor - Borderless Content Area */}
+        <div className="fixed left-[220px] right-[280px] top-[60px] bottom-0 overflow-y-auto bg-[#0B0D11]">
           <DocumentEditor orgId={orgId} repoId={repoId} />
         </div>
 

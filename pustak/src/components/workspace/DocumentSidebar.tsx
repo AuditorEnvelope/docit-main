@@ -47,10 +47,10 @@ export function DocumentSidebar({ orgId, repoId, onPageSelect }: DocumentSidebar
   const filteredTree = fileTree ? filterTree(fileTree) : null;
 
   return (
-    <div className="h-full flex flex-col bg-slate-950/50 border-r border-slate-800/50 text-sm">
-      {/* Clean Header */}
-      <div className="p-3 border-b border-slate-800/50 bg-slate-900/30">
-        <h2 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+    <div className="h-full flex flex-col text-sm">
+      {/* Clean Header - Borderless */}
+      <div className="p-3 border-b border-white/5">
+        <h2 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
           Documentation
         </h2>
       </div>

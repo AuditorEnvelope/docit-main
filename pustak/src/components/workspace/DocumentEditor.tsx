@@ -246,18 +246,18 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
 
   if (!activePage) {
     return (
-      <div className="h-full flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <div className="h-full flex items-center justify-center bg-[#0B0D11]">
         <div className="text-center max-w-2xl px-6">
-          {/* Animated Icon */}
+          {/* Animated Icon - Borderless */}
           <div className="relative mx-auto mb-8">
-            <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full animate-pulse" />
-            <div className="relative w-24 h-24 mx-auto rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center ring-1 ring-blue-500/30">
-              <BookOpen className="w-12 h-12 text-blue-400" />
+            <div className="absolute inset-0 bg-blue-500/10 blur-3xl rounded-full animate-pulse" />
+            <div className="relative w-24 h-24 mx-auto rounded-2xl flex items-center justify-center border border-white/5">
+              <BookOpen className="w-12 h-12 text-blue-400/80" />
             </div>
           </div>
 
-          {/* Welcome Text */}
-          <h2 className="text-3xl font-bold text-white mb-4 tracking-tight">
+          {/* Welcome Text - Editorial Typography */}
+          <h2 className="text-4xl font-bold text-white mb-4 tracking-tight leading-tight">
             Welcome to Your Workspace
           </h2>
           <p className="text-lg text-slate-400 mb-8 leading-relaxed">
@@ -265,11 +265,11 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
             one to begin documenting your project.
           </p>
 
-          {/* Quick Tips */}
+          {/* Quick Tips - Borderless Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-12">
-            <div className="group p-6 rounded-xl bg-slate-800/30 border border-slate-700/50 hover:border-blue-500/50 transition-all">
-              <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Sparkles className="w-5 h-5 text-blue-400" />
+            <div className="group p-6 rounded-xl border border-white/5 hover:border-white/10 hover:bg-white/5 transition-all duration-200">
+              <div className="w-10 h-10 mx-auto mb-3 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Sparkles className="w-5 h-5 text-blue-400/80" />
               </div>
               <h3 className="text-sm font-semibold text-white mb-2">
                 Rich Editor
@@ -279,9 +279,9 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
               </p>
             </div>
 
-            <div className="group p-6 rounded-xl bg-slate-800/30 border border-slate-700/50 hover:border-emerald-500/50 transition-all">
-              <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-emerald-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+            <div className="group p-6 rounded-xl border border-white/5 hover:border-white/10 hover:bg-white/5 transition-all duration-200">
+              <div className="w-10 h-10 mx-auto mb-3 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400/80" />
               </div>
               <h3 className="text-sm font-semibold text-white mb-2">
                 Auto-Save
@@ -291,9 +291,9 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
               </p>
             </div>
 
-            <div className="group p-6 rounded-xl bg-slate-800/30 border border-slate-700/50 hover:border-purple-500/50 transition-all">
-              <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-purple-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <ArrowRight className="w-5 h-5 text-purple-400" />
+            <div className="group p-6 rounded-xl border border-white/5 hover:border-white/10 hover:bg-white/5 transition-all duration-200">
+              <div className="w-10 h-10 mx-auto mb-3 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                <ArrowRight className="w-5 h-5 text-purple-400/80" />
               </div>
               <h3 className="text-sm font-semibold text-white mb-2">
                 Quick Publish
@@ -311,9 +311,9 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
   const changeCount = pendingChanges.size + (structureDirty ? 1 : 0);
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Editor Content - Centered "Paper" Style */}
-      <div className="flex-1 bg-slate-950">
+    <div className="h-full flex flex-col bg-[#0B0D11]">
+      {/* Editor Content - Borderless Editorial Style */}
+      <div className="flex-1">
         {isLoading ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center text-slate-400">
@@ -322,7 +322,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
             </div>
           </div>
         ) : (
-          <div className="max-w-4xl mx-auto px-6 py-8">
+          <div className="max-w-3xl mx-auto px-8 py-12">
             <BlockNoteEditor
               key={editorKeyRef.current || activePageId}
               initialContent={editorContent}

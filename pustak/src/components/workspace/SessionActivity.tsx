@@ -128,7 +128,7 @@ export function SessionActivity({ onPublishClick }: SessionActivityProps) {
     return (
       <button
         onClick={() => setIsCollapsed(false)}
-        className="fixed right-0 top-1/2 -translate-y-1/2 bg-slate-800 border-l border-slate-700 rounded-l-lg p-2 hover:bg-slate-700 transition z-40"
+        className="fixed right-0 top-1/2 -translate-y-1/2 backdrop-blur-md bg-black/40 border-l border-white/5 rounded-l-lg p-2 hover:bg-white/5 transition-all duration-200 z-40"
         aria-label="Show session activity"
       >
         <ChevronRight className="w-4 h-4 text-slate-400 rotate-180" />
@@ -137,9 +137,9 @@ export function SessionActivity({ onPublishClick }: SessionActivityProps) {
   }
 
   return (
-    <div className="h-full w-[280px] border-l border-slate-800/50 bg-slate-950/80 backdrop-blur-sm overflow-y-auto z-30">
-      {/* Header - Git Style */}
-      <div className="sticky top-0 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800/50 z-10">
+    <div className="h-full w-[280px] backdrop-blur-md bg-black/40 border-l border-white/5 overflow-y-auto z-30">
+      {/* Header - Borderless Glass */}
+      <div className="sticky top-0 backdrop-blur-md bg-black/40 border-b border-white/5 z-10">
         <div className="px-3 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <GitBranch className="w-4 h-4 text-blue-400" />
@@ -147,16 +147,16 @@ export function SessionActivity({ onPublishClick }: SessionActivityProps) {
           </div>
           <button
             onClick={() => setIsCollapsed(true)}
-            className="hover:bg-slate-700/50 rounded p-1 transition"
+            className="hover:bg-white/5 rounded p-1 transition-all duration-200"
             aria-label="Hide session activity"
           >
             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
           </button>
         </div>
 
-        {/* Stats Bar - Animated */}
+        {/* Stats Bar - Borderless */}
         {totalChanges > 0 && (
-          <div className="px-3 py-2 bg-slate-800/30 border-t border-slate-800/50">
+          <div className="px-3 py-2 border-t border-white/5">
             <div className="flex items-center justify-between text-[10px] mb-1.5">
               <span className="text-slate-400">CHANGES</span>
               <span className="text-white font-medium">{totalChanges} file{totalChanges !== 1 ? 's' : ''}</span>
@@ -168,7 +168,7 @@ export function SessionActivity({ onPublishClick }: SessionActivityProps) {
                 <TrendingUp className="w-3 h-3" />
                 <span className="font-medium">+{totalAdditions}</span>
               </div>
-              <div className="flex-1 h-1 bg-slate-700/50 rounded-full overflow-hidden">
+              <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
                 <div 
                   className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500 ease-out"
                   style={{ width: `${totalAdditions > 0 ? Math.min((totalAdditions / (totalAdditions + totalDeletions)) * 100, 100) : 0}%` }}
@@ -186,16 +186,16 @@ export function SessionActivity({ onPublishClick }: SessionActivityProps) {
       <div className="p-2">
         {fileChanges.length === 0 ? (
           <div className="text-center py-12 px-4">
-            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-slate-800/50 flex items-center justify-center animate-pulse">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full border border-white/5 flex items-center justify-center animate-pulse">
               <Sparkles className="w-5 h-5 text-slate-500" />
             </div>
             <p className="text-xs font-medium text-slate-400 mb-1">No Changes</p>
-            <p className="text-[10px] text-slate-600 leading-relaxed">
+            <p className="text-[10px] text-slate-500 leading-relaxed">
               Edit documents to track changes
             </p>
             
             {/* Quick Stats */}
-            <div className="mt-6 pt-4 border-t border-slate-800/50">
+            <div className="mt-6 pt-4 border-t border-white/5">
               <div className="flex items-center justify-center gap-4 text-[10px] text-slate-600">
                 <div className="flex items-center gap-1">
                   <GitCommit className="w-3 h-3" />
@@ -225,17 +225,17 @@ export function SessionActivity({ onPublishClick }: SessionActivityProps) {
                       ${isAnimating ? 'animate-pulse bg-blue-500/10' : ''}
                     `}
                   >
-                    {/* File Item - Clickable Area (disabled for deleted files) */}
+                    {/* File Item - Borderless with Hover */}
                     <div
                       onClick={() => {
                         if (file.type !== 'deleted') {
                           setActivePageId(file.id);
                         }
                       }}
-                      className={`w-full text-left px-2 py-1.5 rounded transition-all ${
+                      className={`w-full text-left px-2 py-1.5 rounded transition-all duration-200 ${
                         file.type === 'deleted' 
                           ? 'opacity-60 cursor-not-allowed' 
-                          : 'hover:bg-slate-800/50 cursor-pointer'
+                          : 'hover:bg-white/5 cursor-pointer'
                       }`}
                     >
                       <div className="flex items-start gap-2">
@@ -306,9 +306,9 @@ export function SessionActivity({ onPublishClick }: SessionActivityProps) {
         )}
       </div>
 
-      {/* Bottom Action Area */}
+      {/* Bottom Action Area - Glass */}
       {totalChanges > 0 && (
-        <div className="sticky bottom-0 border-t border-slate-800/50 bg-slate-900/95 backdrop-blur-sm p-3">
+        <div className="sticky bottom-0 border-t border-white/5 backdrop-blur-md bg-black/40 p-3">
           <button 
             onClick={onPublishClick}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-all shadow-lg shadow-blue-500/20 cursor-pointer"
@@ -330,7 +330,7 @@ export function SessionActivity({ onPublishClick }: SessionActivityProps) {
           
           {/* Modal */}
           <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-full max-w-md">
-            <div className="bg-slate-800 border border-red-500/50 rounded-xl shadow-2xl p-6 mx-4">
+            <div className="backdrop-blur-md bg-black/60 border border-red-500/30 rounded-xl shadow-2xl p-6 mx-4">
               <div className="flex items-start gap-3 mb-4">
                 <div className="shrink-0 w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
                   <Undo2 className="w-5 h-5 text-red-400" />
@@ -343,7 +343,7 @@ export function SessionActivity({ onPublishClick }: SessionActivityProps) {
                 </div>
                 <button
                   onClick={cancelRevert}
-                  className="shrink-0 p-1 hover:bg-slate-700 rounded transition"
+                  className="shrink-0 p-1 hover:bg-white/5 rounded transition-all duration-200"
                 >
                   <X className="w-4 h-4 text-slate-400" />
                 </button>
@@ -357,7 +357,7 @@ export function SessionActivity({ onPublishClick }: SessionActivityProps) {
                 </button>
                 <button
                   onClick={cancelRevert}
-                  className="flex-1 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg transition-all"
+                  className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-medium rounded-lg transition-all duration-200"
                 >
                   Cancel
                 </button>
