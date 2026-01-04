@@ -895,28 +895,39 @@ export default function DashboardPage() {
                     return (
                       <div
                         key={fullName}
-                        className={`group relative flex min-h-[320px] flex-col overflow-hidden rounded-xl border border-slate-800 bg-gradient-to-br ${cardGradient} p-4 shadow-[0_20px_50px_-35px_rgba(15,23,42,0.65)] transition hover:border-blue-400/50`}
+                        className={`group relative flex min-h-[320px] flex-col overflow-hidden rounded-xl border bg-gradient-to-br shadow-lg transition-all duration-300 ${
+                          isDocbookRepo 
+                            ? 'border-blue-500/30 from-blue-950/40 via-slate-900/60 to-slate-900/40 hover:border-blue-500/50 hover:shadow-blue-500/20'
+                            : 'border-slate-800/60 from-slate-900/70 via-slate-900/60 to-slate-900/50 hover:border-slate-700/70 hover:shadow-slate-700/10'
+                        }`}
                       >
-                        <div className="pointer-events-none absolute inset-0 opacity-0 transition group-hover:opacity-100 bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.25),_transparent_55%)]" aria-hidden />
-                        <div className="pointer-events-none absolute inset-y-0 left-0 w-1/2 -translate-x-1/4 opacity-0 transition group-hover:opacity-60 bg-[radial-gradient(circle_at_bottom_left,_rgba(45,212,191,0.18),_transparent_55%)]" aria-hidden />
-                        <div className="relative flex h-full flex-col">
+                        {/* Ambient glow effects */}
+                        <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100">
+                          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.15),_transparent_50%)]" />
+                          <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_rgba(16,185,129,0.1),_transparent_50%)]" />
+                        </div>
+                        
+                        <div className="relative flex h-full flex-col p-4">
                           {/* Header */}
-                          <div className="flex items-start justify-between gap-3 mb-3">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <h3 className="text-lg font-bold text-white">
+                          <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-slate-800/50">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-lg font-bold text-white truncate">
                                   {displayName}
                                 </h3>
                                 {hasDocs && (
-                                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Published" />
+                                  <div className="flex-shrink-0 flex items-center gap-1">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    <span className="text-[9px] text-emerald-400 font-medium">LIVE</span>
+                                  </div>
                                 )}
                               </div>
-                              <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                              <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 truncate">
                                 {fullName}
                               </p>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="inline-flex items-center gap-1 rounded-full border border-blue-400/40 bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-100">
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <span className="inline-flex items-center gap-1 rounded-full border border-blue-400/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-200">
                                 <GitBranch className="h-2.5 w-2.5" />
                                 {trackedBranch}
                               </span>
@@ -949,35 +960,34 @@ export default function DashboardPage() {
                           </div>
 
                           {/* Metadata Grid */}
-                          <div className="mb-3">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-slate-500 text-[10px] mb-0.5">Persona</p>
-                                <p className="text-white font-medium text-xs">{formatPersona(repo.doc_persona)}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-slate-500 text-[10px] mb-0.5">Last documented</p>
-                                <p className="text-white font-medium text-[10px]">{formatDateTime(repo.last_documented_at)}</p>
-                              </div>
+                          <div className="mb-3 grid grid-cols-2 gap-3">
+                            <div className="rounded-lg bg-slate-800/30 border border-slate-700/30 px-3 py-2">
+                              <p className="text-slate-500 text-[9px] uppercase tracking-wider mb-1">Persona</p>
+                              <p className="text-white font-semibold text-xs">{formatPersona(repo.doc_persona)}</p>
+                            </div>
+                            <div className="rounded-lg bg-slate-800/30 border border-slate-700/30 px-3 py-2">
+                              <p className="text-slate-500 text-[9px] uppercase tracking-wider mb-1">Last documented</p>
+                              <p className="text-white font-semibold text-[10px]">{formatDateTime(repo.last_documented_at)}</p>
                             </div>
                           </div>
 
                           {/* Activity Chart */}
                           <div className="mb-4">
-                            <p className="text-slate-500 text-[10px] mb-1.5">Activity</p>
-                            <div className="flex items-end justify-between gap-0.5 h-12">
+                            <p className="text-slate-500 text-[9px] uppercase tracking-wider mb-2">Activity (14 days)</p>
+                            <div className="flex items-end justify-between gap-1 h-12 rounded-lg bg-slate-900/50 border border-slate-800/40 p-2">
                               {activityData.map((value, idx) => {
-                                const height = Math.max((value / maxActivity) * 100, 8); // Min 8% height
+                                const height = Math.max((value / maxActivity) * 100, 8);
                                 const isHighlight = idx === 8;
                                 return (
                                   <div
                                     key={idx}
-                                    className={`flex-1 rounded-sm transition-all ${
+                                    className={`flex-1 rounded-sm transition-all hover:opacity-80 ${
                                       isHighlight
-                                        ? 'bg-blue-500'
-                                        : 'bg-slate-700/50'
+                                        ? 'bg-blue-500 shadow-lg shadow-blue-500/50'
+                                        : 'bg-slate-700/50 hover:bg-slate-600/50'
                                     }`}
                                     style={{ height: `${height}%` }}
+                                    title={`Activity: ${value}`}
                                   />
                                 );
                               })}
@@ -985,8 +995,11 @@ export default function DashboardPage() {
                           </div>
 
                           {isDocbookRepo && (
-                            <div className="rounded-lg border border-blue-400/30 bg-blue-500/10 px-2.5 py-1.5 text-[10px] text-blue-100 mb-3">
-                              {docbookNotice}
+                            <div className="rounded-lg border border-blue-400/30 bg-blue-500/10 backdrop-blur-sm px-3 py-2 text-[10px] text-blue-100 mb-3">
+                              <div className="flex items-start gap-2">
+                                <BookOpen className="h-3 w-3 flex-shrink-0 mt-0.5 text-blue-300" />
+                                <span>{docbookNotice}</span>
+                              </div>
                             </div>
                           )}
 
@@ -999,14 +1012,17 @@ export default function DashboardPage() {
                                 router.push(docsHref);
                               }}
                               disabled={viewDocsDisabled}
-                              className={`col-span-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all ${
+                              className={`group relative col-span-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-semibold transition-all overflow-hidden ${
                                 viewDocsDisabled
-                                  ? "cursor-not-allowed bg-slate-700/30 text-slate-500 border border-slate-700/50"
-                                  : "cursor-pointer bg-blue-500/20 text-blue-300 border border-blue-500/30 hover:bg-blue-500/30 hover:border-blue-500/50"
+                                  ? "cursor-not-allowed bg-slate-800/30 text-slate-500 border border-slate-700/40"
+                                  : "cursor-pointer bg-blue-500/15 text-blue-300 border border-blue-500/25 hover:bg-blue-500/25 hover:border-blue-500/40 hover:shadow-lg hover:shadow-blue-500/20"
                               }`}
                             >
-                              <BookOpen className="h-3.5 w-3.5" />
-                              <span className="hidden xl:inline">View docs</span>
+                              {!viewDocsDisabled && (
+                                <div className="absolute inset-0 bg-gradient-to-r from-blue-400/0 via-blue-400/10 to-blue-400/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+                              )}
+                              <BookOpen className="h-3.5 w-3.5 relative z-10" />
+                              <span className="hidden xl:inline relative z-10">View docs</span>
                             </button>
 
                             {/* Regenerate Docs - Green Transparent */}
