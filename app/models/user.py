@@ -11,13 +11,13 @@ from enum import Enum
 import uuid
 
 from .base import Base
-from app.db.types import CaseInsensitiveEnum
 
 
 class UserPlan(str, Enum):
     """User subscription plans"""
     FREE = "free"
     PRO = "pro"
+    TEAM = "team"
     ENTERPRISE = "enterprise"
 
 
@@ -39,14 +39,14 @@ class User(Base):
     github_access_token = Column(String(255), nullable=True)
 
     # Subscription
-    plan = Column(CaseInsensitiveEnum(UserPlan),
-                  default=UserPlan.FREE, nullable=False)
+    plan = Column(String(50),  # Use VARCHAR to match actual DB schema
+                  default="free", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     razorpay_customer_id = Column(String(100), nullable=True, index=True)
 
     # Updated subscription fields
-    current_plan = Column(CaseInsensitiveEnum(UserPlan),
-                          default=UserPlan.FREE, nullable=False)
+    current_plan = Column(String(50),  # Use VARCHAR to match actual DB schema
+                          default="free", nullable=False)
     subscription_status = Column(
         String(50), default="inactive", nullable=False)
     subscription_expires_at = Column(DateTime(timezone=True), nullable=True)

@@ -17,7 +17,7 @@ from sqlalchemy import (
     func,
     Text
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from enum import Enum
 import uuid
 
@@ -39,6 +39,7 @@ class SubscriptionStatus(str, Enum):
 class SubscriptionPlan(str, Enum):
     FREE = "free"
     PRO = "pro"
+    TEAM = "team"
     ENTERPRISE = "enterprise"
 
 
@@ -68,13 +69,13 @@ class Subscription(Base):
 
     # Plan & status
     plan = Column(
-        SQLEnum(SubscriptionPlan),
-        default=SubscriptionPlan.FREE,
+        String(50),  # Use VARCHAR to match actual DB schema with CHECK constraint
+        default="free",
         nullable=False
     )
     status = Column(
-        SQLEnum(SubscriptionStatus),
-        default=SubscriptionStatus.ACTIVE,
+        String(50),  # Use VARCHAR to match actual DB schema with CHECK constraint
+        default="active",
         nullable=False
     )
 
@@ -206,6 +207,60 @@ class Payment(Base):
         return f"<Payment(id={self.id}, status={self.status}, amount={self.amount})>"
 
 
+# ============================
+# PAYMENT EVENTS (AUDIT LOG)
+# ============================
+
+class PaymentEvent(Base):
+    """
+    Payment event audit log (Razorpay webhooks and manual verifications)
+    Provides complete audit trail for all payment-related events
+    """
+
+    __tablename__ = "payment_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True,
+                default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    subscription_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+
+    # Event details
+    # payment.captured, payment.authorized, etc.
+    event_type = Column(String(100), nullable=False)
+    event_source = Column(String(50), nullable=False,
+                          default="razorpay")  # razorpay, manual, system
+
+    # Razorpay identifiers (adapted from Stripe fields)
+    # Keep for compatibility, use for razorpay_event_id
+    stripe_event_id = Column(String(255), unique=True, nullable=True)
+    # payment, order, etc.
+    stripe_object_type = Column(String(100), nullable=True)
+    # razorpay_payment_id, razorpay_order_id
+    stripe_object_id = Column(String(255), nullable=True)
+
+    # Amount details
+    amount_cents = Column(Integer, nullable=True)
+    currency = Column(String(3), default="INR", nullable=False)
+
+    # Status
+    # succeeded, failed, pending, processing
+    status = Column(String(50), nullable=False)
+
+    # Raw data
+    # JSONB for structured data storage
+    raw_data = Column(JSONB, nullable=True)
+
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self):
+        return f"<PaymentEvent(id={self.id}, type={self.event_type}, status={self.status})>"
+
+
 __all__ = [
     "Subscription",
     "SubscriptionPlanConfig",
@@ -213,4 +268,5 @@ __all__ = [
     "SubscriptionPlan",
     "Payment",
     "PaymentStatus",
+    "PaymentEvent",
 ]

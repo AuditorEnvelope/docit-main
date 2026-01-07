@@ -66,7 +66,11 @@ async def handle_razorpay_webhook(
     except Exception as e:
         logger.error(
             f"❌ Error processing Razorpay webhook: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error processing webhook"
-        )
+        # ✅ FIX: Return 200 OK to prevent Razorpay retries after unrecoverable errors
+        # Razorpay will retry 5xx responses, but we want to fail gracefully
+        # Log the error but acknowledge receipt
+        return {
+            "status": "error",
+            "message": "Webhook received but processing failed",
+            "error": str(e)
+        }

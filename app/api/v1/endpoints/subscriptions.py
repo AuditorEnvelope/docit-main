@@ -51,6 +51,22 @@ async def get_plans():
                 ]
             },
             {
+                "name": "team",
+                "display_name": "Team",
+                "price_monthly": 59,
+                "max_repositories": "Unlimited",
+                "max_docs_per_month": 5000,
+                "features": [
+                    "Unlimited repositories",
+                    "5,000 docs/month",
+                    "10 team members",
+                    "Priority support",
+                    "Custom templates",
+                    "API access",
+                    "Advanced analytics"
+                ]
+            },
+            {
                 "name": "enterprise",
                 "display_name": "Enterprise",
                 "price_monthly": 99,
@@ -101,7 +117,7 @@ async def upgrade_subscription(
     db: AsyncSession = Depends(get_db)
 ):
     """Upgrade subscription plan"""
-    if plan not in ["pro", "enterprise"]:
+    if plan not in ["pro", "team", "enterprise"]:
         raise HTTPException(status_code=400, detail="Invalid plan")
 
     razorpay_service = RazorpayService(db)
