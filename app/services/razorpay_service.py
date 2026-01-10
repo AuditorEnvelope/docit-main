@@ -16,7 +16,8 @@ import hashlib
 import uuid
 from typing import Dict, Optional, List
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select, update, insert, or_
+from decimal import Decimal
+from sqlalchemy import select, update, insert, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import text
 from fastapi import HTTPException
@@ -87,7 +88,14 @@ def normalize_user_plan(plan: str) -> UserPlan:
         return UserPlan.FREE
 
 
-# Initialize Razorpay Client
+# Plan hierarchy for upgrade detection (lower < higher)
+PLAN_RANK = {
+    "free": 0,
+    "pro": 1,
+    "team": 2,
+    "enterprise": 3,
+}
+
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
 
@@ -439,9 +447,9 @@ class RazorpayService:
                 subscription_id=validated_subscription_id,  # Use validated ID
                 event_type=event_type,
                 event_source=event_source,
-                stripe_event_id=event_id,  # Reuse Stripe field for Razorpay event ID
-                stripe_object_type="payment" if razorpay_payment_id else "order",
-                stripe_object_id=razorpay_payment_id or razorpay_order_id,
+                razorpay_event_id=event_id,  # Unique event identifier
+                object_type="payment" if razorpay_payment_id else "order",
+                object_id=razorpay_payment_id or razorpay_order_id,
                 amount_cents=int(amount * 100) if amount else None,
                 currency="INR",
                 status=status,
@@ -465,9 +473,9 @@ class RazorpayService:
                         subscription_id=validated_subscription_id,  # Use validated ID
                         event_type=event_type,
                         event_source=event_source,
-                        stripe_event_id=event_id,
-                        stripe_object_type="payment" if razorpay_payment_id else "order",
-                        stripe_object_id=razorpay_payment_id or razorpay_order_id,
+                        razorpay_event_id=event_id,
+                        object_type="payment" if razorpay_payment_id else "order",
+                        object_id=razorpay_payment_id or razorpay_order_id,
                         amount_cents=int(amount * 100) if amount else None,
                         currency="INR",
                         status=status,
@@ -489,11 +497,53 @@ class RazorpayService:
             import traceback
             traceback.print_exc()
 
+    async def _get_active_subscription(self, user_id: str, now: datetime) -> Optional[Subscription]:
+        """Fetch the current active subscription phase for a user.
+
+        Invariants:
+        - At most one active entitlement per user at any instant (enforced by
+          the no_overlapping_active_entitlements constraint on
+          subscriptions.entitlement_range).
+        - Entitlement is determined by status = 'active' and a time window that
+          contains ``now``.
+
+        This prefers the new entitlement_start/entitlement_end fields.
+        During migration, it falls back to legacy current_period_* if needed.
+        """
+        # Primary: use entitlement window
+        ent_window = and_(
+            Subscription.entitlement_start != None,
+            Subscription.entitlement_start <= now,
+            Subscription.entitlement_end > now,
+        )
+
+        # Fallback: legacy current_period_* window (for pre-migration data)
+        legacy_window = and_(
+            Subscription.entitlement_start == None,
+            Subscription.current_period_start != None,
+            Subscription.current_period_start <= now,
+            Subscription.current_period_end > now,
+        )
+
+        stmt = (
+            select(Subscription)
+            .where(
+                Subscription.user_id == user_id,
+                Subscription.status == SubscriptionStatus.ACTIVE.value,
+                or_(ent_window, legacy_window),
+            )
+            .order_by(Subscription.created_at.desc())
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def _process_payment_data(self, payment: Dict, user_id: str,
                                     user_email: str, plan_name: str):
-        """
-        Internal method to process payment data
-        Assumes transaction is already started by caller
+        """Internal method to process payment data.
+
+        Implements immediate upgrade with monetary proration (Option A).
+        Assumes transaction is already started by caller.
         """
         order_id = payment.get("order_id")
         razorpay_payment_id = payment.get("id")
@@ -504,7 +554,6 @@ class RazorpayService:
         plan = await self.get_plan_by_name(plan_name)
         if not plan:
             print(f"❌ Plan {plan_name} not found")
-            # ✅ FIX: Log failed event
             await self._log_payment_event(
                 event_type="payment.processing_failed",
                 status="failed",
@@ -513,164 +562,253 @@ class RazorpayService:
                 razorpay_order_id=order_id,
                 raw_data=payment,
                 error_message=f"Plan {plan_name} not found",
-                event_source="system"  # ✅ Comply with DB constraint
+                event_source="system",
             )
             return
 
-        # ✅ FIX: Check existing subscription to queue plans properly
-        stmt = select(Subscription).where(Subscription.user_id == user_id)
-        result = await self.db.execute(stmt)
-        existing_subscription = result.scalar_one_or_none()
-
-        # ✅ FIX: Use timezone-aware UTC datetime to match TIMESTAMPTZ columns
         now = datetime.now(timezone.utc)
-        if existing_subscription and existing_subscription.current_period_end:
-            # If subscription is active and has future end date, extend from there
-            if existing_subscription.current_period_end > now:
-                period_start = existing_subscription.current_period_end
-                print(
-                    f"📅 Queuing plan: extending from existing end date {period_start}")
-            else:
-                period_start = now
-                print(f"📅 Subscription expired, starting from now")
-        else:
-            period_start = now
-            print(f"📅 New subscription, starting from now")
 
-        period_end = period_start + timedelta(days=30)
-
-        # ✅ FIX: Enforce idempotency - check for existing payment by order_id OR payment_id
-        # Prevents duplicate PENDING payments from multiple order creations
-        stmt = select(Payment).where(
-            or_(
-                Payment.razorpay_order_id == order_id,
-                Payment.razorpay_payment_id == razorpay_payment_id
+        # ------------------------------------------------------------------
+        # 1) Locate or create the Payment ledger entry (idempotent on payment_id)
+        # ------------------------------------------------------------------
+        stmt = (
+            select(Payment)
+            .where(
+                or_(
+                    Payment.razorpay_payment_id == razorpay_payment_id,
+                    Payment.razorpay_order_id == order_id,
+                )
             )
-        ).order_by(Payment.created_at.desc())
+            .order_by(Payment.created_at.desc())
+        )
         result = await self.db.execute(stmt)
-        existing_payment = result.scalar_one_or_none()
+        payment_record = result.scalar_one_or_none()
 
-        if existing_payment:
+        if payment_record and payment_record.status == PaymentStatus.COMPLETED.value:
+            # Already processed - idempotent safe exit
             print(
-                f"📝 Updating existing payment record {existing_payment.id} from {existing_payment.status} to COMPLETED")
-            existing_payment.razorpay_payment_id = razorpay_payment_id
-            existing_payment.razorpay_customer_id = payment.get("customer_id")
-            existing_payment.status = PaymentStatus.COMPLETED.value  # Use .value for VARCHAR
-            existing_payment.amount = payment.get(
-                "amount", 0) / 100  # Update with actual amount
-            existing_payment.billing_start_date = period_start
-            existing_payment.billing_end_date = period_end
-            existing_payment.plan_name = plan_name.lower()  # Normalize plan name for storage
-            existing_payment.raw_payload = json.dumps(payment)
-            existing_payment.processed_at = now
-        else:
-            # Should not happen - payment record should exist from create_order
-            print(
-                f"⚠️ No existing payment record found for order {order_id}, creating new one")
-            new_payment = Payment(
+                f"ℹ️ Payment {razorpay_payment_id} already completed in _process_payment_data (idempotent skip)")
+            return
+
+        is_new_payment = payment_record is None
+
+        # IMPORTANT: billing_start_date and billing_end_date represent when the
+        # ENTITLEMENT funded by this payment actually starts/ends, not when payment was made.
+        # These will be adjusted below based on upgrade/renewal/downgrade logic.
+        if is_new_payment:
+            # Initial values (will be corrected for renewals/downgrades below)
+            billing_start_date = now
+            billing_end_date = now + timedelta(days=30)
+            payment_record = Payment(
                 user_id=user_id,
                 razorpay_order_id=order_id,
                 razorpay_payment_id=razorpay_payment_id,
                 razorpay_customer_id=payment.get("customer_id"),
                 amount=payment.get("amount", 0) / 100,
                 currency=payment.get("currency", "INR").upper(),
-                status=PaymentStatus.COMPLETED.value,  # Use .value for VARCHAR
-                plan_name=plan_name.lower(),  # Normalize plan name for storage
-                billing_start_date=period_start,
-                billing_end_date=period_end,
+                status=PaymentStatus.COMPLETED.value,
+                plan_name=plan_name.lower(),
+                # Will be updated for renewals/downgrades
+                billing_start_date=billing_start_date,
+                # Will be updated for renewals/downgrades
+                billing_end_date=billing_end_date,
                 raw_payload=json.dumps(payment),
-                processed_at=now
+                processed_at=now,
             )
-            self.db.add(new_payment)
-
-        # ✅ FIX: Use the existing_subscription we already fetched above
-        if existing_subscription:
-            print(f"📝 Updating subscription {existing_subscription.id}")
-            # ✅ FIX: Use centralized enum-safe conversion at the final write boundary
-            subscription_plan_enum = normalize_subscription_plan(plan_name)
-            # Explicitly use the enum's value to ensure proper string representation
-            final_plan_value = subscription_plan_enum.value
-            print(
-                f"🔍 DEBUG: Raw plan_name='{plan_name}', normalized_enum={subscription_plan_enum}, enum_value='{final_plan_value}', type={type(final_plan_value)}")
-            existing_subscription.plan = final_plan_value
-            existing_subscription.status = SubscriptionStatus.ACTIVE
-            existing_subscription.razorpay_order_id = order_id
-            existing_subscription.razorpay_payment_id = razorpay_payment_id
-            existing_subscription.razorpay_customer_id = payment.get(
-                "customer_id")
-            # ✅ FIX: Only update start date if this is a new subscription (not queued)
-            if existing_subscription.current_period_end <= now:
-                existing_subscription.current_period_start = period_start
-            # Always update the end date to extend the subscription
-            existing_subscription.current_period_end = period_end
-            subscription_id = str(existing_subscription.id)
+            self.db.add(payment_record)
         else:
-            print(f"🆕 Creating subscription for user {user_id}")
-            # ✅ FIX: Use centralized enum-safe conversion at the final write boundary
-            subscription_plan_enum = normalize_subscription_plan(plan_name)
-            final_plan_value = subscription_plan_enum.value
             print(
-                f"🔍 DEBUG: Creating subscription with plan - raw='{plan_name}', normalized_enum={subscription_plan_enum}, enum_value='{final_plan_value}', type={type(final_plan_value)}")
-            new_subscription = Subscription(
-                user_id=user_id,
-                plan=final_plan_value,
-                status=SubscriptionStatus.ACTIVE,
-                razorpay_order_id=order_id,
-                razorpay_payment_id=razorpay_payment_id,
-                razorpay_customer_id=payment.get("customer_id"),
-                current_period_start=period_start,
-                current_period_end=period_end,
-            )
-            self.db.add(new_subscription)
-            subscription_id = str(new_subscription.id)
+                f"📝 Updating existing payment record {payment_record.id} from {payment_record.status} to COMPLETED")
+            # Initial values (will be corrected for renewals/downgrades below)
+            billing_start_date = now
+            billing_end_date = now + timedelta(days=30)
+            payment_record.razorpay_payment_id = razorpay_payment_id
+            payment_record.razorpay_customer_id = payment.get("customer_id")
+            payment_record.status = PaymentStatus.COMPLETED.value
+            payment_record.amount = payment.get("amount", 0) / 100
+            # Will be updated for renewals/downgrades
+            payment_record.billing_start_date = billing_start_date
+            # Will be updated for renewals/downgrades
+            payment_record.billing_end_date = billing_end_date
+            payment_record.plan_name = plan_name.lower()
+            payment_record.raw_payload = json.dumps(payment)
+            payment_record.processed_at = now
 
-        # ✅ FIX: Update user fields - CRITICAL for entitlement
-        # Must happen BEFORE flush to ensure atomic transaction
+        # ------------------------------------------------------------------
+        # 2) Determine current active subscription and whether this is upgrade/renewal
+        # ------------------------------------------------------------------
+        existing_subscription = await self._get_active_subscription(user_id, now)
+
+        stacking_type = "new"
+        extends_subscription_id = None
+        proration_basis_amount = None
+        proration_unused_ratio = None
+        proration_credit_amount = None
+
+        ent_start_new = billing_start_date
+        ent_end_new = billing_end_date
+
+        if existing_subscription:
+            old_plan = (existing_subscription.plan or "free").lower()
+            new_plan = plan_name.lower()
+            old_rank = PLAN_RANK.get(old_plan, 0)
+            new_rank = PLAN_RANK.get(new_plan, 0)
+
+            if new_rank > old_rank:
+                # ------------------------
+                # Immediate UPGRADE (Option A)
+                # ------------------------
+                stacking_type = "upgrade"
+                extends_subscription_id = existing_subscription.id
+
+                # Determine old entitlement window (prefer new fields, fallback to legacy)
+                old_start = existing_subscription.entitlement_start or existing_subscription.current_period_start
+                old_end = existing_subscription.entitlement_end or existing_subscription.current_period_end
+
+                if old_start and old_end and old_end > old_start and old_end > now:
+                    total_seconds = (old_end - old_start).total_seconds()
+                    remaining_seconds = max((old_end - now).total_seconds(), 0)
+                    if total_seconds > 0 and remaining_seconds > 0:
+                        unused_ratio = Decimal(
+                            remaining_seconds) / Decimal(total_seconds)
+                        unused_ratio = min(unused_ratio, Decimal("1.0"))
+
+                        # Fetch the payment that funded the old entitlement
+                        old_payment_result = await self.db.execute(
+                            select(Payment).where(Payment.id ==
+                                                  existing_subscription.payment_id)
+                        )
+                        old_payment = old_payment_result.scalar_one_or_none()
+
+                        if old_payment:
+                            proration_basis_amount = old_payment.amount
+                            proration_unused_ratio = unused_ratio
+                            proration_credit_amount = (
+                                old_payment.amount * unused_ratio
+                            ).quantize(Decimal("0.01"))
+
+                # End old entitlement at `now` (no tier time stacking)
+                existing_subscription.status = SubscriptionStatus.CANCELED.value
+                existing_subscription.entitlement_end = now
+                if existing_subscription.entitlement_start is None:
+                    existing_subscription.entitlement_start = old_start
+                existing_subscription.current_period_end = now
+
+                # New entitlement starts now
+                ent_start_new = now
+                ent_end_new = billing_end_date
+
+                # ✅ FIX: Update payment billing dates to match actual entitlement window
+                payment_record.billing_start_date = ent_start_new
+                payment_record.billing_end_date = ent_end_new
+
+            elif new_rank == old_rank:
+                # Same tier: treat as renewal/extension from the end of current period
+                stacking_type = "renewal"
+                extends_subscription_id = existing_subscription.id
+
+                old_end = existing_subscription.entitlement_end or existing_subscription.current_period_end or now
+                ent_start_new = old_end
+                ent_end_new = old_end + timedelta(days=30)
+
+                # ✅ FIX: Update payment billing dates to match actual entitlement window
+                payment_record.billing_start_date = ent_start_new
+                payment_record.billing_end_date = ent_end_new
+
+            else:
+                # Lower tier purchase: treat as downgrade scheduled after current period
+                stacking_type = "downgrade"
+                extends_subscription_id = existing_subscription.id
+
+                old_end = existing_subscription.entitlement_end or existing_subscription.current_period_end or now
+                ent_start_new = old_end
+                ent_end_new = old_end + timedelta(days=30)
+
+                # ✅ FIX: Update payment billing dates to match actual entitlement window
+                payment_record.billing_start_date = ent_start_new
+                payment_record.billing_end_date = ent_end_new
+
+        # Persist proration and relationship metadata on payment
+        payment_record.stacking_type = stacking_type
+        payment_record.extends_subscription_id = extends_subscription_id
+        payment_record.proration_basis_amount = proration_basis_amount
+        payment_record.proration_unused_ratio = proration_unused_ratio
+        payment_record.proration_credit_amount = proration_credit_amount
+
+        # ------------------------------------------------------------------
+        # 3) Create the new subscription phase (entitlement)
+        # ------------------------------------------------------------------
+        print(
+            f"🆕 Creating subscription phase for user {user_id} from {ent_start_new} to {ent_end_new}")
+
+        subscription_plan_enum = normalize_subscription_plan(plan_name)
+        final_plan_value = subscription_plan_enum.value
+
+        new_subscription = Subscription(
+            user_id=user_id,
+            plan=final_plan_value,
+            status=SubscriptionStatus.ACTIVE.value,
+            entitlement_start=ent_start_new,
+            entitlement_end=ent_end_new,
+            payment_id=payment_record.id,
+            previous_subscription_id=extends_subscription_id,
+            razorpay_order_id=order_id,
+            razorpay_payment_id=razorpay_payment_id,
+            razorpay_customer_id=payment.get("customer_id"),
+            # Keep legacy fields in sync for backward compatibility
+            current_period_start=ent_start_new,
+            current_period_end=ent_end_new,
+        )
+        self.db.add(new_subscription)
+        subscription_id = str(new_subscription.id)
+
+        # ------------------------------------------------------------------
+        # 4) Update user derived subscription fields (cache only)
+        # ------------------------------------------------------------------
         stmt = select(User).where(User.id == user_id)
         result = await self.db.execute(stmt)
         user = result.scalar_one_or_none()
 
         if user:
             print(
-                f"👤 Updating user {user_id} - plan: {plan_name}, expires: {period_end}")
-            # ✅ FIX: Use centralized enum-safe conversion at the final write boundary
+                f"👤 Updating user {user_id} - plan: {plan_name}, expires: {ent_end_new}")
             user_plan_enum = normalize_user_plan(plan_name)
             final_user_plan_value = user_plan_enum.value
-            print(
-                f"🔍 DEBUG: Updating user plan - raw='{plan_name}', normalized_enum={user_plan_enum}, enum_value='{final_user_plan_value}'")
             user.current_plan = final_user_plan_value
             user.subscription_status = "active"
-            user.subscription_expires_at = period_end
+            user.subscription_expires_at = ent_end_new
         else:
-            print(f"❌ User {user_id} not found - cannot update entitlement!")
-            # Log error but don't fail the payment
+            print(
+                f"❌ User {user_id} not found - cannot update entitlement cache!")
             await self._log_payment_event(
                 event_type="user.update_failed",
                 status="failed",
                 user_id=user_id,
-                # Prevent 'None' string
-                subscription_id=subscription_id if subscription_id and subscription_id != "None" else None,
+                subscription_id=subscription_id,
                 razorpay_payment_id=razorpay_payment_id,
                 razorpay_order_id=order_id,
                 error_message=f"User {user_id} not found",
-                event_source="system"  # ✅ Comply with DB constraint
+                event_source="system",
             )
 
-        # ✅ FIX: Log successful payment event
+        # ------------------------------------------------------------------
+        # 5) Log successful payment completion event
+        # ------------------------------------------------------------------
         await self._log_payment_event(
             event_type="payment.completed",
             status="succeeded",
             user_id=user_id,
-            # Prevent 'None' string
-            subscription_id=subscription_id if subscription_id and subscription_id != "None" else None,
+            subscription_id=subscription_id,
             razorpay_payment_id=razorpay_payment_id,
             razorpay_order_id=order_id,
             amount=payment.get("amount", 0) / 100,
             raw_data=payment,
-            event_source="system"  # ✅ Comply with DB constraint
+            event_source="system",
         )
 
-        # ✅ FIX 3: Add flush with error handling for transaction safety
+        # ------------------------------------------------------------------
+        # 6) Flush with error handling for transaction safety
+        # ------------------------------------------------------------------
         try:
             await self.db.flush()
             print(
@@ -679,13 +817,12 @@ class RazorpayService:
             print(f"❌ Payment processing failed during flush: {e}")
             import traceback
             traceback.print_exc()
-            # ✅ FIX: Explicit rollback to prevent poisoned session
             try:
                 await self.db.rollback()
                 print("🔄 Session rolled back successfully")
             except Exception as rb_error:
                 print(f"❌ Rollback error: {rb_error}")
-            raise  # Re-raise to prevent commit attempt
+            raise
 
     async def handle_payment_captured(self, payment: Dict, user_id: str = None,
                                       user_email: str = None, plan_name: str = None):

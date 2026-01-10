@@ -64,7 +64,7 @@ class Subscription(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True,
                 default=uuid.uuid4, index=True)
-    user_id = Column(UUID(as_uuid=True), unique=True,
+    user_id = Column(UUID(as_uuid=True),
                      nullable=False, index=True)
 
     # Plan & status
@@ -74,10 +74,18 @@ class Subscription(Base):
         nullable=False
     )
     status = Column(
-        String(50),  # Use VARCHAR to match actual DB schema with CHECK constraint
+        String(50),  # Subscription lifecycle status (active, canceled, etc.)
         default="active",
         nullable=False
     )
+
+    # Entitlement phase window (source of truth for access)
+    entitlement_start = Column(DateTime(timezone=True), nullable=True)
+    entitlement_end = Column(DateTime(timezone=True), nullable=True)
+
+    # Link back to the payment that created this entitlement
+    payment_id = Column(UUID(as_uuid=True), nullable=True)
+    previous_subscription_id = Column(UUID(as_uuid=True), nullable=True)
 
     # ========================
     # Razorpay (NEW — SAFE)
@@ -101,7 +109,7 @@ class Subscription(Base):
     is_trial = Column(Boolean, default=False)
     trial_ends_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Billing cycle
+    # Legacy billing cycle fields (kept for backward compatibility)
     current_period_start = Column(DateTime(timezone=True), nullable=True)
     current_period_end = Column(DateTime(timezone=True), nullable=True)
     cancel_at_period_end = Column(Boolean, default=False)
@@ -182,7 +190,6 @@ class Payment(Base):
     # Payment info
     amount = Column(Numeric(10, 2), nullable=False)
     currency = Column(String(3), default="INR", nullable=False)
-    # Store as VARCHAR(20) to match actual DB schema, not PostgreSQL enum
     status = Column(
         String(20),
         default=PaymentStatus.PENDING.value,
@@ -192,6 +199,13 @@ class Payment(Base):
     # Plan snapshot
     plan_id = Column(Integer, nullable=True)
     plan_name = Column(String(50), nullable=True)
+
+    # Proration and relationship metadata
+    stacking_type = Column(String(20), default="new", nullable=False)
+    extends_subscription_id = Column(UUID(as_uuid=True), nullable=True)
+    proration_basis_amount = Column(Numeric(10, 2), nullable=True)
+    proration_unused_ratio = Column(Numeric(8, 6), nullable=True)
+    proration_credit_amount = Column(Numeric(10, 2), nullable=True)
 
     # Audit
     raw_payload = Column(Text, nullable=True)
@@ -230,13 +244,11 @@ class PaymentEvent(Base):
     event_source = Column(String(50), nullable=False,
                           default="razorpay")  # razorpay, manual, system
 
-    # Razorpay identifiers (adapted from Stripe fields)
-    # Keep for compatibility, use for razorpay_event_id
-    stripe_event_id = Column(String(255), unique=True, nullable=True)
-    # payment, order, etc.
-    stripe_object_type = Column(String(100), nullable=True)
+    # Razorpay identifiers (generic naming for any payment gateway)
+    razorpay_event_id = Column(String(255), unique=True, nullable=True)
+    object_type = Column(String(100), nullable=True)  # payment, order, etc.
     # razorpay_payment_id, razorpay_order_id
-    stripe_object_id = Column(String(255), nullable=True)
+    object_id = Column(String(255), nullable=True)
 
     # Amount details
     amount_cents = Column(Integer, nullable=True)
