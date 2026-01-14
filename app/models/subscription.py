@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
 from enum import Enum
 import uuid
 
@@ -101,9 +102,24 @@ class Subscription(Base):
     max_repositories = Column(Integer, default=1)
     max_docs_per_month = Column(Integer, default=100)
 
-    # Current usage
-    current_repositories = Column(Integer, default=0)
-    docs_generated_this_month = Column(Integer, default=0)
+    # ========================
+    # DEPRECATED: Current usage counters (mutable counters pattern)
+    # ========================
+    # ⚠️ DEPRECATED: Do not use for billing logic or limit enforcement.
+    # Source of truth is now the 'subscription_usage' table (immutable ledger).
+    # These fields are kept for backward compatibility and may be used as
+    # denormalized caches, but MUST be derived from subscription_usage queries.
+    # See: app/models/usage.py and app/services/usage.py for the new architecture.
+    current_repositories = Column(
+        Integer,
+        default=0,
+        comment="DEPRECATED: Use subscription_usage table. Kept as cache only."
+    )
+    docs_generated_this_month = Column(
+        Integer,
+        default=0,
+        comment="DEPRECATED: Use subscription_usage table. Kept as cache only."
+    )
 
     # Trial
     is_trial = Column(Boolean, default=False)
@@ -119,6 +135,17 @@ class Subscription(Base):
     updated_at = Column(DateTime(timezone=True),
                         server_default=func.now(), onupdate=func.now())
     canceled_at = Column(DateTime(timezone=True), nullable=True)
+
+    # ========================
+    # RELATIONSHIPS
+    # ========================
+    # One-to-many: Subscription -> SubscriptionUsage (ledger events)
+    usage_events = relationship(
+        "SubscriptionUsage",
+        back_populates="subscription",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"<Subscription(user_id={self.user_id}, plan={self.plan}, status={self.status})>"

@@ -13,6 +13,7 @@ from .endpoints import (
     docbook,
     docs,
     webhooks,
+    usage,
 )
 from app.webhooks.github import router as github_webhook_router
 from app.webhooks.razorpay import router as razorpay_webhook_router
@@ -70,6 +71,18 @@ api_router.include_router(
     prefix="/subscriptions",
     tags=["Subscriptions"],
     responses={404: {"description": "Not found"}},
+)
+
+# Usage endpoints (ledger-based billing)
+api_router.include_router(
+    usage.router,
+    prefix="/usage",
+    tags=["Usage"],
+    responses={
+        200: {"description": "Success"},
+        401: {"description": "Unauthorized"},
+        404: {"description": "Not found"},
+    },
 )
 
 # Webhook endpoints (registration + GitHub delivery)

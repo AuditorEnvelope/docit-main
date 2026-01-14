@@ -7,6 +7,7 @@ Database models for user authentication and profiles
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID, INET
+from sqlalchemy.orm import relationship
 from enum import Enum
 import uuid
 
@@ -59,6 +60,17 @@ class User(Base):
     is_onboarding_complete = Column(
         Boolean, nullable=False, server_default="false", default=False)
     onboarding_completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # ========================
+    # RELATIONSHIPS
+    # ========================
+    # One-to-many: User -> SubscriptionUsage (for analytics and user-level queries)
+    usage_events = relationship(
+        "SubscriptionUsage",
+        back_populates="user",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"<User(id='{self.id}', username='{self.username}', plan='{self.plan}')>"

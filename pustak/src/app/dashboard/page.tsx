@@ -7,6 +7,7 @@ import { Layout } from "@/components/Layout";
 import { GenerateDocsButton } from "@/components/GenerateDocsButton";
 import { PublishToLiveButton } from "@/components/PublishToLiveButton";
 import PendingReviewsTab from "@/components/PendingReviewsTab";
+import { UsageStatsCard } from "@/components/UsageStatsCard";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePendingReviews } from "@/hooks/usePendingReviews";
 import { OnboardingSplash, ONBOARDING_PROGRESS_MESSAGES } from "@/components/OnboardingSplash";
@@ -580,6 +581,19 @@ export default function DashboardPage() {
                 </button>
               </div>
             </div>
+          </section>
+
+          {/* ================================================================
+             PHASE 5: Usage & Limits Card - TOP PLACEMENT
+             ================================================================
+             Positioned prominently at the top to give users immediate
+             visibility into their usage, limits, and billing cycle.
+             ================================================================ */}
+          <section className="relative">
+            <UsageStatsCard 
+              onUpgradeClick={() => router.push('/pricing')}
+              className="shadow-[0_35px_80px_-45px_rgba(147,51,234,0.6)]"
+            />
           </section>
 
           <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
