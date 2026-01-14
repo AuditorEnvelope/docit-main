@@ -29,6 +29,10 @@ class GenerationResult:
     architecture: str
     workflow: str
     api_doc: str
+    # Phase 6: Token tracking
+    input_tokens: int
+    output_tokens: int
+    model_name: str
 
     def cleanup(self) -> None:
         """Remove the temporary workspace."""
@@ -58,6 +62,12 @@ class ManualDocGenerator:
             architecture = generated_docs.get("architecture", "")
             workflow = generated_docs.get("workflow", "")
             api_doc = generated_docs.get("api", "")
+            
+            # Phase 6: Extract token data from generation result
+            token_data = generated_docs.get("token_data", {})
+            input_tokens = token_data.get("input_tokens", 0)
+            output_tokens = token_data.get("output_tokens", 0)
+            model_name = token_data.get("model_name", "unknown")
 
             # Create the proper folder structure based on doc_persona
             # Map 'dev' to 'developer' for folder naming
@@ -119,6 +129,10 @@ class ManualDocGenerator:
                 architecture=architecture,
                 workflow=workflow,
                 api_doc=api_doc,
+                # Phase 6: Include token data
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                model_name=model_name,
             )
         except Exception:
             logger.exception("Manual documentation generation failed for %s", repo_full_name)

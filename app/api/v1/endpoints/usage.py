@@ -150,6 +150,8 @@ async def get_my_usage(
         "cycle_start": cycle_start,
         "cycle_end": cycle_end,
         "limits": limits,
+        # Phase 6: Include token usage statistics
+        "token_usage": await service.get_token_usage_summary(str(user.id)),
     }
 
 

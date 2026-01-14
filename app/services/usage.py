@@ -140,6 +140,11 @@ class UsageService:
         resource_type: str,
         amount: int = 1,
         resource_id: Optional[str] = None,
+        # Phase 6: Shadow token tracking
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        model_name: str = "unknown",
+        cost: Optional[float] = None,
     ) -> SubscriptionUsage:
         """
         Append a usage event to the ledger.
@@ -152,6 +157,10 @@ class UsageService:
             resource_type: Type of resource consumed (e.g., 'docs_generated')
             amount: Quantity consumed (default: 1)
             resource_id: Optional ID of the specific resource (for audit trail)
+            input_tokens: LLM prompt tokens consumed (shadow metric)
+            output_tokens: LLM completion tokens generated (shadow metric)
+            model_name: LLM model used (e.g., 'gpt-4o', 'gemini-2.0-flash')
+            cost: Estimated cost in USD (optional)
 
         Returns:
             SubscriptionUsage: The created usage record
@@ -164,7 +173,10 @@ class UsageService:
             ...     user_id="123e4567-e89b-12d3-a456-426614174000",
             ...     resource_type=ResourceType.DOCS_GENERATED,
             ...     amount=1,
-            ...     resource_id="doc_abc123"
+            ...     resource_id="doc_abc123",
+            ...     input_tokens=1500,
+            ...     output_tokens=2500,
+            ...     model_name="gpt-4o"
             ... )
 
         Technical Details:
@@ -173,6 +185,7 @@ class UsageService:
         - Finds the currently active subscription (entitlement phase)
         - Creates a new row in subscription_usage table
         - Commits immediately (isolated transaction)
+        - Records token usage for cost analysis (shadow metrics)
 
         Invariants:
         ----------
@@ -209,7 +222,7 @@ class UsageService:
                 "User must have an active plan to record usage."
             )
 
-        # Create usage record
+        # Create usage record with token tracking
         now = datetime.now(timezone.utc)
         usage = SubscriptionUsage(
             subscription_id=active_sub.id,
@@ -218,6 +231,11 @@ class UsageService:
             amount=amount,
             resource_id=resource_id,
             consumed_at=now,
+            # Phase 6: Shadow token metrics
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            model_name=model_name,
+            cost=cost,
         )
 
         self.db.add(usage)
@@ -299,6 +317,116 @@ class UsageService:
         usage_summary = {row.resource_type: int(row.total) for row in rows}
 
         return usage_summary
+
+    async def get_token_usage_summary(self, user_id: str) -> Dict[str, any]:
+        """
+        Get token usage statistics for the current billing cycle (Phase 6).
+
+        This provides shadow metrics for cost analysis and optimization.
+
+        Args:
+            user_id: UUID of the user
+
+        Returns:
+            Dict with token statistics:
+            {
+                "total_input_tokens": 15230,
+                "total_output_tokens": 18450,
+                "total_tokens": 33680,
+                "generations_count": 12,
+                "avg_input_tokens": 1269,
+                "avg_output_tokens": 1537,
+                "model_breakdown": {
+                    "llama-3.3-70b-versatile": {
+                        "count": 8,
+                        "input_tokens": 10000,
+                        "output_tokens": 12000
+                    },
+                    "gemini-2.0-flash": {
+                        "count": 4,
+                        "input_tokens": 5230,
+                        "output_tokens": 6450
+                    }
+                }
+            }
+        """
+        # Normalize user_id to UUID
+        if isinstance(user_id, str):
+            user_id = uuid.UUID(user_id)
+
+        # Get active subscription
+        active_sub = await self._get_active_subscription(user_id)
+        if not active_sub:
+            return {
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_tokens": 0,
+                "generations_count": 0,
+                "avg_input_tokens": 0,
+                "avg_output_tokens": 0,
+                "model_breakdown": {}
+            }
+
+        # Query for token totals and averages
+        totals_stmt = (
+            select(
+                func.count(SubscriptionUsage.id).label("count"),
+                func.sum(SubscriptionUsage.input_tokens).label("total_input"),
+                func.sum(SubscriptionUsage.output_tokens).label(
+                    "total_output"),
+                func.avg(SubscriptionUsage.input_tokens).label("avg_input"),
+                func.avg(SubscriptionUsage.output_tokens).label("avg_output"),
+            )
+            .where(
+                SubscriptionUsage.subscription_id == active_sub.id,
+                SubscriptionUsage.consumed_at >= active_sub.entitlement_start,
+                SubscriptionUsage.consumed_at < active_sub.entitlement_end,
+                SubscriptionUsage.resource_type == ResourceType.DOCS_GENERATED,
+            )
+        )
+
+        result = await self.db.execute(totals_stmt)
+        totals = result.first()
+
+        # Query for model breakdown
+        breakdown_stmt = (
+            select(
+                SubscriptionUsage.model_name,
+                func.count(SubscriptionUsage.id).label("count"),
+                func.sum(SubscriptionUsage.input_tokens).label("input_tokens"),
+                func.sum(SubscriptionUsage.output_tokens).label(
+                    "output_tokens"),
+            )
+            .where(
+                SubscriptionUsage.subscription_id == active_sub.id,
+                SubscriptionUsage.consumed_at >= active_sub.entitlement_start,
+                SubscriptionUsage.consumed_at < active_sub.entitlement_end,
+                SubscriptionUsage.resource_type == ResourceType.DOCS_GENERATED,
+            )
+            .group_by(SubscriptionUsage.model_name)
+        )
+
+        breakdown_result = await self.db.execute(breakdown_stmt)
+        breakdown_rows = breakdown_result.all()
+
+        # Build model breakdown dict
+        model_breakdown = {}
+        for row in breakdown_rows:
+            model_breakdown[row.model_name] = {
+                "count": int(row.count),
+                "input_tokens": int(row.input_tokens or 0),
+                "output_tokens": int(row.output_tokens or 0),
+            }
+
+        return {
+            "total_input_tokens": int(totals.total_input or 0),
+            "total_output_tokens": int(totals.total_output or 0),
+            "total_tokens": int((totals.total_input or 0) + (totals.total_output or 0)),
+            "generations_count": int(totals.count or 0),
+            "avg_input_tokens": int(totals.avg_input or 0),
+            "avg_output_tokens": int(totals.avg_output or 0),
+            "model_breakdown": model_breakdown,
+        }
 
     async def check_limit(
         self,

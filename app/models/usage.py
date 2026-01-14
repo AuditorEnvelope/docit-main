@@ -45,6 +45,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     CheckConstraint,
+    Numeric,  # Added for cost column
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import relationship
@@ -168,6 +169,40 @@ class SubscriptionUsage(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
         comment="Record creation timestamp for audit purposes",
+    )
+
+    # ========================================================================
+    # SHADOW METRICS - Token Tracking (Phase 6)
+    # ========================================================================
+    # These columns track LLM usage for cost analysis WITHOUT affecting billing.
+    # We bill by "docs_generated" but need token-level visibility for optimization.
+
+    input_tokens = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="LLM prompt tokens consumed (shadow metric for cost analysis)",
+    )
+
+    output_tokens = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="LLM completion tokens generated (shadow metric for cost analysis)",
+    )
+
+    model_name = Column(
+        String(100),
+        nullable=False,
+        default="unknown",
+        comment="LLM model used (e.g., 'gpt-4o', 'gemini-2.0-flash', 'deepseek')",
+    )
+
+    cost = Column(
+        Numeric(10, 4),
+        nullable=True,
+        default=0.0000,
+        comment="Estimated cost in USD (optional, for future use)",
     )
 
     # ========================================================================

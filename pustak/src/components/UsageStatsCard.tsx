@@ -189,9 +189,11 @@ export function UsageStatsCard({
 
 		loadUsageStats();
 
-		// Refresh every 30 seconds
-		const interval = setInterval(loadUsageStats, 30000);
-		return () => clearInterval(interval);
+		// UX FIX: Removed aggressive polling (was 30s, causing flicker)
+		// Usage stats are now only fetched on mount.
+		// If real-time updates are needed, consider WebSockets or manual refresh button.
+		// const interval = setInterval(loadUsageStats, 30000);
+		// return () => clearInterval(interval);
 	}, [token]);
 
 	// Loading state
@@ -285,16 +287,106 @@ export function UsageStatsCard({
 							/>
 						)}
 
-						{usageStats.limits.api_calls && (
+						{/* UX FIX: Hide API Calls (not relevant to users) */}
+						{/* {usageStats.limits.api_calls && (
 							<ResourceProgressBar
 								label="API Calls"
 								usage={usageStats.limits.api_calls}
 								icon={<TrendingUp className="w-4 h-4 text-green-500" />}
 							/>
-						)}
+						)} */}
 					</>
 				)}
 			</div>
+
+			{/* Phase 6: Token Usage Statistics */}
+			{usageStats.token_usage &&
+				usageStats.token_usage.generations_count > 0 && (
+					<div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+						<h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+							<Zap className="w-4 h-4 text-purple-500" />
+							Token Usage (This Cycle)
+						</h4>
+
+						<div className="grid grid-cols-2 gap-3">
+							{/* Total Tokens */}
+							<div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+								<p className="text-xs text-gray-600 dark:text-gray-400">
+									Total Tokens
+								</p>
+								<p className="text-lg font-bold text-purple-700 dark:text-purple-300">
+									{formatNumber(usageStats.token_usage.total_tokens)}
+								</p>
+							</div>
+
+							{/* Generations Count */}
+							<div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+								<p className="text-xs text-gray-600 dark:text-gray-400">
+									Generations
+								</p>
+								<p className="text-lg font-bold text-blue-700 dark:text-blue-300">
+									{usageStats.token_usage.generations_count}
+								</p>
+							</div>
+
+							{/* Input Tokens */}
+							<div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+								<p className="text-xs text-gray-600 dark:text-gray-400">
+									Input Tokens
+								</p>
+								<p className="text-lg font-bold text-green-700 dark:text-green-300">
+									{formatNumber(usageStats.token_usage.total_input_tokens)}
+								</p>
+								<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+									Avg: {formatNumber(usageStats.token_usage.avg_input_tokens)}
+								</p>
+							</div>
+
+							{/* Output Tokens */}
+							<div className="p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+								<p className="text-xs text-gray-600 dark:text-gray-400">
+									Output Tokens
+								</p>
+								<p className="text-lg font-bold text-orange-700 dark:text-orange-300">
+									{formatNumber(usageStats.token_usage.total_output_tokens)}
+								</p>
+								<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+									Avg: {formatNumber(usageStats.token_usage.avg_output_tokens)}
+								</p>
+							</div>
+						</div>
+
+						{/* Model Breakdown */}
+						{Object.keys(usageStats.token_usage.model_breakdown).length > 0 && (
+							<div className="mt-3">
+								<p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+									Models Used:
+								</p>
+								<div className="space-y-2">
+									{Object.entries(usageStats.token_usage.model_breakdown).map(
+										([model, stats]) => (
+											<div
+												key={model}
+												className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-800 p-2 rounded"
+											>
+												<span className="font-mono text-gray-700 dark:text-gray-300">
+													{model}
+												</span>
+												<span className="text-gray-600 dark:text-gray-400">
+													{stats.count}x •{" "}
+													{formatNumber(
+														stats.input_tokens + stats.output_tokens
+													)}{" "}
+													tokens
+												</span>
+											</div>
+										)
+									)}
+								</div>
+							</div>
+						)}
+					</div>
+				)}
 
 			{/* Warning/Upgrade CTA */}
 			{atLimit && (

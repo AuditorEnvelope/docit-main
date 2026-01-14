@@ -2,18 +2,31 @@
 
 Ported from the legacy src/utilities/llm_provider_v2 implementation so we
 retain the same provider rotation behaviour and console visibility.
+
+Phase 6 Enhancement: Token tracking for shadow ledger metrics.
 """
 from __future__ import annotations
 
 import os
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
 
 import google.generativeai as genai
 from groq import Groq
 import openai
 
 # No rate limiting needed (like old codebase)
+
+
+@dataclass
+class LLMResult:
+    """Result of LLM generation with token usage (Phase 6)"""
+    content: str
+    model_name: str
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
 
 
 class LLMProvider:
@@ -28,7 +41,7 @@ class LLMProvider:
         self.last_error: Optional[str] = None
         self.error_count = 0
 
-    def generate(self, prompt: str) -> Optional[str]:
+    def generate(self, prompt: str) -> Optional[LLMResult]:
         raise NotImplementedError
 
     def is_healthy(self) -> bool:
@@ -48,22 +61,55 @@ class GeminiProvider(LLMProvider):
             self.model_name = "models/gemini-2.5-flash"
             self.fallback_model = "models/gemini-2.0-flash"
 
-    def generate(self, prompt: str) -> Optional[str]:
+    def generate(self, prompt: str) -> Optional[LLMResult]:
         if not self.is_healthy():
             return None
         try:
             model = genai.GenerativeModel(self.model_name)
             resp = model.generate_content(prompt)
             result = getattr(resp, "text", None) or str(resp)
+
+            # Extract token usage from Gemini response
+            usage_metadata = getattr(resp, "usage_metadata", None)
+            input_tokens = getattr(
+                usage_metadata, "prompt_token_count", 0) if usage_metadata else 0
+            output_tokens = getattr(
+                usage_metadata, "candidates_token_count", 0) if usage_metadata else 0
+            total_tokens = getattr(usage_metadata, "total_token_count", 0) if usage_metadata else (
+                input_tokens + output_tokens)
+
             if result and "quota" not in result.lower():
-                return result
+                return LLMResult(
+                    content=result,
+                    model_name=self.model_name,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=total_tokens
+                )
         except Exception as primary_error:
             if "quota" in str(primary_error).lower():
                 print("⚠️ Gemini quota exceeded, trying fallback model")
                 try:
                     model = genai.GenerativeModel(self.fallback_model)
                     resp = model.generate_content(prompt)
-                    return getattr(resp, "text", None) or str(resp)
+                    result = getattr(resp, "text", None) or str(resp)
+
+                    # Extract token usage from fallback response
+                    usage_metadata = getattr(resp, "usage_metadata", None)
+                    input_tokens = getattr(
+                        usage_metadata, "prompt_token_count", 0) if usage_metadata else 0
+                    output_tokens = getattr(
+                        usage_metadata, "candidates_token_count", 0) if usage_metadata else 0
+                    total_tokens = getattr(usage_metadata, "total_token_count", 0) if usage_metadata else (
+                        input_tokens + output_tokens)
+
+                    return LLMResult(
+                        content=result,
+                        model_name=self.fallback_model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        total_tokens=total_tokens
+                    )
                 except Exception as fallback_error:
                     self.record_error(fallback_error)
                     return None
@@ -79,7 +125,7 @@ class GroqProvider(LLMProvider):
             self.client = Groq(api_key=api_key)
             self.model_name = "llama-3.3-70b-versatile"
 
-    def generate(self, prompt: str) -> Optional[str]:
+    def generate(self, prompt: str) -> Optional[LLMResult]:
         if not self.is_healthy():
             return None
         try:
@@ -89,7 +135,21 @@ class GroqProvider(LLMProvider):
                 max_tokens=4000,
                 temperature=0.1,
             )
-            return response.choices[0].message.content
+
+            # Extract token usage from Groq response
+            usage = response.usage
+            input_tokens = getattr(usage, "prompt_tokens", 0)
+            output_tokens = getattr(usage, "completion_tokens", 0)
+            total_tokens = getattr(usage, "total_tokens", 0) or (
+                input_tokens + output_tokens)
+
+            return LLMResult(
+                content=response.choices[0].message.content,
+                model_name=self.model_name,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens
+            )
         except Exception as error:
             self.record_error(error)
             return None
@@ -105,7 +165,7 @@ class DeepSeekProvider(LLMProvider):
             )
             self.model_name = "deepseek-chat"
 
-    def generate(self, prompt: str) -> Optional[str]:
+    def generate(self, prompt: str) -> Optional[LLMResult]:
         if not self.is_healthy():
             return None
         try:
@@ -115,7 +175,21 @@ class DeepSeekProvider(LLMProvider):
                 max_tokens=4000,
                 temperature=0.1,
             )
-            return response.choices[0].message.content
+
+            # Extract token usage from DeepSeek response
+            usage = response.usage
+            input_tokens = getattr(usage, "prompt_tokens", 0)
+            output_tokens = getattr(usage, "completion_tokens", 0)
+            total_tokens = getattr(usage, "total_tokens", 0) or (
+                input_tokens + output_tokens)
+
+            return LLMResult(
+                content=response.choices[0].message.content,
+                model_name=self.model_name,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens
+            )
         except Exception as error:
             self.record_error(error)
             return None
@@ -147,7 +221,8 @@ class LLMRotator:
 
         print(f"🚀 Initialized {len(self.providers)} LLM providers")
         if not self.providers:
-            raise RuntimeError("No LLM providers available – configure at least one API key.")
+            raise RuntimeError(
+                "No LLM providers available – configure at least one API key.")
 
     def _healthy_providers(self) -> List[LLMProvider]:
         return [provider for provider in self.providers if provider.is_healthy()]
@@ -161,27 +236,31 @@ class LLMRotator:
         self.current_index += 1
         return provider
 
-    def generate_with_rotation(self, prompt: str, max_attempts: int = 3) -> Optional[str]:
-        """Generate content using rotation across providers (like old codebase - no rate limiter)"""
+    def generate_with_rotation(self, prompt: str, max_attempts: int = 3) -> Optional[LLMResult]:
+        """Generate content using rotation across providers (like old codebase - no rate limiter)
+
+        Phase 6: Now returns LLMResult with token usage data instead of just string.
+        """
         attempts = 0
-        
+
         while attempts < max_attempts:
             provider = self.get_next_provider()
             if not provider:
                 break
-                
+
             print(f"🔄 Trying {provider.name} (attempt {attempts + 1})")
             result = provider.generate(prompt)
-            
+
             if result:
-                print(f"✅ Success with {provider.name}")
+                print(
+                    f"✅ Success with {provider.name} | Tokens: {result.input_tokens} in / {result.output_tokens} out")
                 return result
-            
+
             attempts += 1
             if attempts < max_attempts:
                 print("⏳ Waiting 2 seconds before retry...")
                 time.sleep(2)
-        
+
         print("❌ All providers failed")
         return None
 
@@ -211,6 +290,7 @@ def get_rotator() -> LLMRotator:
         _rotator = LLMRotator()
     return _rotator
 
+
 def create_fallback_doc(filename: str, code: str, status: Dict[str, object]) -> str:
     snippet = code[:1000]
     if len(code) > 1000:
@@ -220,7 +300,8 @@ def create_fallback_doc(filename: str, code: str, status: Dict[str, object]) -> 
         + (f"\n  - Last error: {info['last_error']}" if info['last_error'] else "")
         for info in status.get("providers", [])
     ]
-    provider_block = "\n".join(provider_lines) if provider_lines else "No providers available"
+    provider_block = "\n".join(
+        provider_lines) if provider_lines else "No providers available"
     return (
         f"# {filename}\n\n"
         "_Automatic documentation generation failed._\n\n"
@@ -234,16 +315,19 @@ def create_fallback_doc(filename: str, code: str, status: Dict[str, object]) -> 
         "Please add proper documentation manually.\n"
     )
 
+
 def generate_doc_for_file(filename: str, code: str) -> str:
+    """Generate documentation for a file (backwards compatible - returns string)"""
     prompt = make_prompt(filename, code)
     try:
         result = get_rotator().generate_with_rotation(prompt)
         if result:
-            return result
+            return result.content
         return create_fallback_doc(filename, code, get_rotator().get_status())
     except Exception as error:  # pragma: no cover - defensive
         print(f"❌ LLM generation failed: {error}")
         return create_fallback_doc(filename, code, {"error": str(error)})
+
 
 def make_prompt(filename: str, code: str) -> str:
     language = filename.split(".")[-1] if "." in filename else "text"

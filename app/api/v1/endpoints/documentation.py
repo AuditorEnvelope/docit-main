@@ -188,6 +188,8 @@ async def manual_generate_documentation(
     # ========================================================================
     # Record usage AFTER successful generation
     # This creates an immutable audit trail in subscription_usage table
+    #
+    # Phase 6 Enhancement: Now records token usage for shadow metrics
     try:
         await usage_service.record_usage(
             user_id=str(user.id),
@@ -195,7 +197,13 @@ async def manual_generate_documentation(
             amount=1,
             # Use commit SHA as resource_id for audit
             resource_id=str(publish_result.get("commit_sha", repo_name)),
+            # Phase 6: Shadow token tracking
+            input_tokens=generation_result.input_tokens,
+            output_tokens=generation_result.output_tokens,
+            model_name=generation_result.model_name,
         )
+        print(
+            f"✅ Recorded usage: {generation_result.input_tokens} input tokens, {generation_result.output_tokens} output tokens, model: {generation_result.model_name}")
     except Exception as record_error:
         # Log but don't fail the request if usage recording fails
         # (The doc was already generated successfully)

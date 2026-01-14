@@ -34,13 +34,32 @@ export type ResourceType =
 export type PlanTier = "free" | "pro" | "team" | "enterprise";
 
 /**
- * Usage limit details for a single resource
+ * Resource usage limit details for a single resource
  */
 export interface ResourceUsage {
 	used: number; // Amount consumed in current cycle
 	limit: number; // Total allowed by plan (-1 = unlimited)
 	remaining: number; // Quota left (-1 if unlimited)
 	allowed: boolean; // True if user can consume more
+}
+
+/**
+ * Token usage statistics (Phase 6: Shadow metrics)
+ */
+export interface TokenUsage {
+	total_input_tokens: number;
+	total_output_tokens: number;
+	total_tokens: number;
+	generations_count: number;
+	avg_input_tokens: number;
+	avg_output_tokens: number;
+	model_breakdown: {
+		[modelName: string]: {
+			count: number;
+			input_tokens: number;
+			output_tokens: number;
+		};
+	};
 }
 
 /**
@@ -58,6 +77,8 @@ export interface UsageStats {
 		pages_processed?: ResourceUsage;
 		tokens_used?: ResourceUsage;
 	};
+	// Phase 6: Token usage statistics
+	token_usage?: TokenUsage;
 }
 
 /**
@@ -345,9 +366,7 @@ export function formatDate(isoString: string): string {
  * }
  * ```
  */
-export function isUsageLimitError(
-	error: any
-): error is {
+export function isUsageLimitError(error: any): error is {
 	response: { status: number; data: { detail: UsageLimitError } };
 } {
 	return (

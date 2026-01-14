@@ -72,11 +72,19 @@ class GitHubDualAppHelper:
         return None
 
     def _create_jwt(self, app_id: str, private_key: str) -> str:
-        """Create a JWT for GitHub App authentication"""
+        """Create a JWT for GitHub App authentication
+        
+        GitHub requires:
+        - iat (issued at): Can be up to 60 seconds in the past (clock skew tolerance)
+        - exp (expiration): MUST be within 10 minutes from iat (not from 'now')
+        """
         now = int(time.time())
+        # Set iat 60 seconds in the past to handle clock skew
+        iat = now - 60
         payload = {
-            "iat": now - 60,  # Issued at time (60 seconds in the past to avoid clock skew)
-            "exp": now + (10 * 60),  # JWT expiration time (10 minutes)
+            "iat": iat,
+            # CRITICAL FIX: exp must be at most 10 minutes from iat (not from now)
+            "exp": iat + (10 * 60),  # 10 minutes from iat, NOT from now
             "iss": app_id  # GitHub App ID
         }
         

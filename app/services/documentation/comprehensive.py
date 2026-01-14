@@ -219,6 +219,11 @@ class ComprehensiveDocBuilder:
         self.doc_persona = doc_persona
 
     async def build(self) -> Dict[str, str]:
+        """
+        Build comprehensive documentation.
+        
+        Phase 6 Enhancement: Captures token usage and stores in 'token_data' key.
+        """
         print("================================================================================")
         print(f"📦 Starting comprehensive documentation build for {self.repository_root.name}")
         print(f"👤 Persona: {self.doc_persona}")
@@ -230,13 +235,17 @@ class ComprehensiveDocBuilder:
         docs_dir = self.repository_root / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
 
-        # 🔥 ONE LLM CALL FOR ALL DOCUMENTS
-        docs = await generate_all_docs_in_single_call(
+        # 🔥 ONE LLM CALL FOR ALL DOCUMENTS (Phase 6: Now captures token usage)
+        docs, token_data = await generate_all_docs_in_single_call(
             self.repository_root,
             analysis,
             recent_changes,
             self.doc_persona
         )
+        
+        # Store token data in the returned dict for upstream usage tracking
+        docs["token_data"] = token_data
+        print(f"📊 Token Usage: {token_data['input_tokens']} in / {token_data['output_tokens']} out | Model: {token_data['model_name']}")
 
         # -----------------------------
         # WRITE DOCUMENTS TO FILES
