@@ -18,14 +18,14 @@ def check_documentation_quality(repo_dir: Path, doc_persona: str = "internal") -
     """
     Check if existing documentation is comprehensive and worthy
     Returns dict with quality scores and what needs to be generated (like old codebase)
-    
+
     Args:
         repo_dir: Path to repository
         doc_persona: Documentation persona (internal|developer)
     """
     # Check for persona-specific docs directory
     docs_dir = Path(repo_dir) / "docs" / doc_persona
-    
+
     quality_report = {
         "summary_exists": False,
         "summary_quality": 0,  # 0-10 scale
@@ -37,63 +37,67 @@ def check_documentation_quality(repo_dir: Path, doc_persona: str = "internal") -
         "api_quality": 0,
         "needs_generation": []
     }
-    
+
     # Check SUMMARY.md or README.md
     summary_files = [
         docs_dir / "SUMMARY.md",
         docs_dir / "README.md",
         Path(repo_dir) / "README.md"
     ]
-    
+
     for summary_file in summary_files:
         if summary_file.exists():
             content = summary_file.read_text()
             quality_report["summary_exists"] = True
-            quality_report["summary_quality"] = assess_content_quality(content, "summary")
+            quality_report["summary_quality"] = assess_content_quality(
+                content, "summary")
             break
-    
+
     # Check architecture documentation
     arch_files = [
         docs_dir / "architecture.md",
         docs_dir / "ARCHITECTURE.md",
         docs_dir / "architecture" / "current.md"
     ]
-    
+
     for arch_file in arch_files:
         if arch_file.exists():
             content = arch_file.read_text()
             quality_report["architecture_exists"] = True
-            quality_report["architecture_quality"] = assess_content_quality(content, "architecture")
+            quality_report["architecture_quality"] = assess_content_quality(
+                content, "architecture")
             break
-    
+
     # Check workflow documentation
     workflow_files = [
         docs_dir / "workflow.md",
         docs_dir / "WORKFLOW.md",
         docs_dir / "workflow" / "current.md"
     ]
-    
+
     for workflow_file in workflow_files:
         if workflow_file.exists():
             content = workflow_file.read_text()
             quality_report["workflow_exists"] = True
-            quality_report["workflow_quality"] = assess_content_quality(content, "workflow")
+            quality_report["workflow_quality"] = assess_content_quality(
+                content, "workflow")
             break
-    
+
     # Check API documentation
     api_files = [
         docs_dir / "api.md",
         docs_dir / "API.md",
         docs_dir / "api" / "README.md"
     ]
-    
+
     for api_file in api_files:
         if api_file.exists():
             content = api_file.read_text()
             quality_report["api_exists"] = True
-            quality_report["api_quality"] = assess_content_quality(content, "api")
+            quality_report["api_quality"] = assess_content_quality(
+                content, "api")
             break
-    
+
     # Determine what needs generation (quality < 8 for regeneration)
     if not quality_report["summary_exists"] or quality_report["summary_quality"] < 8:
         quality_report["needs_generation"].append("summary")
@@ -106,7 +110,7 @@ def check_documentation_quality(repo_dir: Path, doc_persona: str = "internal") -
 
     if not quality_report["api_exists"] or quality_report["api_quality"] < 8:
         quality_report["needs_generation"].append("api")
-    
+
     return quality_report
 
 
@@ -117,27 +121,27 @@ def assess_content_quality(content: str, doc_type: str) -> float:
     """
     if len(content.strip()) < 100:
         return 2.0  # Too short
-    
+
     # Quick heuristic checks
     score = 5.0  # Base score
-    
+
     # Check for headings
     if "##" in content or "# " in content:
         score += 1.0
-    
+
     # Check for code blocks
     if "```" in content:
         score += 1.0
-    
+
     # Check for lists
     if "- " in content or "* " in content or "1. " in content:
         score += 1.0
-    
+
     # Check length (comprehensive docs are longer)
     if len(content) > 1000:
         score += 1.0
     if len(content) > 3000:
-        score += 1.0    
+        score += 1.0
     return score
 
 
@@ -175,6 +179,7 @@ IGNORED_DIRECTORIES = {
     "tmp",
 }
 
+
 def update_summary_navigation(docs_dir: Path) -> None:
     summary = ["# Summary", ""]
     if (docs_dir / "SUMMARY.md").exists():
@@ -183,7 +188,8 @@ def update_summary_navigation(docs_dir: Path) -> None:
     if arch_dir.exists():
         summary.append("\n## Architecture")
         for path in sorted(arch_dir.glob("v*-architecture.md"), reverse=True)[:5]:
-            summary.append(f"* [{path.stem.upper()}](architecture/{path.name})")
+            summary.append(
+                f"* [{path.stem.upper()}](architecture/{path.name})")
     workflow_dir = docs_dir / "workflow"
     if workflow_dir.exists():
         summary.append("\n## Workflow")
@@ -192,7 +198,7 @@ def update_summary_navigation(docs_dir: Path) -> None:
     if (docs_dir / "api.md").exists():
         summary.append("\n## API")
         summary.append("* [API Documentation](api.md)")
-    
+
     # Add changes (show only last 10 changes to avoid clutter)
     changes_dir = docs_dir / "changes"
     if changes_dir.exists():
@@ -201,16 +207,20 @@ def update_summary_navigation(docs_dir: Path) -> None:
             summary.append("\n## Recent Changes")
             for change_file in change_files[:10]:  # Latest 10 only
                 # Extract title from filename (remove commit hash prefix)
-                title = change_file.stem.split("-", 1)[-1].replace("-", " ").title()
+                title = change_file.stem.split(
+                    "-", 1)[-1].replace("-", " ").title()
                 summary.append(f"* [{title}](changes/{change_file.name})")
-    
+
     (docs_dir / "SUMMARY.md").write_text("\n".join(summary))
     print(f"✅ Updated SUMMARY.md (showing only recent versions)")
+
 
 @dataclass
 class DocumentedFile:
     path: Path
     content: str
+
+
 class ComprehensiveDocBuilder:
     """High-fidelity documentation generator (legacy comprehensive flow)."""
 
@@ -221,11 +231,12 @@ class ComprehensiveDocBuilder:
     async def build(self) -> Dict[str, str]:
         """
         Build comprehensive documentation.
-        
+
         Phase 6 Enhancement: Captures token usage and stores in 'token_data' key.
         """
         print("================================================================================")
-        print(f"📦 Starting comprehensive documentation build for {self.repository_root.name}")
+        print(
+            f"📦 Starting comprehensive documentation build for {self.repository_root.name}")
         print(f"👤 Persona: {self.doc_persona}")
         print("================================================================================")
 
@@ -242,10 +253,11 @@ class ComprehensiveDocBuilder:
             recent_changes,
             self.doc_persona
         )
-        
+
         # Store token data in the returned dict for upstream usage tracking
         docs["token_data"] = token_data
-        print(f"📊 Token Usage: {token_data['input_tokens']} in / {token_data['output_tokens']} out | Model: {token_data['model_name']}")
+        print(
+            f"📊 Token Usage: {token_data['input_tokens']} in / {token_data['output_tokens']} out | Model: {token_data['model_name']}")
 
         # -----------------------------
         # WRITE DOCUMENTS TO FILES
@@ -258,7 +270,8 @@ class ComprehensiveDocBuilder:
         arch_dir.mkdir(exist_ok=True)
         (arch_dir / "current.md").write_text(docs["architecture"])
         version = get_current_version(docs_dir, "architecture")
-        (arch_dir / f"v{version}-architecture.md").write_text(docs["architecture"])
+        (arch_dir /
+         f"v{version}-architecture.md").write_text(docs["architecture"])
 
         # WORKFLOW
         workflow_dir = docs_dir / "workflow"
@@ -275,7 +288,6 @@ class ComprehensiveDocBuilder:
 
         print("✅ Comprehensive documentation build complete!")
         return docs
-
 
     def _collect_listing(self, limit: int = 50) -> str:
         entries = []
@@ -311,7 +323,7 @@ def get_current_version(docs_dir: Path, doc_type: str) -> str:
     """
     Get the current version number using semantic versioning (v1.0, v1.1, v2.0)
     Returns the next version number to create (like old codebase)
-    
+
     This prevents excessive versioning by using proper semantic versioning
     """
     version_dir = docs_dir / doc_type
@@ -369,7 +381,8 @@ def analyze_full_codebase(repo_dir: Path) -> Dict[str, object]:
     }
     try:
         analysis["file_count"] = int(
-            subprocess.run("find . -type f | wc -l", shell=True, cwd=repo_dir, capture_output=True, text=True).stdout.strip()
+            subprocess.run("find . -type f | wc -l", shell=True,
+                           cwd=repo_dir, capture_output=True, text=True).stdout.strip()
         )
         for ext in [".py", ".ts", ".js", ".go", ".java", ".rs", ".cpp", ".c", ".php", ".rb"]:
             count = int(
@@ -391,14 +404,14 @@ def analyze_full_codebase(repo_dir: Path) -> Dict[str, object]:
             text=True,
         ).stdout.strip()
         analysis["main_directories"] = dirs.split("\n")
-        
+
         # Analyze Python dependencies and imports (like old codebase)
         if "py" in analysis["languages"]:
             _analyze_python_dependencies(repo_dir, analysis)
-        
+
         # Detect technologies (like old codebase)
         _detect_technologies(repo_dir, analysis)
-        
+
     except Exception as exc:
         logger.warning("Codebase scan failed: %s", exc)
     return analysis
@@ -408,12 +421,12 @@ def _analyze_python_dependencies(repo_dir: Path, analysis: Dict[str, object]) ->
     """Analyze Python imports and dependencies (like old codebase)"""
     imports: Dict[str, int] = {}
     frameworks: List[str] = []
-    
+
     try:
         for py_file in repo_dir.rglob("*.py"):
             try:
                 content = py_file.read_text()
-                
+
                 # Extract import statements
                 for line in content.split('\n'):
                     line = line.strip()
@@ -425,12 +438,12 @@ def _analyze_python_dependencies(repo_dir: Path, analysis: Dict[str, object]) ->
                             module = line.split(' ')[1].split('.')[0]
                         else:
                             continue
-                        
+
                         if module not in ['os', 'sys', 'json', 'time', 'datetime', 'typing', 'pathlib', 'logging']:
                             imports[module] = imports.get(module, 0) + 1
             except Exception:
                 continue
-        
+
         # Detect frameworks
         framework_indicators = {
             "FastAPI": ["fastapi", "FastAPI"],
@@ -442,14 +455,15 @@ def _analyze_python_dependencies(repo_dir: Path, analysis: Dict[str, object]) ->
             "Click": ["click", "Click"],
             "Typer": ["typer", "Typer"]
         }
-        
+
         for framework, indicators in framework_indicators.items():
             if any(indicator in str(imports) for indicator in indicators):
                 frameworks.append(framework)
-        
-        analysis["imports"] = dict(sorted(imports.items(), key=lambda x: x[1], reverse=True)[:10])
+
+        analysis["imports"] = dict(
+            sorted(imports.items(), key=lambda x: x[1], reverse=True)[:10])
         analysis["frameworks"] = frameworks
-        
+
     except Exception as e:
         logger.warning("Python analysis failed: %s", e)
 
@@ -463,7 +477,7 @@ def _detect_technologies(repo_dir: Path, analysis: Dict[str, object]) -> None:
                 content += file_path.read_text().lower()
         except Exception:
             continue
-    
+
     # Database technologies
     db_indicators = {
         "PostgreSQL": ["postgresql", "postgres", "psycopg"],
@@ -473,11 +487,11 @@ def _detect_technologies(repo_dir: Path, analysis: Dict[str, object]) -> None:
         "Redis": ["redis", "aredis"],
         "Milvus": ["milvus", "pymilvus"]
     }
-    
+
     for db, indicators in db_indicators.items():
         if any(indicator in content for indicator in indicators):
             analysis["database_tech"].append(db)
-    
+
     # Deployment technologies
     deploy_indicators = {
         "Docker": ["docker", "dockerfile", "docker-compose"],
@@ -489,7 +503,7 @@ def _detect_technologies(repo_dir: Path, analysis: Dict[str, object]) -> None:
         "Vercel": ["vercel", "now"],
         "Netlify": ["netlify"]
     }
-    
+
     for deploy, indicators in deploy_indicators.items():
         if any(indicator in content for indicator in indicators):
             analysis["deployment_tech"].append(deploy)
@@ -504,44 +518,45 @@ def analyze_components(repo_dir: Path) -> Dict[str, object]:
         "models": [],
         "handlers": []
     }
-    
+
     try:
         # Look for actual component structure
         src_dir = repo_dir / "src"
         app_dir = repo_dir / "app"
-        search_dirs = [src_dir, app_dir] if app_dir.exists() else [src_dir] if src_dir.exists() else [repo_dir]
-        
+        search_dirs = [src_dir, app_dir] if app_dir.exists(
+        ) else [src_dir] if src_dir.exists() else [repo_dir]
+
         for search_dir in search_dirs:
             if not search_dir.exists():
                 continue
-                
+
             # Detect services
             for py_file in search_dir.rglob("*.py"):
                 try:
                     filename = py_file.stem.lower()
                     content = py_file.read_text()
-                    
+
                     if any(pattern in filename for pattern in ["service", "_service"]):
                         components["services"].append({
                             "name": py_file.stem,
                             "path": str(py_file.relative_to(repo_dir)),
                             "description": f"Service module handling {filename.replace('_', ' ')} functionality"
                         })
-                    
+
                     elif any(pattern in filename for pattern in ["handler", "_handler"]):
                         components["handlers"].append({
                             "name": py_file.stem,
                             "path": str(py_file.relative_to(repo_dir)),
                             "description": f"Handler for {filename.replace('_', ' ')} operations"
                         })
-                    
+
                     elif any(pattern in filename for pattern in ["model", "_model", "schema"]) and "class" in content:
                         components["models"].append({
                             "name": py_file.stem,
                             "path": str(py_file.relative_to(repo_dir)),
                             "description": f"Data model/schema for {filename.replace('_', ' ')}"
                         })
-                    
+
                     elif any(pattern in filename for pattern in ["util", "helper", "utils"]) or ("def " in content and len(content.split("def ")) > 3):
                         components["utilities"].append({
                             "name": py_file.stem,
@@ -550,7 +565,7 @@ def analyze_components(repo_dir: Path) -> Dict[str, object]:
                         })
                 except Exception:
                     continue
-        
+
         # Detect main application structure
         main_patterns = {
             "api": ["fastapi", "flask", "app.py", "main.py"],
@@ -558,19 +573,19 @@ def analyze_components(repo_dir: Path) -> Dict[str, object]:
             "frontend": ["static", "templates", "public", "web", "ui"],
             "core": ["core", "engine", "manager", "processor"]
         }
-        
+
         for component_type, patterns in main_patterns.items():
             for pattern in patterns:
                 if any(pattern in str(f) for f in repo_dir.rglob("*") if f.is_file()):
                     if component_type not in components["detected"]:
                         components["detected"].append(component_type)
-        
+
         # If no specific components found, fall back to basic detection
         if not components["detected"]:
             components["detected"] = ["core", "api", "database"]
-        
+
         return components
-        
+
     except Exception as e:
         logger.warning("Component analysis failed: %s", e)
         return {"detected": ["core", "api", "database"], "services": [], "utilities": [], "models": [], "handlers": []}
@@ -579,7 +594,7 @@ def analyze_components(repo_dir: Path) -> Dict[str, object]:
 def detect_design_patterns(repo_dir: Path) -> List[str]:
     """Detect actual design patterns in the codebase (like old codebase)"""
     patterns: List[str] = []
-    
+
     try:
         # Look for actual patterns in the code
         pattern_indicators = {
@@ -604,12 +619,12 @@ def detect_design_patterns(repo_dir: Path) -> List[str]:
             "Memento Pattern": ["memento", "snapshot", "state"],
             "Flyweight Pattern": ["flyweight", "cache", "pool", "reuse"]
         }
-        
+
         # Search through Python files for pattern indicators
         for py_file in repo_dir.rglob("*.py"):
             try:
                 content = py_file.read_text().lower()
-                
+
                 for pattern_name, indicators in pattern_indicators.items():
                     if any(indicator in content for indicator in indicators):
                         # Check for actual implementation, not just mentions
@@ -618,7 +633,7 @@ def detect_design_patterns(repo_dir: Path) -> List[str]:
                                 patterns.append(pattern_name)
             except Exception:
                 continue
-        
+
         # If no patterns found, return basic ones that are commonly used
         if not patterns:
             # Check for common patterns in our specific codebase
@@ -628,18 +643,18 @@ def detect_design_patterns(repo_dir: Path) -> List[str]:
                     content += py_file.read_text()
                 except Exception:
                     continue
-            
+
             if "class" in content and "def" in content:
                 patterns.append("Object-Oriented Design")
-            
+
             if "async" in content or "await" in content:
                 patterns.append("Async/Await Pattern")
-            
+
             if "try:" in content and "except" in content:
                 patterns.append("Error Handling Pattern")
-        
+
         return patterns if patterns else ["Object-Oriented Design", "Error Handling"]
-        
+
     except Exception as e:
         logger.warning("Design pattern detection failed: %s", e)
         return ["Object-Oriented Design", "Async/Await Pattern"]
@@ -656,43 +671,44 @@ def analyze_architecture(repo_dir: Path) -> Dict[str, object]:
 
 def update_summary_navigation(docs_dir: Path) -> None:
     """Update SUMMARY.md navigation with links to all documentation files.
-    
+
     Args:
         docs_dir: Path to the documentation directory (persona-specific)
     """
     summary = ["# Summary", ""]
-    
+
     # Get persona from path if available
-    persona = "" 
+    persona = ""
     if "internal" in str(docs_dir) or "dev" in str(docs_dir):
         persona = docs_dir.name
         print(f"📚 Updating SUMMARY.md for persona: {persona}")
-    
+
     # Add home link
     if (docs_dir / "SUMMARY.md").exists():
         summary.append("* [Home](SUMMARY.md)")
     elif (docs_dir / "README.md").exists():
         summary.append("* [Home](README.md)")
-    
+
     # Add architecture links
     arch_dir = docs_dir / "architecture"
     if arch_dir.exists():
         summary.append("\n## Architecture")
         for path in sorted(arch_dir.glob("v*-architecture.md"), reverse=True)[:5]:
-            summary.append(f"* [{path.stem.upper()}](architecture/{path.name})")
-    
+            summary.append(
+                f"* [{path.stem.upper()}](architecture/{path.name})")
+
     # Add workflow links
     workflow_dir = docs_dir / "workflow"
     if workflow_dir.exists():
         summary.append("\n## Workflow")
         for path in sorted(workflow_dir.glob("v*-workflow.md"), reverse=True)[:5]:
             summary.append(f"* [{path.stem.upper()}](workflow/{path.name})")
-    
+
     # Add API link
     if (docs_dir / "api.md").exists():
         summary.append("\n## API")
         summary.append("* [API Documentation](api.md)")
-    
+
     # Add changes (show only last 10 changes to avoid clutter)
     changes_dir = docs_dir / "changes"
     if changes_dir.exists():
@@ -701,19 +717,21 @@ def update_summary_navigation(docs_dir: Path) -> None:
             summary.append("\n## Recent Changes")
             for change_file in change_files[:10]:  # Latest 10 only
                 # Extract title from filename (remove commit hash prefix)
-                title = change_file.stem.split("-", 1)[-1].replace("-", " ").title()
+                title = change_file.stem.split(
+                    "-", 1)[-1].replace("-", " ").title()
                 summary.append(f"* [{title}](changes/{change_file.name})")
-    
+
     # Add persona information if applicable
     if persona:
         summary.append(f"\n## Documentation Info")
         summary.append(f"* Persona: **{persona}**")
-        summary.append(f"* Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
-    
+        summary.append(
+            f"* Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+
     # Write the SUMMARY.md file
     (docs_dir / "SUMMARY.md").write_text("\n".join(summary))
-    print(f"✅ Updated SUMMARY.md for {docs_dir.name} (showing only recent versions)")
-
+    print(
+        f"✅ Updated SUMMARY.md for {docs_dir.name} (showing only recent versions)")
 
 
 # ============================================================================
@@ -724,7 +742,7 @@ def analyze_architectural_impact(repo_dir: Path, changed_files: List[str], analy
     """
     Determine if changes warrant a new architecture/workflow version (like old codebase)
     Uses semantic versioning (v1.0, v1.1, v2.0) instead of incremental numbers
-    
+
     Only create new versions for TRULY significant architectural changes:
     - Major feature additions that change system architecture
     - Breaking changes that affect core components
@@ -747,11 +765,14 @@ def analyze_architectural_impact(repo_dir: Path, changed_files: List[str], analy
         any("refactor" in f.lower() for f in changed_files),
         any("restructure" in f.lower() for f in changed_files),
         # Major new features that change architecture
-        analysis.get("type") == "breaking_change" and analysis.get("significance", 0) >= 9,
+        analysis.get("type") == "breaking_change" and analysis.get(
+            "significance", 0) >= 9,
         # Database schema changes (but not migrations)
-        any("schema" in f.lower() and "migration" not in f.lower() for f in changed_files),
+        any("schema" in f.lower() and "migration" not in f.lower()
+            for f in changed_files),
         # Major technology stack changes
-        any("docker" in f.lower() and "compose" in f.lower() for f in changed_files),
+        any("docker" in f.lower() and "compose" in f.lower()
+            for f in changed_files),
         any("kubernetes" in f.lower() for f in changed_files),
         any("terraform" in f.lower() for f in changed_files),
     ]
@@ -759,13 +780,17 @@ def analyze_architectural_impact(repo_dir: Path, changed_files: List[str], analy
     # STRICT criteria for workflow changes (only major process changes)
     major_workflow_indicators = [
         # CI/CD pipeline changes
-        any("github" in f.lower() and "workflow" in f.lower() for f in changed_files),
-        any("gitlab" in f.lower() and "ci" in f.lower() for f in changed_files),
+        any("github" in f.lower() and "workflow" in f.lower()
+            for f in changed_files),
+        any("gitlab" in f.lower() and "ci" in f.lower()
+            for f in changed_files),
         any("jenkins" in f.lower() for f in changed_files),
         # Deployment process changes
-        any("deploy" in f.lower() and ("script" in f.lower() or "config" in f.lower()) for f in changed_files),
+        any("deploy" in f.lower() and ("script" in f.lower()
+            or "config" in f.lower()) for f in changed_files),
         # Major development process changes
-        analysis.get("type") == "breaking_change" and "deployment" in analysis.get("impact_scope", []),
+        analysis.get("type") == "breaking_change" and "deployment" in analysis.get(
+            "impact_scope", []),
         len(changed_files) > 40,  # Large changes to development files
     ]
 
@@ -790,15 +815,15 @@ def analyze_architectural_impact(repo_dir: Path, changed_files: List[str], analy
 # ============================================================================
 
 async def generate_comprehensive_documentation(
-    repo_dir: Path, 
-    analysis: Dict[str, object], 
-    changed_files: List[str], 
+    repo_dir: Path,
+    analysis: Dict[str, object],
+    changed_files: List[str],
     doc_persona: str = "internal"
 ) -> None:
     """
     Generate comprehensive documentation for the repository (like old codebase)
     This is the main orchestrator function
-    
+
     Args:
         repo_dir: Path to repository
         analysis: Change analysis dict
@@ -808,20 +833,20 @@ async def generate_comprehensive_documentation(
     # Create base docs directory
     base_docs_dir = Path(repo_dir) / "docs"
     base_docs_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create persona-specific docs directory
     docs_dir = base_docs_dir / doc_persona
     docs_dir.mkdir(parents=True, exist_ok=True)
-    
+
     print("🔍 Checking documentation quality...")
     changed_files = changed_files or []  # safety
 
     quality_report = check_documentation_quality(repo_dir)
     # ⭐ NEW: Log doc_persona being used
     print(f"📚 Generating docs with persona: {doc_persona}")
-    
+
     quality_report = check_documentation_quality(repo_dir, doc_persona)
-    
+
     print(f"📋 Quality Report: {json.dumps(quality_report, indent=2)}")
 
     # NEW: Check if architecture/workflow need new versions
@@ -850,7 +875,8 @@ async def generate_comprehensive_documentation(
 
     if impact["needs_new_architecture_version"]:
         version = get_current_version(docs_dir, "architecture")
-        (arch_dir / f"v{version}-architecture.md").write_text(docs["architecture"])
+        (arch_dir /
+         f"v{version}-architecture.md").write_text(docs["architecture"])
         print(f"📐 NEW architecture version: v{version}")
     else:
         print("📐 No major architecture change. No new version created.")
@@ -877,6 +903,7 @@ async def generate_comprehensive_documentation(
 # WORKFLOW AND API ANALYSIS (ported from old codebase)
 # ============================================================================
 
+
 def analyze_workflows(repo_dir: Path) -> Dict[str, object]:
     """Analyze development workflows (like old codebase)"""
     workflows = {
@@ -884,19 +911,21 @@ def analyze_workflows(repo_dir: Path) -> Dict[str, object]:
         "ci_files": [],
         "scripts": []
     }
-    
+
     # Check for CI/CD files
-    ci_files = [".github/workflows", ".gitlab-ci.yml", "Jenkinsfile", ".circleci"]
+    ci_files = [".github/workflows",
+                ".gitlab-ci.yml", "Jenkinsfile", ".circleci"]
     for ci_file in ci_files:
         if (Path(repo_dir) / ci_file).exists():
             workflows["has_ci_cd"] = True
             workflows["ci_files"].append(ci_file)
-    
+
     # Check for scripts
     scripts_dir = Path(repo_dir) / "scripts"
     if scripts_dir.exists():
-        workflows["scripts"] = [f.name for f in scripts_dir.iterdir() if f.is_file()]
-    
+        workflows["scripts"] = [
+            f.name for f in scripts_dir.iterdir() if f.is_file()]
+
     return workflows
 
 
@@ -907,7 +936,7 @@ def analyze_api_structure(repo_dir: Path) -> Dict[str, object]:
         "api_files": [],
         "framework": None
     }
-    
+
     # Detect API framework
     frameworks = {
         "FastAPI": ["from fastapi", "FastAPI()"],
@@ -915,7 +944,7 @@ def analyze_api_structure(repo_dir: Path) -> Dict[str, object]:
         "Express": ["express()", "require('express')"],
         "Django": ["django", "urls.py"]
     }
-    
+
     try:
         for framework, patterns in frameworks.items():
             for pattern in patterns:
@@ -934,7 +963,7 @@ def analyze_api_structure(repo_dir: Path) -> Dict[str, object]:
                 break
     except Exception as e:
         logger.warning(f"API analysis error: {e}")
-    
+
     return api_info
 
 
@@ -952,7 +981,7 @@ async def generate_smart_documentation(
     """
     Generate comprehensive documentation based on analysis (like old codebase)
     This is the main entry point that orchestrates everything
-    
+
     Args:
         repo_dir: Path to repository
         analysis: Change analysis dict
@@ -967,44 +996,44 @@ async def generate_smart_documentation(
         create_migration_guide,
         update_summary_md,
     )
-    
+
     # Create base docs directory
     base_docs_dir = Path(repo_dir) / "docs"
     base_docs_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create persona-specific docs directory
     docs_dir = base_docs_dir / doc_persona
     docs_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Changes directory is persona-specific
     changes_dir = docs_dir / "changes"
     changes_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Check documentation quality and generate comprehensive docs if needed
     print(f"🔍 Checking documentation quality for persona: {doc_persona}...")
     changed_files = get_changed_files_from_analysis(analysis)
     await generate_comprehensive_documentation(repo_dir, analysis, changed_files, doc_persona)
-    
+
     # 1. Create detailed change documentation
     create_change_documentation(changes_dir, analysis, commit_sha, ref)
-    
+
     # 2. Update main README if needed
     if analysis.get("documentation_needs", {}).get("update_readme", False):
         update_main_readme(repo_dir, analysis)
-    
+
     # 3. Update changelog
     if analysis.get("documentation_needs", {}).get("create_changelog", False):
         update_changelog(repo_dir, analysis, commit_sha)
-    
+
     # 4. Create API documentation if needed
     if analysis.get("documentation_needs", {}).get("update_api_docs", False):
         # This is handled by generate_comprehensive_documentation, but we can add additional API docs here if needed
         pass
-    
+
     # 5. Create migration guide for breaking changes
     if analysis.get("documentation_needs", {}).get("create_migration_guide", False):
         create_migration_guide(docs_dir, analysis)
-    
+
     # 6. Update SUMMARY.md for GitBook navigation
     update_summary_md(docs_dir, analysis, commit_sha)
 

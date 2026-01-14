@@ -9,9 +9,9 @@ async def generate_all_docs_in_single_call(
 ) -> Tuple[Dict[str, str], Dict[str, any]]:
     """
     Generate SUMMARY + ARCHITECTURE + WORKFLOW + API in a single LLM call.
-    
+
     Phase 6 Enhancement: Now returns (docs_dict, token_data) tuple.
-    
+
     Returns:
         Tuple containing:
         - docs_dict: {"summary": str, "architecture": str, "workflow": str, "api": str}
@@ -61,7 +61,7 @@ DO NOT output anything outside these 4 sections.
 
     rotator = get_rotator()
     llm_result = rotator.generate_with_rotation(prompt)
-    
+
     if not llm_result:
         # Fallback if all providers fail
         empty_docs = {
@@ -76,7 +76,7 @@ DO NOT output anything outside these 4 sections.
             "model_name": "unknown",
         }
         return empty_docs, token_data
-    
+
     # Extract content and token data
     raw = llm_result.content
     token_data = {
@@ -84,12 +84,12 @@ DO NOT output anything outside these 4 sections.
         "output_tokens": llm_result.output_tokens,
         "model_name": llm_result.model_name,
     }
-    
+
     docs = {
         "summary": extract_section(raw, "SUMMARY"),
         "architecture": extract_section(raw, "ARCHITECTURE"),
         "workflow": extract_section(raw, "WORKFLOW"),
         "api": extract_section(raw, "API"),
     }
-    
+
     return docs, token_data

@@ -24,32 +24,39 @@ router = APIRouter()
 def _require_github_token(user: User) -> str:
     token = user.github_access_token
     if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="GitHub token not found for user")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="GitHub token not found for user")
     return token
 
 
 def _parse_repo_full_name(repo_full_name: str) -> Tuple[str, str]:
     repo_full_name = repo_full_name.strip()
     if "/" not in repo_full_name:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="repo_name must be in the form org/repo")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="repo_name must be in the form org/repo")
     org, repo = repo_full_name.split("/", 1)
     if not org or not repo:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid repo name provided")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Invalid repo name provided")
     return org, repo
 
 
 @router.post("/generate-v4", response_model=ManualGenerationResponse, status_code=status.HTTP_200_OK)
 async def generate_documentation_v4(
     repo_name: str = Query(..., description="Repository in the form org/repo"),
-    doc_persona: str = Query("internal", description="Documentation persona to apply"),
-    commit_message: str | None = Query(None, description="Optional commit message override"),
-    commit_sha: str | None = Query(None, description="Optional commit SHA for logging"),
-    installation_id: int | None = Query(None, description="Writer app installation ID (optional)"),
+    doc_persona: str = Query(
+        "internal", description="Documentation persona to apply"),
+    commit_message: str | None = Query(
+        None, description="Optional commit message override"),
+    commit_sha: str | None = Query(
+        None, description="Optional commit SHA for logging"),
+    installation_id: int | None = Query(
+        None, description="Writer app installation ID (optional)"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ManualGenerationResponse:
     """Generate documentation manually and publish to docbook staging (legacy-compatible endpoint).
-    
+
     Phase 6 Integration: Now enforces usage limits and records token usage.
     """
 
@@ -58,7 +65,7 @@ async def generate_documentation_v4(
     # ========================================================================
     # Check usage limit BEFORE expensive doc generation
     usage_service = UsageService(db)
-    
+
     try:
         await usage_service.enforce_limit(
             user_id=str(user.id),
@@ -92,42 +99,44 @@ async def generate_documentation_v4(
 
     github_token = _require_github_token(user)
     org_id, source_repo = _parse_repo_full_name(repo_name)
-    
+
     # Validate and normalize doc_persona
     valid_personas = ["internal", "developer"]
-    
+
     # Log the requested persona
     print(f"🔍 Requested doc_persona: {doc_persona}")
-    
+
     # Check if we need to fetch from database
     if doc_persona not in valid_personas:
         # Try to get the repository's doc_persona from database
         try:
             from sqlalchemy import select
             from app.models.repository import Repository
-            
+
             stmt = select(Repository.doc_persona).where(
-                (Repository.full_name == repo_name) | (Repository.repo_id == repo_name)
+                (Repository.full_name == repo_name) | (
+                    Repository.repo_id == repo_name)
             )
             result = await db.execute(stmt)
             db_persona = result.scalar_one_or_none()
-            
+
             if db_persona and db_persona in valid_personas:
                 print(f"✅ Using database doc_persona: {db_persona}")
                 doc_persona = db_persona
             else:
-                print(f"⚠️ Invalid doc_persona: {doc_persona}, falling back to 'internal'")
+                print(
+                    f"⚠️ Invalid doc_persona: {doc_persona}, falling back to 'internal'")
                 doc_persona = "internal"
         except Exception as e:
             print(f"⚠️ Error fetching doc_persona from database: {e}")
             print(f"⚠️ Falling back to 'internal'")
             doc_persona = "internal"
-    
+
     # Map 'developer' to 'dev' for compatibility
     if doc_persona == "developer":
         doc_persona = "dev"
         print(f"🔄 Mapped 'developer' to 'dev' for compatibility")
-    
+
     print(f"📝 Using doc_persona: {doc_persona} for {repo_name}")
 
     # Create generator with validated persona
@@ -157,7 +166,7 @@ async def generate_documentation_v4(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=publish_result.get("message", "Docbook publication failed"),
         )
-    
+
     # ========================================================================
     # PHASE 6 INTEGRATION: Step B - THE LEDGER (Record Usage)
     # ========================================================================
@@ -173,20 +182,21 @@ async def generate_documentation_v4(
             output_tokens=generation_result.output_tokens,
             model_name=generation_result.model_name,
         )
-        print(f"✅ Recorded usage: {generation_result.input_tokens} input tokens, {generation_result.output_tokens} output tokens, model: {generation_result.model_name}")
+        print(
+            f"✅ Recorded usage: {generation_result.input_tokens} input tokens, {generation_result.output_tokens} output tokens, model: {generation_result.model_name}")
     except Exception as record_error:
         # Log but don't fail the request if usage recording fails
         print(f"⚠️ Failed to record usage for user {user.id}: {record_error}")
         import traceback
         traceback.print_exc()
     # ========================================================================
-    
+
     # Update last_documented_at timestamp in repositories table
     from datetime import datetime, timezone
     from sqlalchemy import select, update
     from app.models.repository import Repository
     from app.services.repositories.service import RepositoryService
-    
+
     try:
         # Upsert repository record to ensure it exists
         repo_service = RepositoryService(db)
@@ -195,7 +205,7 @@ async def generate_documentation_v4(
             tracked_branch="main",  # Default, will be overridden if already set
             default_branch="main"
         )
-        
+
         # Update the repository's last_documented_at field
         stmt = (
             update(Repository)
@@ -204,11 +214,12 @@ async def generate_documentation_v4(
         )
         result = await db.execute(stmt)
         await db.commit()
-        
+
         if result.rowcount > 0:
             print(f"✅ Updated last_documented_at for {repo_name}")
         else:
-            print(f"⚠️ No repository found to update last_documented_at for {repo_name}")
+            print(
+                f"⚠️ No repository found to update last_documented_at for {repo_name}")
     except Exception as e:
         print(f"⚠️ Failed to update last_documented_at: {e}")
         import traceback
@@ -217,7 +228,8 @@ async def generate_documentation_v4(
 
     return ManualGenerationResponse(
         status=publish_result.get("status", "published_to_staging"),
-        message=publish_result.get("message", "Manual documentation published"),
+        message=publish_result.get(
+            "message", "Manual documentation published"),
         docbook_repo=publish_result.get("docbook_repo"),
         branch=publish_result.get("branch"),
         review_url=publish_result.get("review_url"),
@@ -227,13 +239,14 @@ async def generate_documentation_v4(
 @router.get("/fetch-file")
 async def fetch_file_from_github(
     repo: str = Query(..., description="Repository in the form org/repo"),
-    filePath: str = Query(..., description="Path to the file in the repository"),
+    filePath: str = Query(...,
+                          description="Path to the file in the repository"),
     branch: str = Query("staging", description="Branch to fetch from"),
     user: User = Depends(get_current_user),
 ) -> dict:
     """Fetch a file from GitHub using user's token (like old codebase)"""
     github_token = _require_github_token(user)
-    
+
     try:
         # Normalize and decode the file path
         normalized_path = unquote(filePath or "").strip("/")
@@ -283,7 +296,8 @@ async def fetch_file_from_github(
             # Decode base64 content if present
             if data.get("encoding") == "base64" and data.get("content"):
                 import base64
-                content = base64.b64decode(data["content"].replace("\n", "")).decode("utf-8")
+                content = base64.b64decode(
+                    data["content"].replace("\n", "")).decode("utf-8")
                 return {"content": content, "fileName": normalized_path}
 
             return {"content": data.get("content", ""), "fileName": normalized_path}
@@ -291,4 +305,5 @@ async def fetch_file_from_github(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching file: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching file: {str(e)}")

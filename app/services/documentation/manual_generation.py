@@ -55,14 +55,15 @@ class ManualDocGenerator:
             docs_dir = workspace / "docs"
             self._prepare_docs_directory(docs_dir)
 
-            builder = ComprehensiveDocBuilder(workspace, doc_persona=self.doc_persona)
+            builder = ComprehensiveDocBuilder(
+                workspace, doc_persona=self.doc_persona)
             generated_docs: Dict[str, str] = await builder.build()
 
             summary = generated_docs.get("summary", "")
             architecture = generated_docs.get("architecture", "")
             workflow = generated_docs.get("workflow", "")
             api_doc = generated_docs.get("api", "")
-            
+
             # Phase 6: Extract token data from generation result
             token_data = generated_docs.get("token_data", {})
             input_tokens = token_data.get("input_tokens", 0)
@@ -73,29 +74,32 @@ class ManualDocGenerator:
             # Map 'dev' to 'developer' for folder naming
             persona_folder_name = "dev" if self.doc_persona == "dev" else "internal"
             print(f"📚 Creating documentation in {persona_folder_name} folder")
-            
+
             # Create the current persona folder
             persona_dir = docs_dir / persona_folder_name
             persona_dir.mkdir(exist_ok=True)
-            
+
             # Create the other persona folder if it doesn't exist
             # But don't modify its contents if it already exists
             other_persona = "internal" if persona_folder_name == "dev" else "dev"
             other_persona_dir = docs_dir / other_persona
             other_persona_dir.mkdir(exist_ok=True)
-            
+
             # Only add a placeholder README if the other persona folder is empty
             if not any(other_persona_dir.iterdir()):
-                print(f"📝 Creating placeholder README in {other_persona} folder")
-                self._write_text(other_persona_dir / "README.md", f"# Documentation for {other_persona}\n\nThis persona documentation is not available.")
-            
+                print(
+                    f"📝 Creating placeholder README in {other_persona} folder")
+                self._write_text(other_persona_dir / "README.md",
+                                 f"# Documentation for {other_persona}\n\nThis persona documentation is not available.")
+
             # Persist artefacts in the correct persona folder
             self._write_text(persona_dir / "SUMMARY.md", summary)
-            
+
             # Create architecture folder inside the persona folder
             architecture_dir = persona_dir / "architecture"
             architecture_dir.mkdir(exist_ok=True)
-            self._write_text(architecture_dir / "v1.0-architecture.md", architecture)
+            self._write_text(architecture_dir /
+                             "v1.0-architecture.md", architecture)
             self._write_text(architecture_dir / "current.md", architecture)
 
             # Create workflow folder inside the persona folder
@@ -106,7 +110,7 @@ class ManualDocGenerator:
 
             # Add API doc inside the persona folder
             self._write_text(persona_dir / "api.md", api_doc)
-            
+
             # Create changes folder inside the persona folder
             (persona_dir / "changes").mkdir(exist_ok=True)
 
@@ -135,13 +139,15 @@ class ManualDocGenerator:
                 model_name=model_name,
             )
         except Exception:
-            logger.exception("Manual documentation generation failed for %s", repo_full_name)
+            logger.exception(
+                "Manual documentation generation failed for %s", repo_full_name)
             shutil.rmtree(workspace, ignore_errors=True)
             raise
 
     async def _clone_repository(self, repo_full_name: str, token: str, workspace: Path) -> None:
         if not token:
-            raise ValueError("GitHub token is required to clone the repository")
+            raise ValueError(
+                "GitHub token is required to clone the repository")
 
         env = os.environ.copy()
         env["GIT_TERMINAL_PROMPT"] = "0"
