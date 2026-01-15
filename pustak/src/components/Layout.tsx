@@ -76,7 +76,7 @@ export function Layout({ children }: LayoutProps) {
       {!hideNavigation && (
         <div
           className={`
-          fixed inset-y-0 left-0 z-50 w-80 transform transition-transform duration-300 ease-in-out
+          fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
           ${sidebarPinned ? "lg:translate-x-0" : "lg:-translate-x-full"}
         `}
@@ -92,7 +92,7 @@ export function Layout({ children }: LayoutProps) {
       )}
 
       {/* Main content */}
-      <div className={!hideNavigation && sidebarPinned ? "lg:pl-80" : ""}>
+      <div className={!hideNavigation && sidebarPinned ? "lg:pl-64" : ""}>
         {/* Header */}
         <header className="sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3">

@@ -284,23 +284,20 @@ export function GenerateDocsButton({
 		<button
 			onClick={handleGenerate}
 			disabled={isGenerating}
-			className={`flex cursor-pointer items-center space-x-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-				fullWidth ? "w-full justify-center" : ""
-			} ${
-				hasDocsFolder
-					? "bg-purple-50 dark:bg-purple-900/20 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40"
-					: "bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-100 dark:hover:bg-yellow-900/40"
-			} disabled:opacity-50 disabled:cursor-not-allowed`}
+			className={`group relative flex cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold transition-all overflow-hidden ${
+				fullWidth ? "w-full" : ""
+			} bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/25 hover:border-emerald-500/40 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed`}
 		>
+			<div className="absolute inset-0 bg-gradient-to-r from-emerald-400/0 via-emerald-400/10 to-emerald-400/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
 			{hasDocsFolder ? (
 				<>
-					<RefreshCw className="w-4 h-4" />
-					<span>Regenerate Docs</span>
+					<RefreshCw className="w-3.5 h-3.5 relative z-10" />
+					<span className="relative z-10">Regenerate Docs</span>
 				</>
 			) : (
 				<>
-					<Zap className="w-4 h-4" />
-					<span>Generate Docs</span>
+					<Zap className="w-3.5 h-3.5 relative z-10" />
+					<span className="relative z-10">Generate Docs</span>
 				</>
 			)}
 		</button>
