@@ -1129,11 +1129,8 @@ async def _resolve_docbook_repo(
             status_code=404,
             detail=f"No docbook repository linked for organization {org_id}",
         )
-    if not repo.last_published_commit:
-        raise HTTPException(
-            status_code=404,
-            detail="No published version available. Publish first via /publish-live",
-        )
+    # Note: We no longer require last_published_commit since we use main_branch for public access
+    # This allows viewing latest content even if publish-live hasn't been called
     return repo
 
 
@@ -1211,12 +1208,16 @@ async def _build_live_manifest(
         token = await _resolve_app_installation_token(db=db, org_id=org_id)
 
     docbook_full_name = docbook_repo.docbook_full_name
-    commit_sha = docbook_repo.last_published_commit
+    
+    # IMPORTANT: Always use 'main' branch for live docs to show latest content
+    # This ensures published site reflects current state, not a frozen snapshot
+    branch_ref = "main"
     
     # Include persona in the path
     repo_path = f"{repo_id}/docs/{persona}"
     print(f"📚 Accessing manifest for path: {repo_path} with persona: {persona}")
     print(f"📝 Debug: org_id={org_id}, repo_id={repo_id}, persona={persona}")
+    print(f"🔖 Using branch: {branch_ref} (always use main for live content)")
 
     headers = {
         "Authorization": f"token {token}",
@@ -1232,7 +1233,7 @@ async def _build_live_manifest(
                     client=client,
                     repo_full_name=docbook_full_name,
                     path=repo_path,
-                    ref=commit_sha,
+                    ref=branch_ref,
                     token=token,
                 )
             except HTTPException as e:
@@ -1259,7 +1260,7 @@ async def _build_live_manifest(
                 client,
                 docbook_full_name,
                 repo_path,
-                commit_sha,
+                branch_ref,  # Use main branch, not last_published_commit
                 token,
             )
     except Exception as e:
@@ -1312,7 +1313,7 @@ async def _build_live_manifest(
         "persona": persona,
         "title": repo_id.replace("-", " ").replace("_", " ").title(),
         "description": f"{persona.capitalize()} documentation for {repo_id}",
-        "commit_sha": commit_sha,
+        "commit_sha": branch_ref,  # Using branch name since we're always on latest
         "published_at": docbook_repo.last_published_at.isoformat()
         if docbook_repo.last_published_at
         else None,
@@ -1431,13 +1432,18 @@ async def _fetch_live_page(
     
     print(f"📄 Accessing content at path: {repo_path} with persona: {persona}")
 
+    # IMPORTANT: Always use 'main' branch for live docs to show latest content
+    # This ensures published site reflects current state, not a frozen snapshot
+    ref_to_use = "main"
+    print(f"📌 Using branch: {ref_to_use} (always use main for live content)")
+    
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             file_data = await _fetch_github_file(
                 client=client,
                 repo_full_name=docbook_repo.docbook_full_name,
                 path=repo_path,
-                ref=docbook_repo.last_published_commit,
+                ref=ref_to_use,
                 token=token,
             )
     except HTTPException as e:
@@ -1450,7 +1456,7 @@ async def _fetch_live_page(
                     client=httpx.AsyncClient(timeout=10.0),
                     repo_full_name=docbook_repo.docbook_full_name,
                     path=persona_path,
-                    ref=docbook_repo.last_published_commit,
+                    ref=ref_to_use,
                     token=token,
                 )
                 # Persona folder exists, but the specific file doesn't

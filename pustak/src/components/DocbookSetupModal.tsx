@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { X, ExternalLink, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 
 interface DocbookSetupModalProps {
@@ -8,6 +8,7 @@ interface DocbookSetupModalProps {
   onClose: () => void;
   orgId: string;
   onSuccess: (docbookRepo: string) => void;
+  accessToken?: string | null;
 }
 
 export default function DocbookSetupModal({
@@ -15,8 +16,8 @@ export default function DocbookSetupModal({
   onClose,
   orgId,
   onSuccess,
+  accessToken,
 }: DocbookSetupModalProps) {
-  const [step, setStep] = useState<"create" | "link">("create");
   const [docbookRepoName, setDocbookRepoName] = useState(
     `pustak-docbook-${orgId ? orgId.toLowerCase().replace(/[^a-z0-9-]/g, "") : ""}`
   );
@@ -34,8 +35,11 @@ export default function DocbookSetupModal({
   const [success, setSuccess] = useState(false);
   const [polling, setPolling] = useState(false);
   const [pollingMessage, setPollingMessage] = useState("");
+  const [checkingRepo, setCheckingRepo] = useState(false);
+  const [repoDetected, setRepoDetected] = useState<boolean | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollAttemptsRef = useRef(0);
+  const autoLinkAttemptedRef = useRef(false);
   const MAX_POLL_ATTEMPTS = 24; // 2 minutes at 5s interval
 
   const BACKEND_URL =
@@ -57,34 +61,118 @@ export default function DocbookSetupModal({
     setPollingMessage("");
   }, []);
 
-  const checkRepoExists = useCallback(async (): Promise<boolean> => {
-    try {
-      const token = localStorage.getItem("pustak_access_token");
-      if (!token) return false;
+  const linkRepo = useCallback(
+    async (mode: "manual" | "auto" = "manual"): Promise<
+      "linked" | "not_found" | "failed"
+    > => {
+      const silent = mode === "auto";
 
-      const response = await fetch(
-        `https://api.github.com/repos/${orgId}/${docbookRepoName}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github+json",
-          },
+      if (!docbookRepoName.trim()) {
+        if (!silent) {
+          setError("Please enter the docbook repository name");
         }
-      );
+        return "failed";
+      }
 
-      return response.ok;
-    } catch (err) {
-      console.error("Error checking repo existence:", err);
-      return false;
-    }
-  }, [orgId, docbookRepoName]);
+      if (!silent) {
+        setLinking(true);
+        setError("");
+      }
+
+      try {
+        const token =
+          accessToken ??
+          (typeof window !== "undefined"
+            ? localStorage.getItem("pustak_access_token")
+            : null);
+
+        if (!token) {
+          if (!silent) {
+            setError("Authentication token not found. Please log in again.");
+          }
+          return "failed";
+        }
+
+        const response = await fetch(`${apiBase}/docbook/link-repo`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            org_id: orgId,
+            docbook_repo_name: docbookRepoName,
+          }),
+        });
+
+        if (response.status === 404) {
+          if (!silent) {
+            const data = (await response
+              .json()
+              .catch(() => ({}))) as { detail?: string };
+            setError(
+              data.detail ||
+                "Repository not found on GitHub. Please create it before linking."
+            );
+          }
+          return "not_found";
+        }
+
+        if (!response.ok) {
+          if (!silent) {
+            const data = (await response
+              .json()
+              .catch(() => ({}))) as { detail?: string };
+            setError(data.detail || "Failed to link docbook repository");
+          } else {
+            console.error(
+              "Automatic docbook linking failed",
+              response.status,
+              await response.text().catch(() => "")
+            );
+          }
+          return "failed";
+        }
+
+        if (silent) {
+          setRepoDetected(true);
+          setPollingMessage("Repository detected! Linking now...");
+        } else {
+          setError("");
+        }
+
+        setSuccess(true);
+        setTimeout(() => {
+          onSuccess(docbookRepoName);
+          onClose();
+        }, 1500);
+
+        return "linked";
+      } catch (err) {
+        if (!silent) {
+          setError(err instanceof Error ? err.message : "An error occurred");
+        } else {
+          console.error("Automatic docbook linking failed", err);
+        }
+        return "failed";
+      } finally {
+        if (!silent) {
+          setLinking(false);
+        }
+      }
+    },
+    [apiBase, docbookRepoName, onClose, onSuccess, orgId]
+  );
 
   const startPolling = useCallback(() => {
     if (pollIntervalRef.current) return;
 
     setPolling(true);
     setError("");
+    setRepoDetected(null);
+    setPollingMessage("Waiting for repository...");
     pollAttemptsRef.current = 0;
+    autoLinkAttemptedRef.current = false;
 
     const poll = async () => {
       pollAttemptsRef.current += 1;
@@ -93,19 +181,22 @@ export default function DocbookSetupModal({
         `Checking if repository exists... (attempt ${attempt}/${MAX_POLL_ATTEMPTS})`
       );
 
-      const exists = await checkRepoExists();
+      const result = await linkRepo("auto");
 
-      if (exists) {
+      if (result === "linked") {
         stopPolling();
-        setPollingMessage("Repository detected! Linking now...");
-        await handleLinkRepo();
         return;
+      }
+
+      if (result === "not_found") {
+        setRepoDetected(false);
+        setPollingMessage("");
       }
 
       if (attempt >= MAX_POLL_ATTEMPTS) {
         stopPolling();
         setError(
-          "Repository not detected after 2 minutes. Please verify it was created and try linking manually."
+          "Repository not detected after 2 minutes. Please verify it was created and try refreshing."
         );
       }
     };
@@ -114,273 +205,230 @@ export default function DocbookSetupModal({
     pollIntervalRef.current = setInterval(() => {
       void poll();
     }, 5000);
-  }, [checkRepoExists, stopPolling, MAX_POLL_ATTEMPTS]);
+  }, [linkRepo, stopPolling, MAX_POLL_ATTEMPTS]);
+
+  useEffect(() => {
+    if (isOpen) {
+      autoLinkAttemptedRef.current = false;
+      setRepoDetected(null);
+      setError("");
+      setSuccess(false);
+    } else {
+      stopPolling();
+      autoLinkAttemptedRef.current = false;
+      setRepoDetected(null);
+      setPollingMessage("");
+      setCheckingRepo(false);
+    }
+  }, [isOpen, stopPolling]);
 
   useEffect(() => {
     return () => {
       stopPolling();
+      autoLinkAttemptedRef.current = false;
     };
   }, [stopPolling]);
 
-  const handleLinkRepo = async () => {
-    if (!docbookRepoName.trim()) {
-      setError("Please enter the docbook repository name");
+  const attemptAutoLink = useCallback(async () => {
+    setError("");
+    setCheckingRepo(true);
+    setRepoDetected(null);
+    setPollingMessage("Checking if repository exists...");
+
+    const result = await linkRepo("auto");
+
+    setCheckingRepo(false);
+
+    if (result === "not_found") {
+      setRepoDetected(false);
+      setPollingMessage("");
+    } else if (result === "failed") {
+      setPollingMessage("");
+    }
+  }, [linkRepo]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      autoLinkAttemptedRef.current = false;
       return;
     }
 
-    setLinking(true);
-    setError("");
+    if (success || linking || polling || checkingRepo) {
+      return;
+    }
 
-    try {
-      const token = localStorage.getItem("pustak_access_token");
-      if (!token) {
-        setError("Authentication token not found. Please log in again.");
+    if (autoLinkAttemptedRef.current) {
+      return;
+    }
+
+    autoLinkAttemptedRef.current = true;
+    void attemptAutoLink();
+  }, [attemptAutoLink, checkingRepo, isOpen, linking, polling, success]);
+
+  useEffect(() => {
+    autoLinkAttemptedRef.current = false;
+    setRepoDetected(null);
+  }, [docbookRepoName, orgId]);
+
+  const showStatusCard = useMemo(() => {
+    if (success) return false;
+    return Boolean(
+      pollingMessage || polling || checkingRepo || linking || repoDetected === false
+    );
+  }, [checkingRepo, linking, polling, pollingMessage, repoDetected, success]);
+
+  const handleCreateRepoClick = useCallback(() => {
+    startPolling();
+    window.open(githubCreateRepoUrl, "_blank");
+  }, [githubCreateRepoUrl, startPolling]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleVisibility = () => {
+      if (document.visibilityState !== "visible") {
         return;
       }
-      const response = await fetch(`${apiBase}/docbook/link-repo`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          org_id: orgId,
-          docbook_repo_name: docbookRepoName,
-        }),
-      });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail || "Failed to link docbook repository");
+      if (success) {
+        return;
       }
 
-      setSuccess(true);
-      setTimeout(() => {
-        onSuccess(docbookRepoName);
-        onClose();
-      }, 2000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLinking(false);
-    }
-  };
+      autoLinkAttemptedRef.current = false;
+      void attemptAutoLink();
+    };
+
+    window.addEventListener("focus", handleVisibility);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("focus", handleVisibility);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [attemptAutoLink, isOpen, success]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            📚 Setup Docbook Repository
-          </h2>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900 text-slate-100 shadow-[0_30px_120px_rgba(15,23,42,0.65)]">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-purple-500 via-blue-500 to-cyan-400" />
+        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-slate-900/80 backdrop-blur">
+          <div>
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Docbook Setup</p>
+            <h2 className="mt-1 text-2xl font-semibold text-white">Link your documentation repository</h2>
+          </div>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="rounded-full border border-white/10 bg-white/5 p-2 text-slate-300 transition hover:bg-white/10 hover:text-white"
+            aria-label="Close"
           >
-            <X className="w-6 h-6 text-gray-600 dark:text-gray-400" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6">
-          {success ? (
-            <div className="text-center py-8">
-              <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                ✅ Docbook Linked Successfully!
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                Your documentation repository is now connected and ready to use.
-              </p>
+        {success ? (
+          <div className="px-8 py-14 text-center">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/20">
+              <CheckCircle className="h-10 w-10 text-emerald-400" />
             </div>
-          ) : (
-            <>
-              {/* Step Indicator */}
-              <div className="flex gap-4 mb-8">
+            <h3 className="mt-6 text-2xl font-semibold text-white">Docbook linked successfully</h3>
+            <p className="mt-3 text-sm text-slate-300">
+              Your documentation repository is connected. You’ll start seeing docs flow in as soon as we generate them.
+            </p>
+          </div>
+        ) : (
+          <div className="px-8 py-10 space-y-8">
+            <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 shadow-inner shadow-slate-900/40">
+              <header className="flex items-start justify-between gap-4">
+                <div>
+                  <span className="inline-flex items-center rounded-full bg-blue-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-blue-200">
+                    Step • Link
+                  </span>
+                  <h3 className="mt-3 text-lg font-semibold text-white">Automatic linking status</h3>
+                  <p className="mt-1 text-sm text-slate-300">
+                    We’ll sync the GitHub repo for you. If it already exists under your org, the link will complete automatically.
+                  </p>
+                </div>
+              </header>
+
+              {showStatusCard ? (
+                <div className="mt-5 rounded-xl border border-blue-400/20 bg-blue-500/10 p-5 text-sm text-blue-100">
+                  {(polling || checkingRepo || linking) && (
+                    <div className="mb-3 flex items-center gap-3 text-blue-100">
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-200" />
+                      <span>Working on it…</span>
+                    </div>
+                  )}
+                  <p>
+                    {pollingMessage ||
+                      (repoDetected === false
+                        ? "Repository not detected yet. Create it on GitHub, then refresh the status."
+                        : "Waiting for repository status…")}
+                  </p>
+                </div>
+              ) : null}
+
+              {error && (
+                <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-100">
+                  {error}
+                </div>
+              )}
+
+              {!polling && !checkingRepo && repoDetected === false && (
+                <div className="mt-4 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-100">
+                  Repository not detected yet. Create it on GitHub, then use “Refresh status.”
+                </div>
+              )}
+
+              <div className="mt-6 flex flex-col gap-3 md:flex-row">
                 <button
-                  onClick={() => setStep("create")}
-                  className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-colors ${
-                    step === "create"
-                      ? "bg-blue-500 text-white"
-                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                  }`}
+                  onClick={handleCreateRepoClick}
+                  disabled={polling}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 via-cyan-500 to-teal-400 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-500/25 transition hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  Step 1: Create Repo
+                  {polling ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Checking for repository…
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink className="h-4 w-4" />
+                      Create on GitHub
+                    </>
+                  )}
                 </button>
                 <button
-                  onClick={() => setStep("link")}
-                  className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-colors ${
-                    step === "link"
-                      ? "bg-blue-500 text-white"
-                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                  }`}
+                  onClick={() => {
+                    autoLinkAttemptedRef.current = false;
+                    void attemptAutoLink();
+                  }}
+                  disabled={checkingRepo || linking || polling}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Step 2: Link Repo
+                  {checkingRepo ? "Checking…" : "Refresh status"}
                 </button>
               </div>
 
-              {/* Step 1: Create Repository */}
-              {step === "create" && (
-                <div className="space-y-4">
-                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                    <h3 className="font-semibold text-gray-900 dark:text-white mb-2">
-                      📝 Repository Name
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                      We recommend naming your repository:
-                    </p>
-                    <code className="block bg-gray-100 dark:bg-gray-700 p-3 rounded text-sm text-gray-900 dark:text-white mb-3">
-                      {docbookRepoName}
-                    </code>
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                      This includes your organization ID to avoid naming conflicts.
-                    </p>
-                  </div>
-
-                  <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-                    <h3 className="font-semibold text-gray-900 dark:text-white mb-2">
-                      ✅ Repository Settings
-                    </h3>
-                    <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                      <li>✓ Visibility: Private (recommended)</li>
-                      <li>✓ Description: Auto-filled</li>
-                      <li>✓ Initialize with README: Yes</li>
-                    </ul>
-                  </div>
-
-                  <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
-                    <h3 className="font-semibold text-gray-900 dark:text-white mb-3">
-                      📚 Repository Structure
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                      Your docbook will be organized like this:
-                    </p>
-                    <pre className="bg-gray-100 dark:bg-gray-700 p-3 rounded text-xs text-gray-900 dark:text-white overflow-x-auto">
-{`pustak-docbook-{org}/
-├── repo-a/
-│   ├── internal/
-│   │   ├── README.md
-│   │   ├── architecture/
-│   │   └── workflow/
-│   └── developer/
-│       ├── README.md
-│       └── api.md
-└── repo-b/
-    └── ...`}
-                    </pre>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      window.open(githubCreateRepoUrl, "_blank");
-                      startPolling();
-                    }}
-                    disabled={polling}
-                    className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-                  >
-                    {polling ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Waiting for repository...
-                      </>
-                    ) : (
-                      <>
-                        <ExternalLink className="w-4 h-4" />
-                        Create Repository on GitHub
-                      </>
-                    )}
-                  </button>
-
-                  {polling && pollingMessage && (
-                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-center gap-3">
-                      <Loader2 className="w-5 h-5 animate-spin text-blue-600 dark:text-blue-400" />
-                      <p className="text-sm text-blue-600 dark:text-blue-400">
-                        {pollingMessage}
-                      </p>
-                    </div>
-                  )}
-
-                  {polling && (
-                    <button
-                      onClick={stopPolling}
-                      className="w-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors"
-                    >
-                      Cancel polling
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => {
-                      stopPolling();
-                      setStep("link");
-                    }}
-                    disabled={polling}
-                    className="w-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:bg-gray-400 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors"
-                  >
-                    Next: Link Repository
-                  </button>
+              {pollingMessage && (
+                <div className="mt-4 flex items-center gap-3 rounded-xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-200" />
+                  <span>{pollingMessage}</span>
                 </div>
               )}
 
-              {/* Step 2: Link Repository */}
-              {step === "link" && (
-                <div className="space-y-4">
-                  <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex gap-3">
-                    <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                        Make sure you've created the repository first!
-                      </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Click "Create Repository on GitHub" in Step 1 if you haven't already.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">
-                      Repository Name
-                    </label>
-                    <input
-                      type="text"
-                      value={docbookRepoName}
-                      onChange={(e) => setDocbookRepoName(e.target.value)}
-                      placeholder="pustak-docbook-your-org"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                      Enter the exact name of the repository you created on GitHub
-                    </p>
-                  </div>
-
-                  {error && (
-                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                      <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={handleLinkRepo}
-                    disabled={linking}
-                    className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
-                  >
-                    {linking ? "Linking..." : "Link Repository"}
-                  </button>
-
-                  <button
-                    onClick={() => setStep("create")}
-                    className="w-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors"
-                  >
-                    Back to Step 1
-                  </button>
-                </div>
+              {polling && (
+                <button
+                  onClick={stopPolling}
+                  className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/10"
+                >
+                  Cancel polling
+                </button>
               )}
-            </>
-          )}
-        </div>
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );
