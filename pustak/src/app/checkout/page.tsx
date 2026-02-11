@@ -103,6 +103,8 @@ function CheckoutContent() {
 						name: orderData.metadata?.user_name || "",
 						email: orderData.metadata?.user_email || "",
 					},
+					// TODO: Keep this Razorpay theme color in sync with the primary Tailwind
+					// brand color (currently Tailwind's blue-500) via a shared constant.
 					theme: { color: "#3B82F6" },
 					modal: {
 						ondismiss: () => router.push(`/payment/error?reason=user_cancelled&order_id=${orderData.order_id}`),

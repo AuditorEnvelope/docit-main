@@ -24,6 +24,12 @@ interface OrgStatus {
   connected: boolean;
 }
 
+interface Organization {
+  id: string;
+  login: string;
+  avatar_url: string;
+}
+
 export default function ConnectOrganizationModal({
   isOpen,
   onClose,
@@ -31,7 +37,7 @@ export default function ConnectOrganizationModal({
   userToken,
   onSuccess,
 }: ConnectOrganizationModalProps) {
-  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<string>("");
   const [orgStatus, setOrgStatus] = useState<OrgStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,7 +70,7 @@ export default function ConnectOrganizationModal({
 
       if (response.ok) {
         const data = await response.json();
-        setOrganizations(data.organizations || []);
+        setOrganizations((data.organizations || []) as Organization[]);
       } else {
         setError("Failed to fetch organizations");
       }
@@ -238,7 +244,7 @@ export default function ConnectOrganizationModal({
                   className="w-full px-4 py-3 bg-slate-800/50 border border-slate-600/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-base"
                 >
                   <option value="">-- Select your organization --</option>
-                  {organizations.map((org: any) => (
+                  {organizations.map((org) => (
                     <option key={org.id} value={org.login}>
                       {org.login}
                     </option>

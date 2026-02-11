@@ -17,6 +17,7 @@ import { SessionActivity } from './SessionActivity';
 import { CommitModal } from '../CommitModal';
 import { BookOpen, Loader2, Search, Sun, Moon, User, LogOut, Settings, Crown } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import apiClient from '@/lib/apiClient';
 
 interface UnifiedWorkspaceProps {
   orgId: string;
@@ -85,30 +86,10 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
     // ALWAYS fetch fresh data from backend, ignore persisted cache
     const loadWorkspace = async () => {
       try {
-        const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-        // Don't add /api/v1 if BACKEND_URL already includes it
-        const baseUrl = BACKEND_URL.includes('/api/v1') ? BACKEND_URL : `${BACKEND_URL}/api/v1`;
-        const url = `${baseUrl}/workspace/${orgId}/${repoId}/tree`;
-        
-        console.log('[UnifiedWorkspace] Fetching workspace tree from:', url);
-        
-        const response = await fetch(
-          url,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-          }
+        const response = await apiClient.get<{ tree: FileNode }>(
+          `/workspace/${orgId}/${repoId}/tree`
         );
-        
-        console.log('[UnifiedWorkspace] Response status:', response.status);
-
-        if (!response.ok) {
-          console.error('[UnifiedWorkspace] Failed to load workspace:', response.status, response.statusText);
-          throw new Error('Failed to load workspace');
-        }
-
-        const data = await response.json();
+        const data = response.data;
         console.log('[UnifiedWorkspace] Received tree data:', data);
         initializeTree(data.tree);
 

@@ -1,7 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { X, ExternalLink, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import {
+  X,
+  ExternalLink,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
+import apiClient from "@/lib/apiClient";
 
 interface DocbookSetupModalProps {
   isOpen: boolean;
@@ -41,13 +48,6 @@ export default function DocbookSetupModal({
   const pollAttemptsRef = useRef(0);
   const autoLinkAttemptedRef = useRef(false);
   const MAX_POLL_ATTEMPTS = 24; // 2 minutes at 5s interval
-
-  const BACKEND_URL =
-    process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-
-  const apiBase = BACKEND_URL.endsWith("/api/v1")
-    ? BACKEND_URL
-    : `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
 
   const githubCreateRepoUrl = `https://github.com/new?name=${docbookRepoName}&private=true&description=Pustak%20Docbook%20Repository`;
 
@@ -93,46 +93,22 @@ export default function DocbookSetupModal({
           return "failed";
         }
 
-        const response = await fetch(`${apiBase}/docbook/link-repo`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
+        // Ensure apiClient has access to the latest token if provided explicitly
+        if (typeof window !== "undefined" && accessToken) {
+          try {
+            localStorage.setItem("pustak_access_token", accessToken);
+          } catch {
+            // Ignore storage errors; apiClient may still have a token
+          }
+        }
+
+        await apiClient.post(
+          "/docbook/link-repo",
+          {
             org_id: orgId,
             docbook_repo_name: docbookRepoName,
-          }),
-        });
-
-        if (response.status === 404) {
-          if (!silent) {
-            const data = (await response
-              .json()
-              .catch(() => ({}))) as { detail?: string };
-            setError(
-              data.detail ||
-                "Repository not found on GitHub. Please create it before linking."
-            );
           }
-          return "not_found";
-        }
-
-        if (!response.ok) {
-          if (!silent) {
-            const data = (await response
-              .json()
-              .catch(() => ({}))) as { detail?: string };
-            setError(data.detail || "Failed to link docbook repository");
-          } else {
-            console.error(
-              "Automatic docbook linking failed",
-              response.status,
-              await response.text().catch(() => "")
-            );
-          }
-          return "failed";
-        }
+        );
 
         if (silent) {
           setRepoDetected(true);
@@ -148,12 +124,28 @@ export default function DocbookSetupModal({
         }, 1500);
 
         return "linked";
-      } catch (err) {
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const detail =
+          err?.response?.data?.detail ||
+          (err instanceof Error ? err.message : undefined);
+
+        if (status === 404) {
+          if (!silent) {
+            setError(
+              detail ||
+                "Repository not found on GitHub. Please create it before linking."
+            );
+          }
+          return "not_found";
+        }
+
         if (!silent) {
-          setError(err instanceof Error ? err.message : "An error occurred");
+          setError(detail || "Failed to link docbook repository");
         } else {
           console.error("Automatic docbook linking failed", err);
         }
+
         return "failed";
       } finally {
         if (!silent) {

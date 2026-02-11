@@ -1,10 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Globe, Loader2, CheckCircle, AlertCircle, ExternalLink } from "lucide-react";
-
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+import {
+  Globe,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+  ExternalLink,
+} from "lucide-react";
+import apiClient from "@/lib/apiClient";
 
 interface PublishToLiveButtonProps {
   repoFullName: string;
@@ -35,10 +39,6 @@ export function PublishToLiveButton({
     liveUrl?: string;
   }>({ type: null, message: "" });
 
-  const apiBase = BACKEND_URL.endsWith("/api/v1")
-    ? BACKEND_URL
-    : `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
-
   const handlePublish = async () => {
     const token = localStorage.getItem("pustak_access_token");
     if (!token) {
@@ -54,24 +54,15 @@ export function PublishToLiveButton({
     setStatus({ type: null, message: "" });
 
     try {
-      const response = await fetch(`${apiBase}/docbook/publish-live`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          org_id: orgId,
-          repo_id: repoId,
-        }),
+      const response = await apiClient.post<{
+        message: string;
+        live_url?: string;
+      }>("/docbook/publish-live", {
+        org_id: orgId,
+        repo_id: repoId,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to publish");
-      }
-
-      const data = await response.json();
+      const data = response.data;
 
       setStatus({
         type: "success",
@@ -82,14 +73,15 @@ export function PublishToLiveButton({
       if (onPublishComplete) {
         onPublishComplete();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error publishing:", error);
       setStatus({
         type: "error",
         message:
-          error instanceof Error
+          error?.response?.data?.detail ||
+          (error instanceof Error
             ? error.message
-            : "Failed to publish documentation",
+            : "Failed to publish documentation"),
       });
     } finally {
       setPublishing(false);
@@ -110,7 +102,9 @@ export function PublishToLiveButton({
       <button
         onClick={() => setShowConfirm(true)}
         disabled={publishing || disabled}
-        className={`${fullWidth ? "w-full" : ""} group relative inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold transition-all overflow-hidden bg-amber-500/15 text-amber-300 border border-amber-500/25 hover:bg-amber-500/25 hover:border-amber-500/40 hover:shadow-lg hover:shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer`}
+        className={`${
+          fullWidth ? "w-full" : ""
+        } group relative inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold transition-all overflow-hidden bg-amber-500/15 text-amber-300 border border-amber-500/25 hover:bg-amber-500/25 hover:border-amber-500/40 hover:shadow-lg hover:shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer`}
       >
         <div className="absolute inset-0 bg-gradient-to-r from-amber-400/0 via-amber-400/10 to-amber-400/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
         {publishing ? (

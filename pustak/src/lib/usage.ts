@@ -11,8 +11,7 @@
  * - GET /api/v1/usage/summary - Get raw usage counts
  */
 
-const BACKEND_URL =
-	process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+import apiClient from "@/lib/apiClient";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -137,36 +136,33 @@ export interface UsageLimitError {
  * ```
  */
 export async function fetchUsageStats(token: string): Promise<UsageStats> {
-	const apiBase = BACKEND_URL.endsWith("/api/v1")
-		? BACKEND_URL
-		: `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
+	if (!token) {
+		throw new Error("Authentication required. Please log in.");
+	}
 
-	const response = await fetch(`${apiBase}/usage/me`, {
-		method: "GET",
-		headers: {
-			Authorization: `Bearer ${token}`,
-			"Content-Type": "application/json",
-		},
-		cache: "no-store", // Always fetch fresh data
-	});
+	try {
+		const response = await apiClient.get<UsageStats>("/usage/me");
+		return response.data;
+	} catch (error: any) {
+		const status = error?.response?.status;
+		const detail = error?.response?.data?.detail;
 
-	if (!response.ok) {
-		if (response.status === 401) {
+		if (status === 401) {
 			throw new Error("Authentication required. Please log in.");
 		}
-		if (response.status === 404) {
+		if (status === 404) {
 			throw new Error(
 				"No active subscription found. Please subscribe to a plan."
 			);
 		}
-		const errorData = await response.json().catch(() => ({}));
+
 		throw new Error(
-			errorData.detail || `Failed to fetch usage stats: ${response.statusText}`
+			detail ||
+				(error instanceof Error
+					? `Failed to fetch usage stats: ${error.message}`
+					: "Failed to fetch usage stats.")
 		);
 	}
-
-	const data: UsageStats = await response.json();
-	return data;
 }
 
 /**
@@ -191,9 +187,9 @@ export async function fetchUsageHistory(
 		limit?: number;
 	}
 ): Promise<UsageEvent[]> {
-	const apiBase = BACKEND_URL.endsWith("/api/v1")
-		? BACKEND_URL
-		: `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
+	if (!token) {
+		throw new Error("Authentication required.");
+	}
 
 	const params = new URLSearchParams();
 	if (options?.resource_type) {
@@ -203,28 +199,24 @@ export async function fetchUsageHistory(
 		params.append("limit", options.limit.toString());
 	}
 
-	const url = `${apiBase}/usage/history${
-		params.toString() ? `?${params}` : ""
-	}`;
+	const url = `/usage/history${params.toString() ? `?${params}` : ""}`;
 
-	const response = await fetch(url, {
-		method: "GET",
-		headers: {
-			Authorization: `Bearer ${token}`,
-			"Content-Type": "application/json",
-		},
-		cache: "no-store",
-	});
-
-	if (!response.ok) {
-		if (response.status === 401) {
+	try {
+		const response = await apiClient.get<UsageEvent[]>(url);
+		return response.data;
+	} catch (error: any) {
+		const status = error?.response?.status;
+		if (status === 401) {
 			throw new Error("Authentication required.");
 		}
-		throw new Error(`Failed to fetch usage history: ${response.statusText}`);
+		const detail = error?.response?.data?.detail;
+		throw new Error(
+			detail ||
+				(error instanceof Error
+					? `Failed to fetch usage history: ${error.message}`
+					: "Failed to fetch usage history.")
+		);
 	}
-
-	const data: UsageEvent[] = await response.json();
-	return data;
 }
 
 /**
@@ -240,28 +232,26 @@ export async function fetchUsageHistory(
  * ```
  */
 export async function fetchUsageSummary(token: string): Promise<UsageSummary> {
-	const apiBase = BACKEND_URL.endsWith("/api/v1")
-		? BACKEND_URL
-		: `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
-
-	const response = await fetch(`${apiBase}/usage/summary`, {
-		method: "GET",
-		headers: {
-			Authorization: `Bearer ${token}`,
-			"Content-Type": "application/json",
-		},
-		cache: "no-store",
-	});
-
-	if (!response.ok) {
-		if (response.status === 401) {
-			throw new Error("Authentication required.");
-		}
-		throw new Error(`Failed to fetch usage summary: ${response.statusText}`);
+	if (!token) {
+		throw new Error("Authentication required.");
 	}
 
-	const data: UsageSummary = await response.json();
-	return data;
+	try {
+		const response = await apiClient.get<UsageSummary>("/usage/summary");
+		return response.data;
+	} catch (error: any) {
+		const status = error?.response?.status;
+		if (status === 401) {
+			throw new Error("Authentication required.");
+		}
+		const detail = error?.response?.data?.detail;
+		throw new Error(
+			detail ||
+				(error instanceof Error
+					? `Failed to fetch usage summary: ${error.message}`
+					: "Failed to fetch usage summary.")
+		);
+	}
 }
 
 // ============================================================================

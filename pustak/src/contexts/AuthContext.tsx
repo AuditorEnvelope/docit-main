@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import apiClient from "@/lib/apiClient";
 
 // Types
 interface User {
@@ -34,10 +35,6 @@ const ACCESS_TOKEN_KEY = "pustak_access_token";
 const REFRESH_TOKEN_KEY = "pustak_refresh_token";
 const USER_KEY = "pustak_user";
 
-// Backend URL
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,17 +50,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('[AuthContext] Initializing auth...', { hasToken: !!accessToken, hasUser: !!storedUser });
 
         if (accessToken && storedUser) {
-          // Verify token is still valid
-          const response = await fetch(`${BACKEND_URL}/auth/me`, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
-          
-          console.log('[AuthContext] Token verification response:', response.status);
+          try {
+            // Verify token is still valid using centralized API client
+            const response = await apiClient.get<User>("/auth/me");
+            console.log(
+              "[AuthContext] Token verification response:",
+              response.status
+            );
 
-          if (response.ok) {
-            const userData = await response.json();
+            const userData = response.data;
             const normalizedUser: User = {
               ...userData,
               is_onboarding_complete: userData?.is_onboarding_complete ?? false,
@@ -72,9 +67,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(normalizedUser);
             setToken(accessToken);
             console.log('[AuthContext] Auth initialized successfully');
-          } else {
-            // Token invalid, clear storage
-            console.warn('[AuthContext] Token invalid, clearing auth');
+          } catch (err) {
+            // Token invalid or request failed, clear storage
+            console.warn("[AuthContext] Token invalid, clearing auth", err);
             clearAuth();
           }
         } else {

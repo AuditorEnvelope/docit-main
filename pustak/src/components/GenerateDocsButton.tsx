@@ -12,9 +12,7 @@ import {
 
 import { useAuth } from "@/contexts/AuthContext";
 import { isUsageLimitError, type UsageLimitError } from "@/lib/usage";
-
-const BACKEND_URL =
-	process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+import apiClient from "@/lib/apiClient";
 
 interface GenerateDocsButtonProps {
 	repoName: string;
@@ -55,23 +53,12 @@ export function GenerateDocsButton({
 
 			setIsLoadingPersona(true);
 			try {
-				const apiBase = BACKEND_URL.endsWith("/api/v1")
-					? BACKEND_URL
-					: `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
+				const response = await apiClient.get<{
+					doc_persona?: string | null;
+				}>(`/repositories/${encodeURIComponent(repoFullName)}/doc-persona`);
 
-				const response = await fetch(
-					`${apiBase}/repositories/${encodeURIComponent(
-						repoFullName
-					)}/doc-persona`,
-					{
-						headers: {
-							Authorization: `Bearer ${token}`,
-						},
-					}
-				);
-
-				if (response.ok) {
-					const data = await response.json();
+				if (response.status === 200) {
+					const data = response.data;
 					console.log(
 						`📋 Fetched doc_persona for ${repoFullName}:`,
 						data.doc_persona

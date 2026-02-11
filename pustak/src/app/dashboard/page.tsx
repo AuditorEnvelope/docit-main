@@ -9,13 +9,17 @@ import { PublishToLiveButton } from "@/components/PublishToLiveButton";
 import PendingReviewsTab from "@/components/PendingReviewsTab";
 import { UsageStatsCard } from "@/components/UsageStatsCard";
 import { useAuth } from "@/contexts/AuthContext";
-import { usePendingReviews } from "@/hooks/usePendingReviews";
+import {
+	useDashboardData,
+	PLAN_CONFIG,
+	PlanName,
+} from "@/hooks/useDashboardData";
 import {
 	OnboardingSplash,
 	ONBOARDING_PROGRESS_MESSAGES,
 } from "@/components/OnboardingSplash";
 import { mapDocsRouteToRepoSlug } from "@/lib/docsPathMapper";
-import { fetchUsageStats } from "@/lib/usage";
+import apiClient from "@/lib/apiClient";
 import {
 	BookOpen,
 	Calendar,
@@ -28,23 +32,6 @@ import {
 	Sparkles,
 	X,
 } from "lucide-react";
-
-const BACKEND_URL =
-	process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-
-interface RepositorySummary {
-	full_name?: string;
-	name?: string;
-	description?: string | null;
-	default_branch?: string | null;
-	tracked_branch?: string | null;
-	tracked_branch_source?: string | null;
-	docbook_tracked_branch?: string | null;
-	doc_persona?: string | null;
-	last_documented_at?: string | null;
-	pending_reviews?: number | null;
-	html_url?: string | null;
-}
 
 // Onboarding Guard component that checks if all required components are set up
 function OnboardingGuard({ children }: { children: React.ReactNode }) {
@@ -76,13 +63,6 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 	const MAX_WRITER_POLL_ATTEMPTS = 12; // roughly 1 minute at 5s interval
 	const [pollingWriterApp, setPollingWriterApp] = useState(false);
 
-	// API base URL
-	const apiBase = useMemo(() => {
-		const normalized = BACKEND_URL.replace(/\/$/, "");
-		const hasApiSuffix = /\/api(\/v\d+)?$/i.test(normalized);
-		return hasApiSuffix ? normalized : `${normalized}/api/v1`;
-	}, []);
-
 	// Progress message animation
 	useEffect(() => {
 		if (!checkingOnboarding) return;
@@ -107,7 +87,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	// Load onboarding state
-	const loadOnboardingState = useCallback(
+		const loadOnboardingState = useCallback(
 		async (options?: { silent?: boolean }) => {
 			if (!token) return;
 
@@ -117,18 +97,11 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 				}
 
 				// 1. Fetch organizations
-				const orgsRes = await fetch(`${apiBase}/user/organizations`, {
-					headers: {
-						Authorization: `Bearer ${token}`,
-					},
-				});
+				const orgsRes = await apiClient.get<{
+					organizations?: any[];
+				}>("/user/organizations");
 
-				if (!orgsRes.ok) {
-					throw new Error("Failed to fetch organizations");
-				}
-
-				const data = await orgsRes.json();
-				const orgIds: string[] = (data.organizations || [])
+				const orgIds: string[] = (orgsRes.data.organizations || [])
 					.map((org: any) =>
 						typeof org === "string"
 							? org
@@ -150,60 +123,85 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 				setSelectedOrg((prev) => prev || primaryOrg);
 
 				// 2. Check each organization's setup status
-				const summaries: Record<string, any> = {};
+				const summaries: Record<
+					string,
+					{
+						org: string;
+						reader_app_installed?: boolean;
+						writer_app_installed?: boolean;
+						docbook_repo?: string;
+						writer_app_has_access?: boolean;
+					}
+				> = {};
 				await Promise.all(
 					orgIds.map(async (orgId) => {
-						const summary: any = { org: orgId };
+						const summary: {
+							org: string;
+							reader_app_installed?: boolean;
+							writer_app_installed?: boolean;
+							docbook_repo?: string;
+							writer_app_has_access?: boolean;
+						} = { org: orgId };
 
-						// 2.1 Check GitHub Apps installation
-						const appsRes = await fetch(`${apiBase}/org/${orgId}/verify-apps`, {
-							headers: {
-								Authorization: `Bearer ${token}`,
-							},
-						});
+						try {
+							// 2.1 Check GitHub Apps installation
+							const appsRes = await apiClient.get<{
+								reader_app?: { installed?: boolean };
+								writer_app?: { installed?: boolean };
+							}>(`/org/${orgId}/verify-apps`);
 
-						if (appsRes.ok) {
-							const appData = await appsRes.json();
+							const appData = appsRes.data;
 							summary.reader_app_installed =
-								appData.reader_app?.installed ?? false;
+								appData?.reader_app?.installed ?? false;
 							summary.writer_app_installed =
-								appData.writer_app?.installed ?? false;
+								appData?.writer_app?.installed ?? false;
+						} catch (error) {
+							console.error(
+								`Failed to load app status for ${orgId}`,
+								error
+							);
 						}
 
-						// 2.2 Check docbook repository
-						const docbookRes = await fetch(
-							`${apiBase}/docbook/check-exists?org_id=${orgId}`,
-							{
-								headers: {
-									Authorization: `Bearer ${token}`,
-								},
-							}
-						);
+						try {
+							// 2.2 Check docbook repository
+							const docbookRes = await apiClient.get<{
+								exists: boolean;
+								docbook_repo?: string;
+							}>("/docbook/check-exists", {
+								params: { org_id: orgId },
+							});
 
-						if (docbookRes.ok) {
-							const docbookData = await docbookRes.json();
+							const docbookData = docbookRes.data;
 							if (docbookData.exists) {
 								summary.docbook_repo = docbookData.docbook_repo;
 							}
+						} catch (error) {
+							console.error(
+								`Failed to load docbook status for ${orgId}`,
+								error
+							);
 						}
 
-						// 2.3 Check writer app access to docbook repo
-						if (summary.docbook_repo) {
-							const accessRes = await fetch(
-								`${apiBase}/org/${orgId}/verify-writer-app-access?repo=${encodeURIComponent(
-									summary.docbook_repo
-								)}`,
-								{
-									headers: {
-										Authorization: `Bearer ${token}`,
+						try {
+							// 2.3 Check writer app access to docbook repo
+							if (summary.docbook_repo) {
+								const accessRes = await apiClient.get<{
+									has_access?: boolean;
+								}>(`/org/${orgId}/verify-writer-app-access`, {
+									params: {
+										repo: summary.docbook_repo,
 									},
-								}
-							);
+								});
 
-							if (accessRes.ok) {
-								const accessData = await accessRes.json();
-								summary.writer_app_has_access = accessData.has_access ?? false;
+								const accessData = accessRes.data;
+								summary.writer_app_has_access =
+									accessData?.has_access ?? false;
 							}
+						} catch (error) {
+							console.error(
+								`Failed to load writer access for ${orgId}`,
+								error
+							);
 						}
 
 						summaries[orgId] = summary;
@@ -240,7 +238,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 				}
 			}
 		},
-		[apiBase, token]
+		[token]
 	);
 
 	// Initial check when component mounts
@@ -298,185 +296,35 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 
 export default function DashboardPage() {
 	const router = useRouter();
-	const { user, loading, logout, isAuthenticated, token } = useAuth();
+	const { user, loading, logout, isAuthenticated } = useAuth();
 
-	const [repositories, setRepositories] = useState<RepositorySummary[]>([]);
-	const [loadingRepos, setLoadingRepos] = useState(false);
-	const [repoSearchQuery, setRepoSearchQuery] = useState("");
-	const [connectedOrgs, setConnectedOrgs] = useState<string[]>([]);
-	const [loadingOrgs, setLoadingOrgs] = useState(false);
-	const [selectedOrg, setSelectedOrg] = useState<string>("");
-	const [errorMessage, setErrorMessage] = useState<string | null>(null);
-	const [docbookRepo, setDocbookRepo] = useState<string | null>(null);
-
-	// UX FIX: Track actual plan from usage API (not stale user context)
-	const [actualPlan, setActualPlan] = useState<string | null>(null);
+	const {
+		repositories,
+		loadingRepos,
+		repoSearchQuery,
+		setRepoSearchQuery,
+		connectedOrgs,
+		loadingOrgs,
+		selectedOrg,
+		setSelectedOrg,
+		errorMessage,
+		docbookRepo,
+		pendingReviewsDisabled,
+		pendingReviewsLoading,
+		pendingReviewsError,
+		pendingReviewsCount,
+		pendingReviewStatusMessage,
+		reloadPendingReviews,
+		documentedCount,
+		loadRepositories,
+		actualPlan,
+	} = useDashboardData();
 
 	useEffect(() => {
 		if (!loading && !isAuthenticated) {
 			router.replace("/login");
 		}
 	}, [isAuthenticated, loading, router]);
-
-	useEffect(() => {
-		if (!token) {
-			setConnectedOrgs([]);
-			setSelectedOrg("");
-			setDocbookRepo(null);
-			return;
-		}
-
-		const fetchOrganizations = async () => {
-			setLoadingOrgs(true);
-			try {
-				const response = await fetch(`${BACKEND_URL}/user/organizations`, {
-					headers: {
-						Authorization: `Bearer ${token}`,
-					},
-				});
-
-				if (!response.ok) {
-					throw new Error("Failed to load organizations");
-				}
-
-				const data = await response.json();
-				const orgs: string[] = (data.organizations || []).map(
-					(org: { login: string }) => org.login
-				);
-				setConnectedOrgs(orgs);
-				setSelectedOrg((current) =>
-					current && orgs.includes(current) ? current : orgs[0] || ""
-				);
-			} catch (error) {
-				console.error("Error fetching organizations", error);
-				setConnectedOrgs([]);
-				setSelectedOrg("");
-				setDocbookRepo(null);
-			} finally {
-				setLoadingOrgs(false);
-			}
-		};
-
-		fetchOrganizations();
-	}, [token]);
-
-	const fetchDocbookRepo = useCallback(async () => {
-		if (!token || !selectedOrg) {
-			setDocbookRepo(null);
-			return;
-		}
-
-		try {
-			const response = await fetch(
-				`${BACKEND_URL}/docbook/check-exists?org_id=${encodeURIComponent(
-					selectedOrg
-				)}`,
-				{
-					headers: {
-						Authorization: `Bearer ${token}`,
-					},
-				}
-			);
-
-			if (!response.ok) {
-				setDocbookRepo(null);
-				return;
-			}
-
-			const data = await response.json();
-			setDocbookRepo(data.exists ? data.docbook_repo ?? null : null);
-		} catch (error) {
-			console.error("Error fetching docbook repo", error);
-			setDocbookRepo(null);
-		}
-	}, [selectedOrg, token]);
-
-	const reviewApiBase = useMemo(() => {
-		const normalized = BACKEND_URL.replace(/\/$/, "");
-		const hasApiSuffix = /\/api(\/v\d+)?$/i.test(normalized);
-		return hasApiSuffix ? normalized : `${normalized}/api/v1`;
-	}, []);
-
-	const pendingReviewsDisabled = !selectedOrg || !token;
-
-	const {
-		reviews: pendingReviews,
-		isLoading: pendingReviewsLoading,
-		error: pendingReviewsError,
-		count: pendingReviewsCount,
-		reload: reloadPendingReviews,
-	} = usePendingReviews({
-		orgId: pendingReviewsDisabled ? null : selectedOrg,
-		token: token ?? null,
-		backendUrl: reviewApiBase,
-		disabled: pendingReviewsDisabled,
-	});
-
-	const loadRepositories = useCallback(async () => {
-		if (!token || !selectedOrg) {
-			setRepositories([]);
-			return;
-		}
-
-		setLoadingRepos(true);
-		setErrorMessage(null);
-
-		try {
-			const response = await fetch(
-				`${BACKEND_URL}/org/${selectedOrg}/repositories/summary`,
-				{
-					headers: {
-						Authorization: `Bearer ${token}`,
-					},
-				}
-			);
-
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(errorText || "Failed to load repositories");
-			}
-
-			const data = await response.json();
-			const repos: RepositorySummary[] = Array.isArray(data.repositories)
-				? data.repositories
-				: [];
-			setRepositories(repos);
-		} catch (error) {
-			console.error("Error loading repositories", error);
-			setRepositories([]);
-			setErrorMessage(
-				error instanceof Error ? error.message : "Unable to load repositories"
-			);
-		} finally {
-			setLoadingRepos(false);
-		}
-	}, [selectedOrg, token]);
-
-	useEffect(() => {
-		loadRepositories();
-	}, [loadRepositories]);
-
-	useEffect(() => {
-		fetchDocbookRepo();
-	}, [fetchDocbookRepo]);
-
-	// UX FIX: Fetch actual plan from usage API on mount
-	useEffect(() => {
-		const loadActualPlan = async () => {
-			if (!token) return;
-
-			try {
-				const usageData = await fetchUsageStats(token);
-				setActualPlan(usageData.plan);
-			} catch (error) {
-				console.error("Failed to fetch actual plan:", error);
-				// Fallback to user.plan if API fails
-				setActualPlan(user?.plan || null);
-			}
-		};
-
-		loadActualPlan();
-	}, [token, user?.plan]);
 
 	const filteredRepositories = useMemo(() => {
 		const query = repoSearchQuery.trim().toLowerCase();
@@ -491,34 +339,7 @@ export default function DashboardPage() {
 		});
 	}, [repoSearchQuery, repositories]);
 
-	const pendingReviewStatusMessage = useMemo(() => {
-		if (pendingReviewsDisabled) {
-			return "Connect an organization to start tracking documentation reviews.";
-		}
-		if (pendingReviewsLoading) {
-			return "Syncing review queue…";
-		}
-		if (pendingReviewsError) {
-			return "Unable to fetch the latest review status.";
-		}
-		if (pendingReviewsCount === 0) {
-			return "All caught up! Nothing waiting for approval.";
-		}
-		return "Awaiting approval across docs";
-	}, [
-		pendingReviewsDisabled,
-		pendingReviewsLoading,
-		pendingReviewsError,
-		pendingReviewsCount,
-	]);
-
 	const reviewButtonDisabled = pendingReviewsDisabled || !!pendingReviewsError;
-
-	const documentedCount = useMemo(
-		() =>
-			repositories.filter((repo) => Boolean(repo.last_documented_at)).length,
-		[repositories]
-	);
 
 	const formatPersona = (persona?: string | null) => {
 		if (!persona) return "internal";
@@ -549,6 +370,11 @@ export default function DashboardPage() {
 	if (!user) {
 		return null;
 	}
+
+	const currentPlanKey = (actualPlan || user.plan) as PlanName;
+	const planLabel =
+		PLAN_CONFIG[currentPlanKey]?.label ??
+		(actualPlan || user.plan || "").toUpperCase();
 
 	return (
 		<OnboardingGuard>
@@ -594,8 +420,7 @@ export default function DashboardPage() {
 										<div className="flex flex-wrap items-center gap-3">
 											<span className="inline-flex items-center gap-2 rounded-full border border-blue-400/40 bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-200">
 												<Settings className="h-3 w-3" />
-												{/* UX FIX: Use actual plan from usage API (not stale user context) */}
-												{(actualPlan || user.plan).toUpperCase()} PLAN
+												{planLabel}
 											</span>
 											{user.username && (
 												<a

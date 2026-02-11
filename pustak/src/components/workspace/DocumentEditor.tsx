@@ -23,6 +23,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { debounce } from "@/lib/utils";
+import apiClient from "@/lib/apiClient";
 
 interface DocumentEditorProps {
   orgId: string;
@@ -109,56 +110,21 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
         }
 
         try {
-          const token = localStorage.getItem("pustak_access_token");
-          if (!token) {
-            console.error("[DocumentEditor] ❌ No auth token");
-            setEditorContent("");
-            setIsLoading(false);
-            return;
-          }
-
-          const BACKEND_URL =
-            process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-          const baseUrl = BACKEND_URL.includes("/api/v1")
-            ? BACKEND_URL
-            : `${BACKEND_URL}/api/v1`;
-          const url = `${baseUrl}/workspace/${orgId}/${repoId}/page?path=${encodeURIComponent(
-            activePage.path
-          )}`;
-
           console.log("[DocumentEditor] 🔍 Fetching content:", {
-            url,
+            orgId,
+            repoId,
             path: activePage.path,
             pageId: activePageId,
             title: activePage.title,
-            orgId,
-            repoId,
           });
 
-          const response = await fetch(url, {
-            headers: { Authorization: `Bearer ${token}` },
+          const response = await apiClient.get<{
+            content?: string;
+            path?: string;
+          }>(`/workspace/${orgId}/${repoId}/page`, {
+            params: { path: activePage.path },
           });
-
-          console.log("[DocumentEditor] 📡 Response:", {
-            status: response.status,
-            statusText: response.statusText,
-            ok: response.ok,
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => "");
-            console.error("[DocumentEditor] ❌ API Error:", {
-              status: response.status,
-              statusText: response.statusText,
-              error: errorText.substring(0, 500),
-              url,
-            });
-            setEditorContent("");
-            setIsLoading(false);
-            return;
-          }
-
-          const data = await response.json();
+          const data = response.data;
           const content = data.content || "";
 
           console.log("[DocumentEditor] ✅ Content received:", {

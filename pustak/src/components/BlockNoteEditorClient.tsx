@@ -103,6 +103,8 @@ export default function BlockNoteEditorClient({
     <div className={`blocknote-editor ${className}`}>
       <BlockNoteView editor={editor} theme="dark" editable={editable} />
       <style jsx global>{`
+        /* TODO: Replace hardcoded color values below with Tailwind-driven CSS variables
+           or a shared theme token system so BlockNote styling stays in sync with Tailwind. */
         /* BlockNote CSS Variables - Match Pustak Theme */
         .blocknote-editor {
           --bn-colors-menu-background: rgb(
