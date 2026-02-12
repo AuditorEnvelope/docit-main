@@ -4,10 +4,13 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 from app.services.documentation.aggregate_prompt import generate_all_docs_in_single_call
 # Phase 1: Import planner
 from app.services.documentation.planner import get_planner, DocumentationPlan
+# Phase 2: Import tree builder
+from app.services.documentation.tree_builder import build_document_tree, debug_tree_structure
+from app.services.documentation.tree_models import DocumentTree
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +255,8 @@ class ComprehensiveDocBuilder:
         # Phase 1: Create documentation plan for structured guidance
         planner = get_planner()
         plan = planner.create_plan(analysis)
-        print(f"📋 Documentation Plan: {plan.repo_type} (complexity: {plan.complexity_score}/10)")
+        print(
+            f"📋 Documentation Plan: {plan.repo_type} (complexity: {plan.complexity_score}/10)")
         print(f"   Sections: {len(plan.sections)} total")
         for s in plan.sections:
             status = "required" if s.required else "conditional"
@@ -288,6 +292,36 @@ class ComprehensiveDocBuilder:
         docs["token_data"] = token_data
         print(
             f"📊 Token Usage: {token_data['input_tokens']} in / {token_data['output_tokens']} out | Model: {token_data['model_name']}")
+
+        # -------------------------------
+        # PHASE 2: BUILD DOCUMENT TREE
+        # -------------------------------
+        # Build internal structured representation (non-breaking)
+        doc_tree = build_document_tree(
+            flat_docs=docs,
+            repo_id=str(self.repository_root.name),
+            persona=self.doc_persona,
+            plan=plan,
+            # Using timestamp as identifier
+            commit_sha=recent_changes.get("generated_at"),
+            model_name=token_data.get("model_name"),
+            token_usage={
+                "input_tokens": token_data.get("input_tokens", 0),
+                "output_tokens": token_data.get("output_tokens", 0),
+            },
+        )
+
+        if doc_tree:
+            # Log tree structure for debugging (Phase 2 only)
+            print("\n" + "="*60)
+            print(debug_tree_structure(doc_tree))
+            print("="*60 + "\n")
+
+            # Store tree reference in docs dict for upstream access
+            # This is INTERNAL ONLY - external consumers can ignore it
+            docs["_document_tree"] = doc_tree
+        else:
+            print("⚠️ Document tree build skipped (non-fatal)")
 
         # -----------------------------
         # WRITE DOCUMENTS TO FILES
@@ -888,8 +922,9 @@ async def generate_comprehensive_documentation(
         # Phase 1: Create plan for structured guidance
         planner = get_planner()
         plan = planner.create_plan(analysis)
-        print(f"📋 Documentation Plan: {plan.repo_type} (complexity: {plan.complexity_score}/10)")
-        
+        print(
+            f"📋 Documentation Plan: {plan.repo_type} (complexity: {plan.complexity_score}/10)")
+
         docs_result = await generate_all_docs_in_single_call(
             repo_dir,
             analysis,
@@ -899,9 +934,27 @@ async def generate_comprehensive_documentation(
         )
         # Handle both old (dict) and new (tuple) return formats
         if isinstance(docs_result, tuple):
-            docs, _ = docs_result
+            docs, token_data = docs_result
         else:
             docs = docs_result
+            token_data = {}
+
+        # Phase 2: Build document tree (non-breaking)
+        doc_tree = build_document_tree(
+            flat_docs=docs,
+            repo_id=str(repo_dir.name),
+            persona=doc_persona,
+            plan=plan,
+            model_name=token_data.get("model_name"),
+            token_usage={
+                "input_tokens": token_data.get("input_tokens", 0),
+                "output_tokens": token_data.get("output_tokens", 0),
+            },
+        )
+        if doc_tree:
+            print(
+                f"📄 Document tree created with {len(doc_tree.sections)} sections")
+            docs["_document_tree"] = doc_tree
     else:
         print("Docs look good. Skipping generation.")
         return

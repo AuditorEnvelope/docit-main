@@ -30,7 +30,8 @@ async def generate_all_docs_in_single_call(
     project_name = repo_dir.name
 
     # Phase 1: Build dynamic prompt using plan if available
-    prompt = _build_prompt(project_name, analysis, recent_changes, persona, plan)
+    prompt = _build_prompt(project_name, analysis,
+                           recent_changes, persona, plan)
 
     rotator = get_rotator()
     llm_result = rotator.generate_with_rotation(prompt)
@@ -198,6 +199,7 @@ def _build_section_guidance(plan: DocumentationPlan) -> str:
     if conditional:
         lines.append("Additional topics to cover if present in codebase:")
         for s in conditional[:5]:  # Limit to top 5
-            lines.append(f"  - {s.title}: Look for patterns like {', '.join(s.dependencies[:3])}")
+            lines.append(
+                f"  - {s.title}: Look for patterns like {', '.join(s.dependencies[:3])}")
 
     return "\n".join(lines)
