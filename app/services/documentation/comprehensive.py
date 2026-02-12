@@ -6,6 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 from app.services.documentation.aggregate_prompt import generate_all_docs_in_single_call
+# Phase 1: Import planner
+from app.services.documentation.planner import get_planner, DocumentationPlan
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +234,7 @@ class ComprehensiveDocBuilder:
         """
         Build comprehensive documentation.
 
+        Phase 1 Enhancement: Uses DocumentationPlanner for structured guidance.
         Phase 6 Enhancement: Captures token usage and stores in 'token_data' key.
         """
         print("================================================================================")
@@ -246,13 +249,40 @@ class ComprehensiveDocBuilder:
         docs_dir = self.repository_root / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
 
+        # Phase 1: Create documentation plan for structured guidance
+        planner = get_planner()
+        plan = planner.create_plan(analysis)
+        print(f"📋 Documentation Plan: {plan.repo_type} (complexity: {plan.complexity_score}/10)")
+        print(f"   Sections: {len(plan.sections)} total")
+        for s in plan.sections:
+            status = "required" if s.required else "conditional"
+            print(f"   - {s.title} ({s.type}, {status})")
+
         # 🔥 ONE LLM CALL FOR ALL DOCUMENTS (Phase 6: Now captures token usage)
+        # Phase 1: Pass plan for structured prompting
         docs, token_data = await generate_all_docs_in_single_call(
             self.repository_root,
             analysis,
             recent_changes,
-            self.doc_persona
+            self.doc_persona,
+            plan=plan  # Phase 1: Pass plan to guide generation
         )
+
+        # Phase 1: Store plan in returned dict for upstream inspection
+        docs["plan"] = {
+            "repo_type": plan.repo_type,
+            "complexity_score": plan.complexity_score,
+            "sections": [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "type": s.type,
+                    "required": s.required,
+                    "priority": s.priority,
+                }
+                for s in plan.sections
+            ]
+        }
 
         # Store token data in the returned dict for upstream usage tracking
         docs["token_data"] = token_data
@@ -855,12 +885,23 @@ async def generate_comprehensive_documentation(
 
     # Decide whether to generate docs
     if quality_report["needs_generation"] or impact["needs_new_architecture_version"] or impact["needs_new_workflow_version"]:
-        docs = await generate_all_docs_in_single_call(
+        # Phase 1: Create plan for structured guidance
+        planner = get_planner()
+        plan = planner.create_plan(analysis)
+        print(f"📋 Documentation Plan: {plan.repo_type} (complexity: {plan.complexity_score}/10)")
+        
+        docs_result = await generate_all_docs_in_single_call(
             repo_dir,
             analysis,
             {"generated_at": datetime.utcnow().isoformat()},
-            doc_persona
+            doc_persona,
+            plan=plan  # Phase 1: Pass plan for structured prompting
         )
+        # Handle both old (dict) and new (tuple) return formats
+        if isinstance(docs_result, tuple):
+            docs, _ = docs_result
+        else:
+            docs = docs_result
     else:
         print("Docs look good. Skipping generation.")
         return
