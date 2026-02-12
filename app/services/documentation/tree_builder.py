@@ -1,5 +1,5 @@
 """
-Document Tree Builder - Phase 2: Structured representation builder
+Document Tree Builder - Phase 2/2.5: Structured representation builder with fingerprints
 
 This service builds DocumentTree instances from generated documentation.
 It bridges the gap between flat LLM output and structured internal representation.
@@ -10,6 +10,11 @@ Phase 2 Behavior:
 - Extracts heading hierarchy for navigation
 - Attaches planner dependencies if available
 - Caches tree in memory (no DB persistence yet)
+
+Phase 2.5 Enhancement:
+- Generates section fingerprints for change detection
+- Enables diff-to-section mapping
+- Prepares for selective regeneration
 
 Safety:
 - NEVER fails - returns None on error, allowing fallback to flat structure
@@ -28,6 +33,9 @@ from app.services.documentation.tree_models import (
     parse_markdown_headings,
     estimate_section_complexity,
     cache_tree,
+    # Phase 2.5: Fingerprint utilities
+    build_section_fingerprint,
+    get_fingerprint_stats,
 )
 from app.services.documentation.planner import DocumentationPlan, SectionPlan
 
@@ -134,10 +142,10 @@ class DocumentTreeBuilder:
                     section_index += 1
                     self._build_stats["sections_created"] += 1
 
-            # Extract headings for all sections
-            for section in tree.sections:
-                headings = section.extract_headings()
-                self._build_stats["headings_extracted"] += len(headings)
+            # Phase 2.5: Log fingerprint stats
+            fp_stats = get_fingerprint_stats(tree)
+            print(f"🔐 Fingerprints: {fp_stats['with_fingerprint']}/{fp_stats['total_sections']} sections "
+                  f"({fp_stats['coverage_percentage']}% coverage)")
 
             # Cache tree for later retrieval
             cache_key = cache_tree(tree)
@@ -190,7 +198,7 @@ class DocumentTreeBuilder:
             # Get dependencies from plan if available
             dependencies = self._get_dependencies(section_type, plan)
 
-            # Build section
+            # Build section (without fingerprint first - need headings)
             section = DocumentSection(
                 id=section_id,
                 section_type=section_type,
@@ -204,6 +212,21 @@ class DocumentTreeBuilder:
                     "line_count": len(content.split('\n')),
                 },
             )
+
+            # Phase 2.5: Extract headings BEFORE fingerprint (headings are part of fingerprint)
+            section.extract_headings()
+
+            # Phase 2.5: Generate fingerprint (wrapped in try/except - never fail)
+            try:
+                section.fingerprint = build_section_fingerprint(section)
+                if section.fingerprint:
+                    print(
+                        f"🔐 Fingerprint generated for section {section_id}: {section.fingerprint[:16]}...")
+            except Exception as fp_error:
+                # Fingerprint failure is non-fatal
+                print(
+                    f"⚠️ Fingerprint generation failed for {section_id}: {fp_error}")
+                section.fingerprint = None
 
             return section
 
@@ -319,11 +342,137 @@ def debug_tree_structure(tree: Optional[DocumentTree]) -> str:
 
     for section in tree.sections:
         heading_count = len(section.headings)
+        fp_preview = section.fingerprint[:12] + \
+            "..." if section.fingerprint else "N/A"
         content_preview = section.content[:50].replace('\n', ' ') + "..."
         lines.append(
             f"  [{section.section_type}] {section.title} "
-            f"({heading_count} headings, {len(section.content)} chars)"
+            f"({heading_count} headings, fp: {fp_preview})"
         )
         lines.append(f"    Preview: {content_preview}")
 
     return "\n".join(lines)
+
+
+# ============================================================================
+# Phase 2.5: Tree Comparison Utilities
+# ============================================================================
+
+def compare_document_trees(
+    old_tree: Optional[DocumentTree],
+    new_tree: DocumentTree,
+) -> Dict[str, Any]:
+    """
+    Compare two document trees and identify changed sections.
+
+    This is the foundation for Phase 4 selective regeneration.
+    Uses fingerprints for deterministic change detection.
+
+    Args:
+        old_tree: Previous document tree (None if first generation)
+        new_tree: Current document tree
+
+    Returns:
+        Comparison result with changed/unchanged/added/removed sections
+    """
+    from app.services.documentation.tree_models import compare_section_fingerprints
+
+    result = compare_section_fingerprints(old_tree, new_tree)
+
+    # Add section details for convenience
+    if new_tree:
+        result["changed_sections"] = [
+            new_tree.get_section_by_id(sid) for sid in result["changed"]
+        ]
+        result["unchanged_sections"] = [
+            new_tree.get_section_by_id(sid) for sid in result["unchanged"]
+        ]
+        result["added_sections"] = [
+            new_tree.get_section_by_id(sid) for sid in result["added"]
+        ]
+
+    if old_tree:
+        result["removed_sections"] = [
+            old_tree.get_section_by_id(sid) for sid in result["removed"]
+        ]
+
+    return result
+
+
+def detect_affected_sections(
+    tree: DocumentTree,
+    changed_files: List[str],
+) -> List[DocumentSection]:
+    """
+    Detect which sections are affected by code changes.
+
+    Uses dependency patterns to map file changes to sections.
+
+    Args:
+        tree: Document tree
+        changed_files: List of changed file paths
+
+    Returns:
+        List of affected sections
+    """
+    affected = []
+
+    for section in tree.sections:
+        # Check if any changed file matches section dependencies
+        for dep_pattern in section.dependencies:
+            for changed_file in changed_files:
+                if dep_pattern.lower() in changed_file.lower():
+                    affected.append(section)
+                    break
+            else:
+                continue
+            break
+
+    return affected
+
+
+def get_regeneration_plan(
+    old_tree: Optional[DocumentTree],
+    new_tree: DocumentTree,
+    changed_files: List[str],
+) -> Dict[str, Any]:
+    """
+    Generate regeneration plan based on tree comparison and file changes.
+
+    This is the entry point for Phase 4 selective regeneration.
+
+    Args:
+        old_tree: Previous tree (None if first generation)
+        new_tree: Current tree (before regeneration)
+        changed_files: List of changed file paths
+
+    Returns:
+        Regeneration plan with sections to regenerate
+    """
+    # Compare trees
+    comparison = compare_document_trees(old_tree, new_tree)
+
+    # Detect file-based affected sections
+    file_affected = detect_affected_sections(new_tree, changed_files)
+    file_affected_ids = {s.id for s in file_affected}
+
+    # Combine: regenerate if fingerprint changed OR file dependency changed
+    sections_to_regenerate = set(comparison["changed"])
+    sections_to_regenerate.update(file_affected_ids)
+
+    # Build plan
+    plan = {
+        "regenerate_all": old_tree is None,  # First generation
+        "sections_to_regenerate": list(sections_to_regenerate),
+        "sections_to_keep": [
+            sid for sid in comparison["unchanged"]
+            if sid not in file_affected_ids
+        ],
+        "comparison_summary": comparison["summary"],
+        "estimated_savings": (
+            f"{len(comparison['unchanged'])}/{len(new_tree.sections)} sections "
+            f"can be reused ({comparison['summary']['change_percentage']}% changed)"
+        ) if new_tree else "N/A",
+    }
+
+    return plan

@@ -1,5 +1,5 @@
 """
-Document Tree Models - Phase 2: Internal structured representation
+Document Tree Models - Phase 2/2.5: Internal structured representation with fingerprints
 
 This module introduces an INTERNAL document tree abstraction that represents
 generated documentation as a structured graph without changing external behavior.
@@ -9,6 +9,11 @@ Phase 2 Behavior:
 - Builds DocumentTree with metadata and relationships
 - Stores tree in-memory (no DB migration required)
 - Returns original flat structure for backward compatibility
+
+Phase 2.5 Enhancement:
+- Section fingerprints for deterministic change detection
+- Enables diff-to-section mapping
+- Prepares for selective regeneration
 
 Future Phases:
 - Phase 3: Persist tree to database
@@ -20,8 +25,10 @@ IMPORTANT: This is INTERNAL ONLY. External APIs and file output remain unchanged
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, Set
 from uuid import uuid4
+import hashlib
+import json
 import re
 
 
@@ -31,6 +38,8 @@ class DocumentSection:
     Represents a single section within the document tree.
 
     This is an INTERNAL representation - external consumers still see flat markdown.
+
+    Phase 2.5: Added fingerprint for deterministic change detection.
     """
     id: str  # Unique identifier (e.g., "sec-summary", "sec-arch-auth")
     section_type: Literal["summary",
@@ -52,6 +61,9 @@ class DocumentSection:
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
+    # Phase 2.5: Section fingerprint for change detection
+    fingerprint: Optional[str] = None  # SHA256 hash of deterministic content
+
     # Source tracking (which LLM/model generated this)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -67,6 +79,7 @@ class DocumentSection:
             "dependencies": self.dependencies,
             "headings": self.headings,
             "version": self.version,
+            "fingerprint": self.fingerprint,  # Phase 2.5
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "metadata": self.metadata,
@@ -339,3 +352,206 @@ def get_cache_stats() -> Dict[str, int]:
         "cached_trees": len(_tree_cache),
         "total_sections": sum(len(t.sections) for t in _tree_cache.values()),
     }
+
+
+# ============================================================================
+# Phase 2.5: Section Fingerprint Utilities
+# ============================================================================
+
+def build_section_fingerprint(section: DocumentSection) -> Optional[str]:
+    """
+    Build deterministic fingerprint for a document section.
+
+    Fingerprint is SHA256 hash of:
+    - Normalized content (stripped trailing whitespace)
+    - Sorted dependencies list
+    - Headings structure (level and text only)
+    - Section type
+
+    EXCLUDES (non-deterministic):
+    - Timestamps
+    - UUIDs
+    - Version numbers
+    - Metadata dict
+
+    Args:
+        section: DocumentSection to fingerprint
+
+    Returns:
+        Hexadecimal fingerprint string or None if failed
+
+    Performance: O(n) where n = content length
+    """
+    try:
+        # Build deterministic components
+        components = []
+
+        # 1. Section type (deterministic)
+        components.append(f"type:{section.section_type}")
+
+        # 2. Normalized content (strip trailing whitespace, normalize newlines)
+        normalized_content = section.content.rstrip().replace('\r\n', '\n')
+        components.append(f"content:{normalized_content}")
+
+        # 3. Sorted dependencies (deterministic ordering)
+        sorted_deps = sorted(section.dependencies)
+        components.append(f"deps:{','.join(sorted_deps)}")
+
+        # 4. Headings structure (level + text only, no anchors)
+        headings_structure = []
+        for heading in section.headings:
+            # Only include level and text (anchor is derived)
+            headings_structure.append(f"{heading['level']}:{heading['text']}")
+        components.append(f"headings:{';'.join(headings_structure)}")
+
+        # 5. Title (normalized)
+        normalized_title = section.title.strip()
+        components.append(f"title:{normalized_title}")
+
+        # Build composite string
+        composite = "|".join(components)
+
+        # Generate SHA256 hash
+        fingerprint = hashlib.sha256(composite.encode('utf-8')).hexdigest()
+
+        return fingerprint
+
+    except Exception as e:
+        # NEVER fail - return None on error
+        print(
+            f"⚠️ Fingerprint generation failed for section {section.id}: {e}")
+        return None
+
+
+def compare_section_fingerprints(
+    old_tree: Optional[DocumentTree],
+    new_tree: DocumentTree,
+) -> Dict[str, Any]:
+    """
+    Compare two document trees and identify changed sections.
+
+    This is the foundation for Phase 4 selective regeneration.
+
+    Args:
+        old_tree: Previous document tree (None if first generation)
+        new_tree: Current document tree
+
+    Returns:
+        Dict with keys:
+            - changed: List of section IDs with different fingerprints
+            - unchanged: List of section IDs with same fingerprints
+            - added: List of new section IDs
+            - removed: List of removed section IDs
+            - summary: Human-readable summary
+    """
+    result = {
+        "changed": [],
+        "unchanged": [],
+        "added": [],
+        "removed": [],
+        "summary": {},
+    }
+
+    if not new_tree:
+        result["summary"] = {"error": "No new tree provided"}
+        return result
+
+    # Build fingerprint maps
+    old_fingerprints: Dict[str, Optional[str]] = {}
+    if old_tree:
+        old_fingerprints = {
+            s.id: s.fingerprint
+            for s in old_tree.sections
+            if s.fingerprint
+        }
+
+    new_fingerprints: Dict[str, Optional[str]] = {
+        s.id: s.fingerprint
+        for s in new_tree.sections
+        if s.fingerprint
+    }
+
+    old_ids = set(old_fingerprints.keys())
+    new_ids = set(new_fingerprints.keys())
+
+    # Find added sections (in new, not in old)
+    added_ids = new_ids - old_ids
+    result["added"] = list(added_ids)
+
+    # Find removed sections (in old, not in new)
+    removed_ids = old_ids - new_ids
+    result["removed"] = list(removed_ids)
+
+    # Find changed and unchanged sections (in both)
+    common_ids = old_ids & new_ids
+    for section_id in common_ids:
+        old_fp = old_fingerprints.get(section_id)
+        new_fp = new_fingerprints.get(section_id)
+
+        if old_fp and new_fp:
+            if old_fp == new_fp:
+                result["unchanged"].append(section_id)
+            else:
+                result["changed"].append(section_id)
+        else:
+            # Missing fingerprint - treat as changed to be safe
+            result["changed"].append(section_id)
+
+    # Build summary
+    total_old = len(old_ids) if old_tree else 0
+    total_new = len(new_ids)
+
+    result["summary"] = {
+        "total_old_sections": total_old,
+        "total_new_sections": total_new,
+        "changed_count": len(result["changed"]),
+        "unchanged_count": len(result["unchanged"]),
+        "added_count": len(result["added"]),
+        "removed_count": len(result["removed"]),
+        "change_percentage": (
+            round(len(result["changed"]) / total_new * 100, 1)
+            if total_new > 0 else 0
+        ),
+    }
+
+    return result
+
+
+def get_fingerprint_stats(tree: DocumentTree) -> Dict[str, Any]:
+    """
+    Get fingerprint statistics for a document tree.
+
+    Useful for debugging and monitoring.
+    """
+    sections_with_fp = [s for s in tree.sections if s.fingerprint]
+    sections_without_fp = [s for s in tree.sections if not s.fingerprint]
+
+    return {
+        "total_sections": len(tree.sections),
+        "with_fingerprint": len(sections_with_fp),
+        "without_fingerprint": len(sections_without_fp),
+        "coverage_percentage": (
+            round(len(sections_with_fp) / len(tree.sections) * 100, 1)
+            if tree.sections else 0
+        ),
+        "unique_fingerprints": len(set(s.fingerprint for s in sections_with_fp)),
+        "sample_fingerprints": [
+            {"section_id": s.id, "fingerprint": s.fingerprint[:16] + "..."}
+            for s in sections_with_fp[:3]
+        ],
+    }
+
+
+def find_section_by_fingerprint(
+    tree: DocumentTree,
+    fingerprint: str,
+) -> Optional[DocumentSection]:
+    """
+    Find a section by its fingerprint.
+
+    Useful for tracking sections across regenerations.
+    """
+    for section in tree.sections:
+        if section.fingerprint == fingerprint:
+            return section
+    return None
