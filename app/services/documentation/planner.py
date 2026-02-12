@@ -1,24 +1,24 @@
 """
-Documentation Planner - Phase 1: Metadata-only planning layer
+Documentation Planner - Phase 1/3: Metadata-only planning layer with semantic signals
 
 This module introduces a planning layer that determines which documentation sections
 should exist for a given repository, WITHOUT changing the generation mechanism.
 
-Current Phase 1 Behavior:
+Current Phase 1/3 Behavior:
 - Analyzes repository structure
+- Accepts optional SemanticSnapshot from Phase 3 extractors
 - Produces structured plan with section metadata
 - Plan is used to build prompts but NOT for per-section generation
 - Single LLM call still generates all content
 - Output format remains unchanged (4 markdown sections)
 
 Future Phases:
-- Phase 2: Use plan for section-level generation
-- Phase 3: AST-based extraction for richer dependencies
-- Phase 4: Diff-to-section mapping
+- Phase 4: Use plan for section-level generation
+- Phase 5: User customization of plan
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional, Set
+from typing import Any, Dict, List, Literal, Optional, Set
 from pathlib import Path
 import re
 
@@ -52,6 +52,8 @@ class DocumentationPlan:
     # Detected repo type (web-api, cli-tool, library, etc.)
     repo_type: str = "generic"
     complexity_score: int = 5  # 1-10 estimated complexity
+    # Phase 3: Semantic snapshot used for planning
+    semantic_signals: Dict[str, Any] = field(default_factory=dict)
 
     def get_sections_by_type(self, section_type: str) -> List[SectionPlan]:
         """Get all sections of a specific type."""
@@ -155,9 +157,15 @@ class DocumentationPlanner:
         """Initialize planner with default configuration."""
         self._fallback_plan = self._create_fallback_plan()
 
-    def create_plan(self, repo_analysis: Dict) -> DocumentationPlan:
+    def create_plan(
+        self,
+        repo_analysis: Dict,
+        semantic_snapshot: Optional[Dict[str, Any]] = None,
+    ) -> DocumentationPlan:
         """
         Create documentation plan from repository analysis.
+
+        Phase 3: Accepts optional semantic_snapshot for improved planning.
 
         Args:
             repo_analysis: Dictionary containing repo metadata
@@ -169,6 +177,7 @@ class DocumentationPlanner:
                 - frameworks: List[str]
                 - database_tech: List[str]
                 - deployment_tech: List[str]
+            semantic_snapshot: Optional semantic signals from Phase 3 extractors
 
         Returns:
             DocumentationPlan with section metadata
@@ -182,6 +191,11 @@ class DocumentationPlanner:
 
             sections = []
             detected_features = self._detect_features(repo_analysis)
+
+            # Phase 3: Enhance with semantic signals if available
+            if semantic_snapshot:
+                self._enhance_with_semantic_signals(
+                    detected_features, semantic_snapshot)
 
             # Always include core sections (required)
             sections.extend(self._create_core_sections())
@@ -212,12 +226,48 @@ class DocumentationPlanner:
                 sections=sections,
                 repo_type=repo_type,
                 complexity_score=complexity,
+                semantic_signals=semantic_snapshot or {},  # Phase 3
             )
 
         except Exception as e:
             # NEVER fail - always return fallback plan
             print(f"⚠️ Planner error, using fallback: {e}")
             return self._fallback_plan
+
+    def _enhance_with_semantic_signals(
+        self,
+        detected_features: Dict[str, bool],
+        semantic_snapshot: Dict[str, Any],
+    ) -> None:
+        """
+        Enhance feature detection with Phase 3 semantic signals.
+
+        Modifies detected_features in place.
+        """
+        try:
+            # API detection
+            if semantic_snapshot.get("primary_framework") in ["fastapi", "express", "django", "flask"]:
+                detected_features["api"] = True
+
+            if semantic_snapshot.get("detected_routes"):
+                detected_features["api"] = True
+
+            # Auth detection
+            if semantic_snapshot.get("auth_patterns"):
+                detected_features["auth"] = True
+
+            # Database detection
+            if semantic_snapshot.get("data_layer") or semantic_snapshot.get("database_type"):
+                detected_features["database"] = True
+
+            # Infra detection
+            if semantic_snapshot.get("infra_features"):
+                detected_features["deployment"] = True
+                detected_features["ci_cd"] = True
+
+        except Exception as e:
+            # Non-fatal - just log
+            print(f"⚠️ Semantic signal enhancement failed: {e}")
 
     def _detect_features(self, repo_analysis: Dict) -> Dict[str, bool]:
         """

@@ -11,6 +11,8 @@ from app.services.documentation.planner import get_planner, DocumentationPlan
 # Phase 2: Import tree builder
 from app.services.documentation.tree_builder import build_document_tree, debug_tree_structure
 from app.services.documentation.tree_models import DocumentTree
+# Phase 3: Import semantic extraction
+from app.services.extraction import build_semantic_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -252,9 +254,20 @@ class ComprehensiveDocBuilder:
         docs_dir = self.repository_root / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
 
+        # Phase 3: Build semantic snapshot for enhanced planning
+        print("🔎 Running semantic extractors...")
+        semantic_snapshot = build_semantic_snapshot(
+            repo_path=self.repository_root,
+            repo_analysis=analysis,
+        )
+        # Attach to docs for internal use
+        docs["_semantic_snapshot"] = semantic_snapshot.to_dict()
+
         # Phase 1: Create documentation plan for structured guidance
+        # Phase 3: Pass semantic snapshot for enhanced planning
         planner = get_planner()
-        plan = planner.create_plan(analysis)
+        plan = planner.create_plan(
+            analysis, semantic_snapshot=semantic_snapshot.to_dict())
         print(
             f"📋 Documentation Plan: {plan.repo_type} (complexity: {plan.complexity_score}/10)")
         print(f"   Sections: {len(plan.sections)} total")
