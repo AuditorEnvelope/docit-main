@@ -17,12 +17,13 @@ Extractors:
 - DataExtractor: Detects database/ORM patterns
 """
 
-from .semantic_snapshot import SemanticSnapshot, build_semantic_snapshot
-from .extractor_runner import ExtractorRunner, get_extractor_runner
+from .semantic_snapshot import SemanticSnapshot, merge_snapshots
+from .extractor_runner import ExtractorRunner, get_extractor_runner, build_semantic_snapshot
 from .base_extractor import BaseExtractor, ExtractionResult
 
 __all__ = [
     "SemanticSnapshot",
+    "merge_snapshots",
     "build_semantic_snapshot",
     "ExtractorRunner",
     "get_extractor_runner",

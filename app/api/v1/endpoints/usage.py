@@ -108,7 +108,12 @@ async def get_my_usage(
         if e.status_code == 404:
             raise HTTPException(
                 status_code=404,
-                detail="No active subscription found. Please subscribe to a plan."
+                detail={
+                    "error": "no_active_subscription",
+                    "message": "No active subscription found. Please subscribe to a plan.",
+                    "action": "subscribe",
+                    "user_id": str(user.id),
+                }
             )
         raise
 

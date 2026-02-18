@@ -3,23 +3,37 @@ from typing import Tuple
 from uuid import UUID
 from urllib.parse import unquote
 import base64
+import logging
 
 import httpx
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+
+logger = logging.getLogger(__name__)
 from app.models.user import User
 from app.schemas.documentation import ManualGenerationResponse
 from app.services.auth import get_current_user
 from app.services.docbook.publisher import DocbookPublisher
 from app.services.documentation.manual_generation import ManualDocGenerator
 from app.utils.github_dual_app import GitHubDualAppHelper
+
 # Phase 6: Import usage service for limit enforcement and recording
-from app.services.usage import UsageService
-from app.models.usage import ResourceType
+try:
+    from app.services.usage import UsageService
+    from app.models.usage import ResourceType
+    USAGE_SERVICE_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Usage service not available: {e}")
+    USAGE_SERVICE_AVAILABLE = False
+    UsageService = None
+    ResourceType = None
 
 router = APIRouter()
+
+# Log router initialization
+logger.info("Docs router initialized, usage service available: %s", USAGE_SERVICE_AVAILABLE)
 
 
 class CommitFileRequest(BaseModel):
@@ -73,37 +87,55 @@ async def generate_documentation_v4(
     # PHASE 6 INTEGRATION: Step A - THE GUARD (Enforce Limit)
     # ========================================================================
     # Check usage limit BEFORE expensive doc generation
-    usage_service = UsageService(db)
-
-    try:
-        await usage_service.enforce_limit(
-            user_id=str(user.id),
-            resource_type=ResourceType.DOCS_GENERATED,
-        )
-    except HTTPException as limit_error:
-        # Re-raise with enhanced message for frontend
-        if limit_error.status_code == 403:
-            try:
-                limit_check = await usage_service.check_limit(
-                    user_id=str(user.id),
-                    resource_type=ResourceType.DOCS_GENERATED,
-                )
+    logger.info(f"Checking usage limits for user {user.id} ({user.email})")
+    if USAGE_SERVICE_AVAILABLE and UsageService is not None:
+        usage_service = UsageService(db)
+        
+        try:
+            await usage_service.enforce_limit(
+                user_id=str(user.id),
+                resource_type=ResourceType.DOCS_GENERATED,
+            )
+            logger.info(f"Usage limit check passed for user {user.id}")
+        except HTTPException as limit_error:
+            logger.error(f"Usage limit check failed for user {user.id}: {limit_error.status_code} - {limit_error.detail}")
+            # Handle 404 - no active subscription
+            if limit_error.status_code == 404:
                 raise HTTPException(
                     status_code=403,
                     detail={
-                        "error": "usage_limit_exceeded",
-                        "message": f"Document generation limit reached. You've used {limit_check['used']} of {limit_check['limit']} docs.",
-                        "plan": limit_check["plan"],
-                        "used": limit_check["used"],
-                        "limit": limit_check["limit"],
-                        "cycle_end": limit_check["cycle_end"],
-                        "action": "upgrade_or_wait",
+                        "error": "no_active_subscription",
+                        "message": "No active subscription found. Your subscription may have expired or entitlement dates need renewal. Please subscribe to a plan or renew your existing subscription.",
+                        "action": "subscribe_or_renew",
+                        "user_id": str(user.id),
+                        "user_email": user.email,
                     }
                 )
-            except:
-                raise limit_error
-        else:
-            raise
+            # Handle 403 - limit exceeded
+            elif limit_error.status_code == 403:
+                try:
+                    limit_check = await usage_service.check_limit(
+                        user_id=str(user.id),
+                        resource_type=ResourceType.DOCS_GENERATED,
+                    )
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "error": "usage_limit_exceeded",
+                            "message": f"Document generation limit reached. You've used {limit_check['used']} of {limit_check['limit']} docs.",
+                            "plan": limit_check["plan"],
+                            "used": limit_check["used"],
+                            "limit": limit_check["limit"],
+                            "cycle_end": limit_check["cycle_end"],
+                            "action": "upgrade_or_wait",
+                        }
+                    )
+                except:
+                    raise limit_error
+            else:
+                raise
+    else:
+        logger.warning("Usage service not available, skipping usage limit check")
     # ========================================================================
 
     github_token = _require_github_token(user)
@@ -155,7 +187,47 @@ async def generate_documentation_v4(
 
     message = commit_message or f"docs: Manual documentation generation for {source_repo}"
 
-    generation_result = await generator.generate(repo_name, github_token)
+    # Generate documentation with proper error handling
+    try:
+        generation_result = await generator.generate(repo_name, github_token)
+    except ValueError as ve:
+        # Handle specific error cases (repo not found, auth failed, etc.)
+        error_msg = str(ve).lower()
+        logger.error(f"Generation failed for {repo_name}: {ve}")
+        if "not found" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "repository_not_found",
+                    "message": str(ve),
+                    "repo_name": repo_name,
+                }
+            )
+        elif "authentication" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "error": "authentication_failed",
+                    "message": str(ve),
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "generation_failed",
+                    "message": str(ve),
+                }
+            )
+    except Exception as e:
+        logger.exception("Documentation generation failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "generation_failed",
+                "message": f"Failed to generate documentation: {str(e)}",
+            }
+        )
 
     try:
         publish_result = await publisher.publish_to_docbook(
@@ -180,25 +252,30 @@ async def generate_documentation_v4(
     # PHASE 6 INTEGRATION: Step B - THE LEDGER (Record Usage)
     # ========================================================================
     # Record usage AFTER successful generation with token data
-    try:
-        await usage_service.record_usage(
-            user_id=str(user.id),
-            resource_type=ResourceType.DOCS_GENERATED,
-            amount=1,
-            resource_id=str(publish_result.get("commit_sha", source_repo)),
-            # Phase 6: Shadow token tracking
-            input_tokens=generation_result.input_tokens,
-            output_tokens=generation_result.output_tokens,
-            model_name=generation_result.model_name,
-        )
-        print(
-            f"✅ Recorded usage: {generation_result.input_tokens} input tokens, {generation_result.output_tokens} output tokens, model: {generation_result.model_name}")
-    except Exception as record_error:
-        # Log but don't fail the request if usage recording fails
-        print(f"⚠️ Failed to record usage for user {user.id}: {record_error}")
-        import traceback
-        traceback.print_exc()
+    if USAGE_SERVICE_AVAILABLE and UsageService is not None:
+        try:
+            usage_service = UsageService(db)
+            await usage_service.record_usage(
+                user_id=str(user.id),
+                resource_type=ResourceType.DOCS_GENERATED,
+                amount=1,
+                resource_id=str(publish_result.get("commit_sha", source_repo)),
+                # Phase 6: Shadow token tracking
+                input_tokens=generation_result.input_tokens,
+                output_tokens=generation_result.output_tokens,
+                model_name=generation_result.model_name,
+            )
+            print(
+                f"✅ Recorded usage: {generation_result.input_tokens} input tokens, {generation_result.output_tokens} output tokens, model: {generation_result.model_name}")
+        except Exception as record_error:
+            # Log but don't fail the request if usage recording fails
+            print(f"⚠️ Failed to record usage for user {user.id}: {record_error}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print("⚠️ Usage service not available, skipping usage recording")
     # ========================================================================
+
 
     # Update last_documented_at timestamp in repositories table
     from datetime import datetime, timezone

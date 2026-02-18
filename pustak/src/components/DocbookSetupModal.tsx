@@ -153,7 +153,7 @@ export default function DocbookSetupModal({
         }
       }
     },
-    [apiBase, docbookRepoName, onClose, onSuccess, orgId]
+    [docbookRepoName, onClose, onSuccess, orgId]
   );
 
   const startPolling = useCallback(() => {

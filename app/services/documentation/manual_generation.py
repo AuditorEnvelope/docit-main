@@ -156,11 +156,31 @@ class ManualDocGenerator:
         logger.info("RUN git clone %s", masked)
 
         def _clone() -> None:
-            subprocess.run(
-                ["git", "clone", "--depth", "1", url, str(workspace)],
-                check=True,
-                env=env,
-            )
+            import subprocess
+            try:
+                result = subprocess.run(
+                    ["git", "clone", "--depth", "1", url, str(workspace)],
+                    check=True,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                error_msg = e.stderr.lower() if e.stderr else ""
+                if "repository not found" in error_msg:
+                    raise ValueError(
+                        f"Repository '{repo_full_name}' not found. "
+                        "Please check that the repository exists and you have access to it."
+                    )
+                elif "authentication failed" in error_msg:
+                    raise ValueError(
+                        "GitHub authentication failed. "
+                        "Please reconnect your GitHub account."
+                    )
+                else:
+                    raise ValueError(
+                        f"Failed to clone repository: {e.stderr or 'Unknown error'}"
+                    )
 
         await asyncio.to_thread(_clone)
 
