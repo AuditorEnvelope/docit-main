@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends
 
 # Import all endpoint routers
@@ -51,9 +52,9 @@ api_router.include_router(
 )
 
 # Legacy docs endpoints (requires auth)
-import logging
 logger = logging.getLogger(__name__)
-logger.info("Registering docs router with routes: %s", [r.path for r in docs.router.routes])
+logger.info("Registering docs router with routes: %s",
+            [r.path for r in docs.router.routes])
 api_router.include_router(
     docs.router,
     prefix="/docs",

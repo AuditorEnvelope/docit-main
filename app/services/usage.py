@@ -606,7 +606,8 @@ class UsageService:
         """
         now = datetime.now(timezone.utc)
         logger = logging.getLogger(__name__)
-        logger.info(f"Looking for active subscription for user {user_id} at {now}")
+        logger.info(
+            f"Looking for active subscription for user {user_id} at {now}")
 
         # Primary: use entitlement window
         ent_window = and_(
@@ -636,21 +637,24 @@ class UsageService:
 
         result = await self.db.execute(stmt)
         subscription = result.scalar_one_or_none()
-        
+
         if subscription:
-            logger.info(f"Found active subscription {subscription.id} for user {user_id}: plan={subscription.plan}, status={subscription.status}")
+            logger.info(
+                f"Found active subscription {subscription.id} for user {user_id}: plan={subscription.plan}, status={subscription.status}")
         else:
             logger.warning(f"No active subscription found for user {user_id}")
             # Check what subscriptions exist for debugging
-            all_stmt = select(Subscription).where(Subscription.user_id == user_id).order_by(Subscription.created_at.desc())
+            all_stmt = select(Subscription).where(
+                Subscription.user_id == user_id).order_by(Subscription.created_at.desc())
             all_result = await self.db.execute(all_stmt)
             all_subs = all_result.scalars().all()
             if all_subs:
                 for sub in all_subs:
-                    logger.warning(f"  Found subscription {sub.id}: plan={sub.plan}, status={sub.status}, entitlement_start={sub.entitlement_start}, entitlement_end={sub.entitlement_end}")
+                    logger.warning(
+                        f"  Found subscription {sub.id}: plan={sub.plan}, status={sub.status}, entitlement_start={sub.entitlement_start}, entitlement_end={sub.entitlement_end}")
             else:
                 logger.warning(f"  No subscriptions at all for user {user_id}")
-        
+
         return subscription
 
     async def get_plan_limits(self, plan_name: str) -> Dict[str, int]:

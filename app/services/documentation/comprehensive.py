@@ -260,8 +260,6 @@ class ComprehensiveDocBuilder:
             repo_path=self.repository_root,
             repo_analysis=analysis,
         )
-        # Attach to docs for internal use
-        docs["_semantic_snapshot"] = semantic_snapshot.to_dict()
 
         # Phase 1: Create documentation plan for structured guidance
         # Phase 3: Pass semantic snapshot for enhanced planning
@@ -284,6 +282,9 @@ class ComprehensiveDocBuilder:
             self.doc_persona,
             plan=plan  # Phase 1: Pass plan to guide generation
         )
+
+        # Attach semantic snapshot to docs for internal use (must be after docs is created)
+        docs["_semantic_snapshot"] = semantic_snapshot.to_dict()
 
         # Phase 1: Store plan in returned dict for upstream inspection
         docs["plan"] = {
