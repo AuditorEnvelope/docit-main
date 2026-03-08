@@ -6,7 +6,7 @@ Lightweight file presence and content scanning.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from .base_extractor import BaseExtractor, ExtractionResult
 

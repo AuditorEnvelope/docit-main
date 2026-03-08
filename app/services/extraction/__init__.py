@@ -15,6 +15,7 @@ Extractors:
 - AuthExtractor: Detects auth patterns (JWT, OAuth, etc.)
 - InfraExtractor: Detects deployment infrastructure
 - DataExtractor: Detects database/ORM patterns
+- FrontendExtractor: Detects React, Vue, Angular frontend patterns
 """
 
 from .semantic_snapshot import SemanticSnapshot, merge_snapshots

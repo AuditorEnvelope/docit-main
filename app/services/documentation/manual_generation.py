@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict
 
-from app.services.documentation.comprehensive import ComprehensiveDocBuilder
+from app.services.documentation.comprehensive import (
+    ComprehensiveDocBuilder,
+    update_summary_navigation,
+    get_current_version,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +60,22 @@ class ManualDocGenerator:
             self._prepare_docs_directory(docs_dir)
 
             builder = ComprehensiveDocBuilder(
-                workspace, doc_persona=self.doc_persona)
+                workspace, doc_persona=self.doc_persona, repo_name=repo_full_name)
             generated_docs: Dict[str, str] = await builder.build()
 
-            summary = generated_docs.get("summary", "")
+            # Handle dynamic sections - support both old and new section IDs
+            summary = generated_docs.get(
+                "overview") or generated_docs.get("summary", "")
             architecture = generated_docs.get("architecture", "")
-            workflow = generated_docs.get("workflow", "")
-            api_doc = generated_docs.get("api", "")
+            workflow = generated_docs.get(
+                "development") or generated_docs.get("workflow", "")
+            api_doc = generated_docs.get(
+                "api") or generated_docs.get("usage", "")
+
+            # NEW: Extract additional sections from comprehensive build
+            components = generated_docs.get("components", "")
+            dependencies = generated_docs.get("dependencies", "")
+            deployment = generated_docs.get("deployment", "")
 
             # Phase 6: Extract token data from generation result
             token_data = generated_docs.get("token_data", {})
@@ -93,26 +106,81 @@ class ManualDocGenerator:
                                  f"# Documentation for {other_persona}\n\nThis persona documentation is not available.")
 
             # Persist artefacts in the correct persona folder
-            self._write_text(persona_dir / "SUMMARY.md", summary)
+            # Write overview content to README.md (the actual content)
+            self._write_text(persona_dir / "README.md", summary)
 
-            # Create architecture folder inside the persona folder
+            # ============================================================
+            # STANDARDIZED FOLDER STRUCTURE
+            # All sections follow: <section>/current.md pattern
+            # All sections get versioning: <section>/v{X.Y}-{section}.md
+            # Versioning uses semantic versioning (v1.0 → v1.1 → v2.0)
+            # ============================================================
+
+            # Architecture folder (with versioning)
             architecture_dir = persona_dir / "architecture"
             architecture_dir.mkdir(exist_ok=True)
-            self._write_text(architecture_dir /
-                             "v1.0-architecture.md", architecture)
             self._write_text(architecture_dir / "current.md", architecture)
+            # Use proper versioning - get next version number
+            arch_version = get_current_version(persona_dir, "architecture")
+            self._write_text(architecture_dir /
+                             f"v{arch_version}-architecture.md", architecture)
+            print(f"   📐 Architecture: v{arch_version}")
 
-            # Create workflow folder inside the persona folder
+            # Workflow folder (with versioning)
             workflow_dir = persona_dir / "workflow"
             workflow_dir.mkdir(exist_ok=True)
-            self._write_text(workflow_dir / "v1.0-workflow.md", workflow)
             self._write_text(workflow_dir / "current.md", workflow)
+            # Use proper versioning - get next version number
+            workflow_version = get_current_version(persona_dir, "workflow")
+            self._write_text(
+                workflow_dir / f"v{workflow_version}-workflow.md", workflow)
+            print(f"   🔄 Workflow: v{workflow_version}")
 
-            # Add API doc inside the persona folder
-            self._write_text(persona_dir / "api.md", api_doc)
+            # API folder (with versioning)
+            if api_doc:
+                api_dir = persona_dir / "api"
+                api_dir.mkdir(exist_ok=True)
+                self._write_text(api_dir / "current.md", api_doc)
+                api_version = get_current_version(persona_dir, "api")
+                self._write_text(api_dir / f"v{api_version}-api.md", api_doc)
+                print(f"   📡 API: v{api_version}")
+
+            # Components folder (with versioning)
+            if components:
+                components_dir = persona_dir / "components"
+                components_dir.mkdir(exist_ok=True)
+                self._write_text(components_dir / "current.md", components)
+                comp_version = get_current_version(persona_dir, "components")
+                self._write_text(components_dir /
+                                 f"v{comp_version}-components.md", components)
+                print(f"   🧩 Components: v{comp_version}")
+
+            # Dependencies folder (with versioning)
+            if dependencies:
+                dependencies_dir = persona_dir / "dependencies"
+                dependencies_dir.mkdir(exist_ok=True)
+                self._write_text(dependencies_dir / "current.md", dependencies)
+                deps_version = get_current_version(persona_dir, "dependencies")
+                self._write_text(
+                    dependencies_dir / f"v{deps_version}-dependencies.md", dependencies)
+                print(f"   📦 Dependencies: v{deps_version}")
+
+            # Deployment folder (with versioning)
+            if deployment:
+                deployment_dir = persona_dir / "deployment"
+                deployment_dir.mkdir(exist_ok=True)
+                self._write_text(deployment_dir / "current.md", deployment)
+                deploy_version = get_current_version(persona_dir, "deployment")
+                self._write_text(
+                    deployment_dir / f"v{deploy_version}-deployment.md", deployment)
+                print(f"   🚀 Deployment: v{deploy_version}")
 
             # Create changes folder inside the persona folder
             (persona_dir / "changes").mkdir(exist_ok=True)
+
+            # Generate proper navigation SUMMARY.md for the persona folder
+            # This creates links to all sections (architecture, workflow, components, etc.)
+            update_summary_navigation(persona_dir)
 
             # Update root README & changelog for traceability
             self._write_text(workspace / "README.md", summary)

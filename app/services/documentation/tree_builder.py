@@ -52,12 +52,22 @@ class DocumentTreeBuilder:
     This is an INTERNAL service - external consumers still see flat markdown.
     """
 
-    # Map flat output keys to section types
+    # Map flat output keys to section types (legacy - now dynamic)
     KEY_TO_TYPE = {
         "summary": "summary",
         "architecture": "architecture",
         "workflow": "workflow",
         "api": "api",
+        "overview": "summary",
+        "development": "workflow",
+        "dependencies": "architecture",
+        "components": "components",
+        "features": "features",
+        "quickstart": "workflow",
+        "usage": "api",
+        "configuration": "architecture",
+        "examples": "workflow",
+        "deployment": "deployment",
     }
 
     # Default titles for each section type
@@ -66,6 +76,16 @@ class DocumentTreeBuilder:
         "architecture": "System Architecture",
         "workflow": "Development Workflow",
         "api": "API Documentation",
+        "overview": "Project Overview",
+        "development": "Development Setup",
+        "dependencies": "Dependencies",
+        "components": "Components",
+        "features": "Features",
+        "quickstart": "Quick Start",
+        "usage": "Usage",
+        "configuration": "Configuration",
+        "examples": "Examples",
+        "deployment": "Deployment",
     }
 
     def __init__(self):
@@ -127,7 +147,12 @@ class DocumentTreeBuilder:
             # Build sections from flat docs
             section_index = 0
             for key, content in flat_docs.items():
-                if key in ["token_data", "plan"]:  # Skip metadata keys
+                if key in ["token_data", "plan", "_semantic_snapshot"]:  # Skip metadata keys
+                    continue
+
+                # Skip non-string content (safety check)
+                if not isinstance(content, str):
+                    print(f"   Skipping non-string content for key: {key}")
                     continue
 
                 section = self._build_section(

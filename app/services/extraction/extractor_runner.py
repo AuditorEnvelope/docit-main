@@ -105,9 +105,12 @@ class ExtractorRunner:
                     print(f"⚠️ {extractor.name} failed: {result.error_message}")
 
             except Exception as e:
+                import traceback
                 error_msg = f"{extractor_class.__name__}: {str(e)}"
                 errors.append(error_msg)
                 print(f"⚠️ {extractor_class.__name__} crashed: {e}")
+                print(f"   Full traceback:")
+                traceback.print_exc()
 
         # Merge all snapshots
         if snapshots:
@@ -229,6 +232,12 @@ def get_extractor_runner() -> ExtractorRunner:
         except ImportError:
             pass
 
+        try:
+            from .frontend_extractor import FrontendExtractor
+            _runner_instance.register(FrontendExtractor)
+        except ImportError:
+            pass
+
     return _runner_instance
 
 
@@ -248,12 +257,23 @@ def build_semantic_snapshot(
     Returns:
         SemanticSnapshot (never fails, returns empty on error)
     """
+    import traceback
     try:
+        print(
+            f"🔍 build_semantic_snapshot: Starting extraction for {repo_path}")
+        print(f"   Repo analysis keys: {list(repo_analysis.keys())}")
         runner = get_extractor_runner()
-        return runner.run_all(repo_path, repo_analysis)
+        print(
+            f"   Got extractor runner with {len(runner._extractors)} extractors")
+        result = runner.run_all(repo_path, repo_analysis)
+        print(
+            f"   Extraction complete: {len(result.signals)} signals, errors: {result.extraction_errors}")
+        return result
     except Exception as e:
         # Ultimate fallback - return empty snapshot
         print(f"⚠️ Semantic extraction failed (non-fatal): {e}")
+        print(f"   Full traceback:")
+        traceback.print_exc()
         return SemanticSnapshot(
             extraction_errors=[str(e)],
         )

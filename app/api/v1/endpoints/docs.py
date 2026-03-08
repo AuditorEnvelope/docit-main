@@ -1,3 +1,9 @@
+from app.utils.github_dual_app import GitHubDualAppHelper
+from app.services.documentation.manual_generation import ManualDocGenerator
+from app.services.docbook.publisher import DocbookPublisher
+from app.services.auth import get_current_user
+from app.schemas.documentation import ManualGenerationResponse
+from app.models.user import User
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import Tuple
 from uuid import UUID
@@ -12,12 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 
 logger = logging.getLogger(__name__)
-from app.models.user import User
-from app.schemas.documentation import ManualGenerationResponse
-from app.services.auth import get_current_user
-from app.services.docbook.publisher import DocbookPublisher
-from app.services.documentation.manual_generation import ManualDocGenerator
-from app.utils.github_dual_app import GitHubDualAppHelper
 
 # Phase 6: Import usage service for limit enforcement and recording
 try:
@@ -33,7 +33,8 @@ except ImportError as e:
 router = APIRouter()
 
 # Log router initialization
-logger.info("Docs router initialized, usage service available: %s", USAGE_SERVICE_AVAILABLE)
+logger.info("Docs router initialized, usage service available: %s",
+            USAGE_SERVICE_AVAILABLE)
 
 
 class CommitFileRequest(BaseModel):
@@ -90,7 +91,7 @@ async def generate_documentation_v4(
     logger.info(f"Checking usage limits for user {user.id} ({user.email})")
     if USAGE_SERVICE_AVAILABLE and UsageService is not None:
         usage_service = UsageService(db)
-        
+
         try:
             await usage_service.enforce_limit(
                 user_id=str(user.id),
@@ -98,7 +99,8 @@ async def generate_documentation_v4(
             )
             logger.info(f"Usage limit check passed for user {user.id}")
         except HTTPException as limit_error:
-            logger.error(f"Usage limit check failed for user {user.id}: {limit_error.status_code} - {limit_error.detail}")
+            logger.error(
+                f"Usage limit check failed for user {user.id}: {limit_error.status_code} - {limit_error.detail}")
             # Handle 404 - no active subscription
             if limit_error.status_code == 404:
                 raise HTTPException(
@@ -135,7 +137,8 @@ async def generate_documentation_v4(
             else:
                 raise
     else:
-        logger.warning("Usage service not available, skipping usage limit check")
+        logger.warning(
+            "Usage service not available, skipping usage limit check")
     # ========================================================================
 
     github_token = _require_github_token(user)
@@ -269,13 +272,13 @@ async def generate_documentation_v4(
                 f"✅ Recorded usage: {generation_result.input_tokens} input tokens, {generation_result.output_tokens} output tokens, model: {generation_result.model_name}")
         except Exception as record_error:
             # Log but don't fail the request if usage recording fails
-            print(f"⚠️ Failed to record usage for user {user.id}: {record_error}")
+            print(
+                f"⚠️ Failed to record usage for user {user.id}: {record_error}")
             import traceback
             traceback.print_exc()
     else:
         print("⚠️ Usage service not available, skipping usage recording")
     # ========================================================================
-
 
     # Update last_documented_at timestamp in repositories table
     from datetime import datetime, timezone

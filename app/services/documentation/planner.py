@@ -28,16 +28,18 @@ class SectionPlan:
     """
     Metadata for a single documentation section.
 
-    In Phase 1, this is informational only - used for prompt building,
-    not for actual section-level generation.
+    Dynamic sections based on actual codebase content.
     """
     id: str  # Unique identifier (e.g., "overview", "auth-flow")
     title: str  # Human-readable title
-    type: Literal["summary", "architecture", "workflow", "api", "custom"]
+    type: Literal["summary", "architecture", "workflow", "api",
+                  "custom", "features", "components", "deployment"]
     # File patterns this section depends on
     dependencies: List[str] = field(default_factory=list)
     priority: int = 5  # 1-10, higher = more important
     required: bool = True  # If False, section is optional based on heuristics
+    # What this section should cover
+    description: str = ""  # Guidance for content generation
 
 
 @dataclass
@@ -62,6 +64,24 @@ class DocumentationPlan:
     def get_required_sections(self) -> List[SectionPlan]:
         """Get sections that must be included."""
         return [s for s in self.sections if s.required]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert plan to dictionary for serialization."""
+        return {
+            "repo_type": self.repo_type,
+            "complexity_score": self.complexity_score,
+            "semantic_signals": self.semantic_signals,
+            "sections": [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "type": s.type,
+                    "priority": s.priority,
+                    "required": s.required,
+                }
+                for s in self.sections
+            ],
+        }
 
 
 class DocumentationPlanner:
@@ -197,8 +217,12 @@ class DocumentationPlanner:
                 self._enhance_with_semantic_signals(
                     detected_features, semantic_snapshot)
 
-            # Always include core sections (required)
-            sections.extend(self._create_core_sections())
+            # Use frontend-specific sections for frontend projects
+            if detected_features.get("frontend"):
+                sections.extend(self._create_frontend_sections())
+            else:
+                # Always include core sections (required)
+                sections.extend(self._create_core_sections())
 
             # Add conditional sections based on heuristics
             for feature, detected in detected_features.items():
@@ -245,12 +269,20 @@ class DocumentationPlanner:
         Modifies detected_features in place.
         """
         try:
-            # API detection
-            if semantic_snapshot.get("primary_framework") in ["fastapi", "express", "django", "flask"]:
+            primary_framework = semantic_snapshot.get("primary_framework")
+
+            # API detection (backend frameworks)
+            if primary_framework in ["fastapi", "express", "django", "flask"]:
                 detected_features["api"] = True
 
             if semantic_snapshot.get("detected_routes"):
                 detected_features["api"] = True
+
+            # Frontend detection (React, Vue, Angular, Next.js)
+            if primary_framework in ["react", "vue", "angular", "nextjs"]:
+                detected_features["frontend"] = True
+                # Frontend projects don't need API docs section
+                detected_features["api"] = False
 
             # Auth detection
             if semantic_snapshot.get("auth_patterns"):
@@ -336,7 +368,7 @@ class DocumentationPlanner:
                 id="architecture",
                 title="System Architecture",
                 type="architecture",
-                dependencies=["src/", "app/", "lib/", "core/"],
+                dependencies=["src/", "app/", "lib/", "core/", "components/"],
                 priority=10,
                 required=True,
             ),
@@ -354,6 +386,47 @@ class DocumentationPlanner:
                 type="api",
                 dependencies=["api/", "routes/", "controllers/", "endpoints/"],
                 priority=10,
+                required=True,
+            ),
+        ]
+
+    def _create_frontend_sections(self) -> List[SectionPlan]:
+        """
+        Create sections appropriate for frontend projects.
+
+        Replaces generic API docs with frontend-specific sections.
+        """
+        return [
+            SectionPlan(
+                id="overview",
+                title="Project Overview",
+                type="summary",
+                dependencies=["README", "package.json"],
+                priority=10,
+                required=True,
+            ),
+            SectionPlan(
+                id="architecture",
+                title="Frontend Architecture",
+                type="architecture",
+                dependencies=["src/", "app/", "components/"],
+                priority=10,
+                required=True,
+            ),
+            SectionPlan(
+                id="workflow",
+                title="Development Workflow",
+                type="workflow",
+                dependencies=[".github/", "scripts/"],
+                priority=10,
+                required=True,
+            ),
+            SectionPlan(
+                id="ui-components",
+                title="UI Components & Design",
+                type="api",
+                dependencies=["components/", "ui/", "styles/"],
+                priority=9,
                 required=True,
             ),
         ]
@@ -418,6 +491,263 @@ class DocumentationPlanner:
 
         # Clamp to 1-10
         return max(1, min(10, score))
+
+    def create_dynamic_plan(
+        self,
+        repo_analysis: Dict,
+        semantic_snapshot: Optional[Dict[str, Any]] = None,
+        persona: str = "internal",
+    ) -> DocumentationPlan:
+        """
+        Create a truly dynamic documentation plan based on persona and actual codebase.
+
+        Args:
+            repo_analysis: Repository analysis data
+            semantic_snapshot: Optional semantic extraction results
+            persona: 'internal' (code-focused) or 'dev' (functionality-focused)
+
+        Returns:
+            DocumentationPlan with dynamically determined sections
+        """
+        try:
+            if not repo_analysis or not isinstance(repo_analysis, dict):
+                return self._fallback_plan
+
+            sections = []
+            detected_features = self._detect_features(repo_analysis)
+
+            # Enhance with semantic signals
+            if semantic_snapshot:
+                self._enhance_with_semantic_signals(
+                    detected_features, semantic_snapshot)
+
+            # Get actual repository info
+            languages = repo_analysis.get("languages", [])
+            frameworks = repo_analysis.get("frameworks", [])
+            dependencies = repo_analysis.get("dependencies", {})
+            primary_framework = semantic_snapshot.get(
+                "primary_framework") if semantic_snapshot else None
+
+            # === DYNAMIC SECTION GENERATION BASED ON PERSONA ===
+
+            if persona == "internal":
+                # INTERNAL DOCS: Code-focused for company developers
+                sections = self._create_internal_sections(
+                    detected_features, primary_framework, languages, dependencies
+                )
+            else:
+                # DEV DOCS: Functionality-focused for external developers
+                sections = self._create_dev_sections(
+                    detected_features, primary_framework, languages, dependencies
+                )
+
+            # Sort by priority
+            sections.sort(key=lambda s: s.priority, reverse=True)
+
+            # Detect repo type
+            repo_type = self._detect_repo_type(
+                repo_analysis, detected_features)
+            complexity = self._estimate_complexity(repo_analysis)
+
+            return DocumentationPlan(
+                sections=sections,
+                repo_type=repo_type,
+                complexity_score=complexity,
+                semantic_signals=semantic_snapshot or {},
+            )
+
+        except Exception as e:
+            print(f"⚠️ Dynamic planner error, using fallback: {e}")
+            return self._fallback_plan
+
+    def _create_internal_sections(
+        self,
+        detected_features: Dict[str, bool],
+        primary_framework: Optional[str],
+        languages: List[str],
+        dependencies: Dict,
+    ) -> List[SectionPlan]:
+        """
+        Create sections for INTERNAL persona (code-focused).
+
+        Focus: Architecture, implementation details, code organization
+        Audience: Engineers working on the codebase
+        """
+        sections = []
+
+        # Always start with project overview
+        sections.append(SectionPlan(
+            id="overview",
+            title="Project Overview",
+            type="summary",
+            description="Project purpose, tech stack, and high-level architecture",
+            priority=10,
+            required=True,
+        ))
+
+        # Code Architecture section
+        if detected_features.get("frontend"):
+            sections.append(SectionPlan(
+                id="architecture",
+                title="Component Architecture",
+                type="architecture",
+                description="Component hierarchy, file organization, state management implementation",
+                priority=9,
+                required=True,
+            ))
+        else:
+            sections.append(SectionPlan(
+                id="architecture",
+                title="System Architecture",
+                type="architecture",
+                description="Module structure, service organization, data flow",
+                priority=9,
+                required=True,
+            ))
+
+        # Development Setup section
+        sections.append(SectionPlan(
+            id="development",
+            title="Development Setup & Workflow",
+            type="workflow",
+            description="Local setup, build commands, testing, contribution guidelines",
+            priority=8,
+            required=True,
+        ))
+
+        # Key Dependencies section
+        if dependencies:
+            sections.append(SectionPlan(
+                id="dependencies",
+                title="Key Dependencies & Libraries",
+                type="architecture",
+                description="Major libraries used and their purposes",
+                priority=7,
+                required=False,
+            ))
+
+        # Component/Library Documentation (for frontend)
+        if detected_features.get("frontend"):
+            sections.append(SectionPlan(
+                id="components",
+                title="Component Library",
+                type="components",
+                description="Reusable components, props, usage patterns",
+                priority=7,
+                required=False,
+            ))
+
+        # API/Integration section (if applicable)
+        if detected_features.get("api") or detected_features.get("database"):
+            sections.append(SectionPlan(
+                id="api",
+                title="API & Data Layer",
+                type="api",
+                description="API endpoints, data models, integration patterns",
+                priority=6,
+                required=False,
+            ))
+
+        # Deployment section (only if actually configured)
+        if detected_features.get("deployment"):
+            sections.append(SectionPlan(
+                id="deployment",
+                title="Deployment Configuration",
+                type="deployment",
+                description="Deployment setup, environment configuration",
+                priority=5,
+                required=False,
+            ))
+
+        return sections
+
+    def _create_dev_sections(
+        self,
+        detected_features: Dict[str, bool],
+        primary_framework: Optional[str],
+        languages: List[str],
+        dependencies: Dict,
+    ) -> List[SectionPlan]:
+        """
+        Create sections for DEV persona (functionality-focused).
+
+        Focus: What the product does, features, usage
+        Audience: External developers using the product/library
+        """
+        sections = []
+
+        # Product Overview
+        sections.append(SectionPlan(
+            id="overview",
+            title="Product Overview",
+            type="summary",
+            description="What this product does, key features, use cases",
+            priority=10,
+            required=True,
+        ))
+
+        # Features & Capabilities
+        sections.append(SectionPlan(
+            id="features",
+            title="Features & Capabilities",
+            type="features",
+            description="Main features, functionality, what users can do",
+            priority=9,
+            required=True,
+        ))
+
+        # Quick Start Guide
+        sections.append(SectionPlan(
+            id="quickstart",
+            title="Quick Start Guide",
+            type="workflow",
+            description="Get started quickly, basic usage examples",
+            priority=8,
+            required=True,
+        ))
+
+        # Usage Documentation
+        if detected_features.get("frontend"):
+            sections.append(SectionPlan(
+                id="usage",
+                title="Usage & Integration",
+                type="api",
+                description="How to integrate, configure, and use",
+                priority=7,
+                required=True,
+            ))
+        else:
+            sections.append(SectionPlan(
+                id="api",
+                title="API Reference",
+                type="api",
+                description="API methods, parameters, examples",
+                priority=7,
+                required=True,
+            ))
+
+        # Configuration (if applicable)
+        if detected_features.get("deployment") or dependencies:
+            sections.append(SectionPlan(
+                id="configuration",
+                title="Configuration Options",
+                type="architecture",
+                description="Configuration options, environment variables, customization",
+                priority=6,
+                required=False,
+            ))
+
+        # Examples (always useful for dev docs)
+        sections.append(SectionPlan(
+            id="examples",
+            title="Examples & Tutorials",
+            type="workflow",
+            description="Common use cases, code examples, best practices",
+            priority=5,
+            required=False,
+        ))
+
+        return sections
 
 
 # Singleton instance for reuse
