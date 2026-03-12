@@ -188,6 +188,12 @@ IGNORED_DIRECTORIES = {
 
 
 def update_summary_navigation(docs_dir: Path) -> None:
+    """
+    Update SUMMARY.md with navigation links to all documentation sections.
+
+    DYNAMIC: Discovers all section folders instead of hardcoding names.
+    This supports meaningful folder names like 'component-hierarchy', 'state-management'.
+    """
     print(f"📚 Updating SUMMARY.md navigation for: {docs_dir}")
     summary = ["# Summary", ""]
 
@@ -197,67 +203,39 @@ def update_summary_navigation(docs_dir: Path) -> None:
         print("   Added: Project Overview link (README.md)")
 
     # ============================================================
-    # STANDARDIZED NAVIGATION STRUCTURE
-    # All sections follow: <section>/current.md pattern
+    # DYNAMIC SECTION DISCOVERY
+    # Finds ALL folders with current.md and adds them to navigation
     # ============================================================
 
-    # Architecture section (with version history)
-    arch_dir = docs_dir / "architecture"
-    if arch_dir.exists() and (arch_dir / "current.md").exists():
-        summary.append("\n## Architecture")
-        summary.append("* [Current Architecture](architecture/current.md)")
-        print("   Added: Architecture section")
+    # Folders to skip in navigation
+    skip_folders = {"changes", ".git", "__pycache__"}
+
+    # Discover all section folders dynamically
+    section_folders = []
+    for item in sorted(docs_dir.iterdir()):
+        if item.is_dir() and item.name not in skip_folders:
+            if (item / "current.md").exists():
+                section_folders.append(item.name)
+
+    # Add each discovered section
+    for section_name in section_folders:
+        section_dir = docs_dir / section_name
+
+        # Convert folder name to readable title
+        # e.g., "component-hierarchy" -> "Component Hierarchy"
+        readable_title = section_name.replace(
+            "-", " ").replace("_", " ").title()
+
+        summary.append(f"\n## {readable_title}")
+        summary.append(f"* [Current](/{section_name}/current.md)")
+        print(f"   Added: {readable_title} section")
+
         # Add version history (newest first, max 5)
-        for path in sorted(arch_dir.glob("v*-architecture.md"), reverse=True)[:5]:
+        version_files = sorted(section_dir.glob(
+            f"v*-{section_name}.md"), reverse=True)[:5]
+        for path in version_files:
             summary.append(
-                f"* [{path.stem.upper()}](architecture/{path.name})")
-
-    # Workflow section (with version history)
-    workflow_dir = docs_dir / "workflow"
-    if workflow_dir.exists() and (workflow_dir / "current.md").exists():
-        summary.append("\n## Workflow")
-        summary.append("* [Current Workflow](workflow/current.md)")
-        print("   Added: Workflow section")
-        # Add version history (newest first, max 5)
-        for path in sorted(workflow_dir.glob("v*-workflow.md"), reverse=True)[:5]:
-            summary.append(f"* [{path.stem.upper()}](workflow/{path.name})")
-
-    # Components section (with version history)
-    components_dir = docs_dir / "components"
-    if components_dir.exists() and (components_dir / "current.md").exists():
-        summary.append("\n## Components")
-        summary.append("* [Current Components](components/current.md)")
-        print("   Added: Components section")
-        for path in sorted(components_dir.glob("v*-components.md"), reverse=True)[:5]:
-            summary.append(f"* [{path.stem.upper()}](components/{path.name})")
-
-    # Dependencies section (with version history)
-    dependencies_dir = docs_dir / "dependencies"
-    if dependencies_dir.exists() and (dependencies_dir / "current.md").exists():
-        summary.append("\n## Dependencies")
-        summary.append("* [Current Dependencies](dependencies/current.md)")
-        print("   Added: Dependencies section")
-        for path in sorted(dependencies_dir.glob("v*-dependencies.md"), reverse=True)[:5]:
-            summary.append(
-                f"* [{path.stem.upper()}](dependencies/{path.name})")
-
-    # API section (with version history)
-    api_dir = docs_dir / "api"
-    if api_dir.exists() and (api_dir / "current.md").exists():
-        summary.append("\n## API")
-        summary.append("* [Current API](api/current.md)")
-        print("   Added: API section")
-        for path in sorted(api_dir.glob("v*-api.md"), reverse=True)[:5]:
-            summary.append(f"* [{path.stem.upper()}](api/{path.name})")
-
-    # Deployment section (with version history)
-    deploy_dir = docs_dir / "deployment"
-    if deploy_dir.exists() and (deploy_dir / "current.md").exists():
-        summary.append("\n## Deployment")
-        summary.append("* [Current Deployment](deployment/current.md)")
-        print("   Added: Deployment section")
-        for path in sorted(deploy_dir.glob("v*-deployment.md"), reverse=True)[:5]:
-            summary.append(f"* [{path.stem.upper()}](deployment/{path.name})")
+                f"* [{path.stem.upper()}]({section_name}/{path.name})")
 
     # Add changes (show only last 10 changes to avoid clutter)
     changes_dir = docs_dir / "changes"
@@ -313,6 +291,14 @@ class ComprehensiveDocBuilder:
         print("================================================================================")
 
         analysis = analyze_full_codebase(self.repository_root)
+        
+        # Override project_name with actual repo name (not temp directory)
+        # Priority: package_name from package.json > repo_name > directory name
+        if self.repo_name and not self.repo_name.startswith("docai"):
+            clean_name = self.repo_name.split("/")[-1] if "/" in self.repo_name else self.repo_name
+            if not analysis.get("package_name"):
+                analysis["project_name"] = clean_name
+        
         print(f"📊 Codebase analysis complete:")
         print(f"   Languages: {analysis.get('languages', [])}")
         print(f"   Frameworks: {analysis.get('frameworks', [])}")
@@ -423,73 +409,51 @@ class ComprehensiveDocBuilder:
         # Debug: Log all keys in docs
         print(f"📝 Generated sections: {list(docs.keys())}")
 
-        # Map section types to file locations
+        # Write README/summary (always in root)
         summary_content = docs.get("overview") or docs.get("summary", "")
-        architecture_content = docs.get("architecture", "")
-        workflow_content = docs.get("development") or docs.get("workflow", "")
-        api_content = docs.get("api") or docs.get("usage", "")
-        components_content = docs.get("components", "")
-        dependencies_content = docs.get("dependencies", "")
-        deployment_content = docs.get("deployment", "")
+        if summary_content:
+            (docs_dir / "SUMMARY.md").write_text(summary_content)
+            print(f"   Summary: {len(summary_content)} chars")
 
-        # Log content lengths for debugging
-        print(f"   Summary: {len(summary_content)} chars")
-        print(f"   Architecture: {len(architecture_content)} chars")
-        print(f"   Workflow: {len(workflow_content)} chars")
-        print(f"   Components: {len(components_content)} chars")
-        print(f"   Dependencies: {len(dependencies_content)} chars")
-        print(f"   Deployment: {len(deployment_content)} chars")
+        # Write each section from the plan using meaningful folder names
+        # The plan now has meaningful section IDs (slugified titles)
+        written_sections = []
+        for section in plan.sections:
+            section_id = section.id  # e.g., "component-hierarchy" or "state-management"
+            section_content = docs.get(section_id, "")
 
-        # SUMMARY (always required)
-        (docs_dir / "SUMMARY.md").write_text(summary_content)
+            # Try alternate keys if the meaningful key doesn't match
+            if not section_content:
+                # Try original section type as fallback
+                section_content = docs.get(section.type, "")
 
-        # ARCHITECTURE
-        if architecture_content:
-            arch_dir = docs_dir / "architecture"
-            arch_dir.mkdir(exist_ok=True)
-            (arch_dir / "current.md").write_text(architecture_content)
-            version = get_current_version(docs_dir, "architecture")
-            (arch_dir /
-             f"v{version}-architecture.md").write_text(architecture_content)
-            print(
-                f"   ✅ Written: architecture/current.md ({len(architecture_content)} chars)")
+            if section_content:
+                section_dir = docs_dir / section_id
+                section_dir.mkdir(exist_ok=True)
+                (section_dir / "current.md").write_text(section_content)
+                version = get_current_version(docs_dir, section_id)
+                (section_dir /
+                 f"v{version}-{section_id}.md").write_text(section_content)
+                print(
+                    f"   ✅ Written: {section_id}/current.md ({len(section_content)} chars)")
+                written_sections.append(section_id)
 
-        # WORKFLOW/DEVELOPMENT
-        if workflow_content:
-            workflow_dir = docs_dir / "workflow"
-            workflow_dir.mkdir(exist_ok=True)
-            (workflow_dir / "current.md").write_text(workflow_content)
-            version = get_current_version(docs_dir, "workflow")
-            (workflow_dir /
-             f"v{version}-workflow.md").write_text(workflow_content)
-            print(
-                f"   ✅ Written: workflow/current.md ({len(workflow_content)} chars)")
-
-        # API/USAGE
-        if api_content:
-            (docs_dir / "api.md").write_text(api_content)
-
-        # COMPONENTS (for frontend projects)
-        if components_content:
-            components_dir = docs_dir / "components"
-            components_dir.mkdir(exist_ok=True)
-            (components_dir / "README.md").write_text(components_content)
-            print(
-                f"   ✅ Written: components/README.md ({len(components_content)} chars)")
-
-        # DEPENDENCIES
-        if dependencies_content:
-            (docs_dir / "dependencies.md").write_text(dependencies_content)
-            print(
-                f"   ✅ Written: dependencies.md ({len(dependencies_content)} chars)")
-
-        # DEPLOYMENT
-        if deployment_content:
-            deploy_dir = docs_dir / "deployment"
-            deploy_dir.mkdir(exist_ok=True)
-            (deploy_dir / "README.md").write_text(deployment_content)
-            print(
-                f"   ✅ Written: deployment/README.md ({len(deployment_content)} chars)")
+        # Fallback: Write any remaining sections not in the plan (backward compatibility)
+        fallback_sections = ["architecture", "workflow",
+                             "api", "components", "dependencies", "deployment"]
+        for fallback_key in fallback_sections:
+            if fallback_key not in written_sections:
+                content = docs.get(fallback_key, "")
+                if content:
+                    section_dir = docs_dir / fallback_key
+                    section_dir.mkdir(exist_ok=True)
+                    (section_dir / "current.md").write_text(content)
+                    version = get_current_version(docs_dir, fallback_key)
+                    (section_dir /
+                     f"v{version}-{fallback_key}.md").write_text(content)
+                    print(
+                        f"   ✅ Written: {fallback_key}/current.md ({len(content)} chars) [fallback]")
+                    written_sections.append(fallback_key)
 
         # Update GitBook SUMMARY
         update_summary_navigation(docs_dir)
@@ -574,8 +538,448 @@ def get_current_version(docs_dir: Path, doc_type: str) -> str:
         return f"{max_major}.{max_minor + 1}"
 
 
-def analyze_full_codebase(repo_dir: Path) -> Dict[str, object]:
-    """Analyze the entire codebase structure with detailed insights (like old codebase)"""
+# ============================================================================
+# ADAPTIVE REPO STRUCTURE DETECTION
+# No hardcoded patterns - analyzes ANY repo structure intelligently
+# ============================================================================
+
+def detect_repo_structure(repo_dir: Path) -> Dict[str, Any]:
+    """
+    Adaptively detect repository structure - works with ANY folder organization.
+
+    Instead of hardcoded patterns (backend/, frontend/, apps/), this function:
+    1. Scans ALL top-level directories
+    2. Analyzes each directory's contents to determine its purpose
+    3. Scores directories based on file types, dependencies, and code patterns
+    4. Automatically detects multi-project repos regardless of folder names
+
+    Returns:
+        {
+            "type": "monorepo" | "single",
+            "subprojects": [{"name": str, "path": Path, "type": str, "tech_stack": dict}],
+            "root_config": Path | None,
+            "detected_structure": str  # Description of what was found
+        }
+    """
+    print(f"🔍 Detecting repository structure for: {repo_dir}")
+
+    result = {
+        "type": "single",
+        "subprojects": [],
+        "root_config": None,
+        "detected_structure": "",
+    }
+
+    # Directories to skip during analysis
+    skip_dirs = {
+        ".git", "node_modules", "__pycache__", ".venv", "venv", "env",
+        ".idea", ".vscode", "dist", "build", "target", "coverage",
+        ".next", ".nuxt", "out", "docs", ".cache", "tmp", "temp",
+        "vendor", "bower_components", ".gradle", ".mvn"
+    }
+
+    # Find root config file
+    for config_file in ["package.json", "pyproject.toml", "Cargo.toml", "go.mod", "pom.xml", "build.gradle"]:
+        if (repo_dir / config_file).exists():
+            result["root_config"] = repo_dir / config_file
+            break
+
+    # Scan ALL top-level directories and analyze each one
+    discovered_projects = []
+
+    for item in repo_dir.iterdir():
+        if not item.is_dir():
+            continue
+        if item.name.startswith("."):
+            continue
+        if item.name.lower() in skip_dirs:
+            continue
+
+        # Analyze this directory
+        project_info = _analyze_directory_type(item)
+
+        if project_info["is_project"]:
+            discovered_projects.append({
+                "name": item.name,
+                "path": item,
+                "type": project_info["type"],
+                "tech_stack": project_info["tech_stack"],
+                "confidence": project_info["confidence"],
+            })
+            tech_str = ", ".join(project_info["tech_stack"].get(
+                "frameworks", [])) or project_info["type"]
+            print(
+                f"   📂 Found {item.name}/ → {project_info['type']} ({tech_str})")
+
+    # Also check if root itself is a project (single project repo)
+    root_analysis = _analyze_directory_type(repo_dir)
+
+    # Determine repo structure
+    if len(discovered_projects) >= 2:
+        # Multiple subprojects = multi-project repo
+        result["type"] = "monorepo"
+        result["subprojects"] = discovered_projects
+
+        # Describe what we found
+        types = [p["type"] for p in discovered_projects]
+        has_backend = any(t in ["backend", "api", "service"] for t in types)
+        has_frontend = any(t in ["frontend", "web", "ui", "app"]
+                           for t in types)
+
+        if has_backend and has_frontend:
+            result["detected_structure"] = "fullstack"
+        else:
+            result["detected_structure"] = "multi-project"
+
+        print(
+            f"   📦 Detected: MULTI-PROJECT REPO with {len(discovered_projects)} subprojects")
+
+    elif len(discovered_projects) == 1 and root_analysis["is_project"]:
+        # One subproject + root is also a project
+        result["type"] = "monorepo"
+        result["subprojects"] = discovered_projects
+        # Also add root as implicit project if it has different tech
+        if root_analysis["type"] != discovered_projects[0]["type"]:
+            result["subprojects"].insert(0, {
+                "name": "root",
+                "path": repo_dir,
+                "type": root_analysis["type"],
+                "tech_stack": root_analysis["tech_stack"],
+                "confidence": root_analysis["confidence"],
+            })
+        result["detected_structure"] = "hybrid"
+        print(f"   📦 Detected: HYBRID REPO")
+
+    else:
+        result["type"] = "single"
+        result["detected_structure"] = "single"
+        print(f"   📦 Detected: SINGLE PROJECT")
+
+    return result
+
+
+def _analyze_directory_type(folder: Path) -> Dict[str, Any]:
+    """
+    Analyze a directory to determine what kind of project it contains.
+
+    Returns detailed analysis including:
+    - is_project: bool (is this a standalone project?)
+    - type: str (backend, frontend, library, service, tool, etc.)
+    - tech_stack: dict (languages, frameworks, databases, etc.)
+    - confidence: float (0-1 how confident we are)
+    """
+    result = {
+        "is_project": False,
+        "type": "unknown",
+        "tech_stack": {
+            "languages": [],
+            "frameworks": [],
+            "databases": [],
+            "tools": [],
+        },
+        "confidence": 0.0,
+    }
+
+    # Signals we'll collect
+    signals = {
+        "frontend": 0,
+        "backend": 0,
+        "library": 0,
+        "mobile": 0,
+        "devops": 0,
+        "data": 0,
+    }
+
+    # Check for project indicator files (any of these = likely a project)
+    project_indicators = [
+        "package.json", "pyproject.toml", "requirements.txt", "setup.py",
+        "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "Gemfile",
+        "composer.json", "mix.exs", "pubspec.yaml", "CMakeLists.txt"
+    ]
+
+    has_project_file = False
+    for indicator in project_indicators:
+        if (folder / indicator).exists():
+            has_project_file = True
+            break
+
+    if not has_project_file:
+        # Check if there are significant source files even without config
+        source_extensions = {".py", ".ts", ".tsx",
+                             ".js", ".jsx", ".go", ".rs", ".java", ".rb"}
+        source_count = sum(1 for _ in folder.rglob(
+            "*") if _.suffix in source_extensions)
+        if source_count < 3:
+            return result  # Not enough to be a project
+
+    # Analyze package.json for JS/TS projects
+    pkg_json = folder / "package.json"
+    if pkg_json.exists():
+        try:
+            import json
+            with open(pkg_json) as f:
+                pkg_data = json.load(f)
+
+            deps = {**pkg_data.get("dependencies", {}),
+                    **pkg_data.get("devDependencies", {})}
+            dep_names = set(deps.keys())
+
+            # Frontend frameworks
+            frontend_frameworks = {
+                "react": "React", "react-dom": "React", "@types/react": "React",
+                "vue": "Vue", "nuxt": "Nuxt", "@vue/cli": "Vue",
+                "angular": "Angular", "@angular/core": "Angular",
+                "svelte": "Svelte", "@sveltejs/kit": "SvelteKit",
+                "next": "Next.js", "gatsby": "Gatsby",
+                "solid-js": "Solid", "preact": "Preact",
+            }
+
+            # Backend frameworks
+            backend_frameworks = {
+                "express": "Express", "fastify": "Fastify", "koa": "Koa",
+                "@nestjs/core": "NestJS", "nest": "NestJS", "hapi": "Hapi",
+                "restify": "Restify", "strapi": "Strapi", "adonis": "AdonisJS",
+            }
+
+            # Mobile frameworks
+            mobile_frameworks = {
+                "react-native": "React Native", "expo": "Expo",
+                "@capacitor/core": "Capacitor", "cordova": "Cordova",
+            }
+
+            for dep, name in frontend_frameworks.items():
+                if dep in dep_names:
+                    signals["frontend"] += 5
+                    result["tech_stack"]["frameworks"].append(name)
+
+            for dep, name in backend_frameworks.items():
+                if dep in dep_names:
+                    signals["backend"] += 5
+                    result["tech_stack"]["frameworks"].append(name)
+
+            for dep, name in mobile_frameworks.items():
+                if dep in dep_names:
+                    signals["mobile"] += 5
+                    result["tech_stack"]["frameworks"].append(name)
+
+            # Check for TypeScript
+            if "typescript" in dep_names or (folder / "tsconfig.json").exists():
+                result["tech_stack"]["languages"].append("TypeScript")
+            else:
+                result["tech_stack"]["languages"].append("JavaScript")
+
+        except Exception:
+            pass
+
+    # Analyze Python projects
+    pyproject = folder / "pyproject.toml"
+    requirements = folder / "requirements.txt"
+
+    if pyproject.exists() or requirements.exists():
+        result["tech_stack"]["languages"].append("Python")
+
+        # Read dependencies
+        py_deps = set()
+        if requirements.exists():
+            try:
+                content = requirements.read_text()
+                for line in content.split("\n"):
+                    line = line.strip().split("==")[0].split(">=")[
+                        0].split("<=")[0]
+                    if line and not line.startswith("#"):
+                        py_deps.add(line.lower())
+            except:
+                pass
+
+        if pyproject.exists():
+            try:
+                content = pyproject.read_text()
+                # Simple extraction of dependencies
+                if "fastapi" in content.lower():
+                    py_deps.add("fastapi")
+                if "django" in content.lower():
+                    py_deps.add("django")
+                if "flask" in content.lower():
+                    py_deps.add("flask")
+            except:
+                pass
+
+        # Python frameworks
+        python_backend = {
+            "fastapi": "FastAPI", "django": "Django", "flask": "Flask",
+            "starlette": "Starlette", "tornado": "Tornado", "aiohttp": "aiohttp",
+            "sanic": "Sanic", "falcon": "Falcon",
+        }
+        python_data = {
+            "pandas": "Pandas", "numpy": "NumPy", "scipy": "SciPy",
+            "tensorflow": "TensorFlow", "torch": "PyTorch", "keras": "Keras",
+            "scikit-learn": "scikit-learn",
+        }
+
+        for dep, name in python_backend.items():
+            if dep in py_deps:
+                signals["backend"] += 5
+                result["tech_stack"]["frameworks"].append(name)
+
+        for dep, name in python_data.items():
+            if dep in py_deps:
+                signals["data"] += 5
+                result["tech_stack"]["frameworks"].append(name)
+
+    # Analyze Go projects
+    if (folder / "go.mod").exists():
+        result["tech_stack"]["languages"].append("Go")
+        signals["backend"] += 3
+
+        try:
+            content = (folder / "go.mod").read_text()
+            if "gin-gonic" in content:
+                result["tech_stack"]["frameworks"].append("Gin")
+                signals["backend"] += 3
+            if "echo" in content:
+                result["tech_stack"]["frameworks"].append("Echo")
+                signals["backend"] += 3
+            if "fiber" in content:
+                result["tech_stack"]["frameworks"].append("Fiber")
+                signals["backend"] += 3
+        except:
+            pass
+
+    # Analyze Rust projects
+    if (folder / "Cargo.toml").exists():
+        result["tech_stack"]["languages"].append("Rust")
+        signals["backend"] += 2
+
+        try:
+            content = (folder / "Cargo.toml").read_text()
+            if "actix" in content:
+                result["tech_stack"]["frameworks"].append("Actix")
+                signals["backend"] += 3
+            if "rocket" in content:
+                result["tech_stack"]["frameworks"].append("Rocket")
+                signals["backend"] += 3
+            if "axum" in content:
+                result["tech_stack"]["frameworks"].append("Axum")
+                signals["backend"] += 3
+        except:
+            pass
+
+    # Directory-based signals (adaptive)
+    dir_signals = {
+        # Frontend signals
+        "components": ("frontend", 3),
+        "pages": ("frontend", 3),
+        "views": ("frontend", 2),
+        "styles": ("frontend", 2),
+        "css": ("frontend", 2),
+        "assets": ("frontend", 1),
+        "public": ("frontend", 1),
+        # Backend signals
+        "routes": ("backend", 3),
+        "controllers": ("backend", 3),
+        "handlers": ("backend", 3),
+        "api": ("backend", 2),
+        "services": ("backend", 2),
+        "models": ("backend", 2),
+        "middleware": ("backend", 2),
+        "migrations": ("backend", 2),
+        # DevOps signals
+        "terraform": ("devops", 5),
+        "k8s": ("devops", 5),
+        "kubernetes": ("devops", 5),
+        "helm": ("devops", 4),
+        "ansible": ("devops", 4),
+        "docker": ("devops", 2),
+        # Data signals
+        "notebooks": ("data", 4),
+        "data": ("data", 2),
+        "models": ("data", 1),  # Can also be backend
+    }
+
+    for subdir in folder.iterdir():
+        if subdir.is_dir() and subdir.name.lower() in dir_signals:
+            category, score = dir_signals[subdir.name.lower()]
+            signals[category] += score
+
+    # File-based signals
+    file_signals = {
+        "Dockerfile": ("devops", 2),
+        "docker-compose.yml": ("devops", 3),
+        "docker-compose.yaml": ("devops", 3),
+        ".dockerignore": ("devops", 1),
+        "Makefile": ("backend", 1),
+        "main.py": ("backend", 2),
+        "app.py": ("backend", 2),
+        "server.py": ("backend", 3),
+        "server.ts": ("backend", 3),
+        "server.js": ("backend", 3),
+        "index.html": ("frontend", 2),
+        "App.tsx": ("frontend", 3),
+        "App.jsx": ("frontend", 3),
+        "App.vue": ("frontend", 3),
+    }
+
+    for filename, (category, score) in file_signals.items():
+        if (folder / filename).exists():
+            signals[category] += score
+
+    # Determine the dominant type
+    max_signal = max(signals.values())
+    if max_signal < 3:
+        return result  # Not confident enough
+
+    result["is_project"] = True
+    result["confidence"] = min(1.0, max_signal / 15)
+
+    # Map signals to types
+    type_mapping = {
+        "frontend": ["frontend", "web", "ui"],
+        "backend": ["backend", "api", "service"],
+        "mobile": ["mobile", "app"],
+        "devops": ["devops", "infrastructure"],
+        "data": ["data", "ml", "analytics"],
+        "library": ["library", "package"],
+    }
+
+    dominant_category = max(signals, key=signals.get)
+    result["type"] = type_mapping.get(dominant_category, ["unknown"])[0]
+
+    # Deduplicate frameworks
+    result["tech_stack"]["frameworks"] = list(
+        set(result["tech_stack"]["frameworks"]))
+    result["tech_stack"]["languages"] = list(
+        set(result["tech_stack"]["languages"]))
+
+    return result
+
+
+def analyze_subproject(subproject_path: Path, subproject_name: str, subproject_type: str) -> Dict[str, object]:
+    """
+    Analyze a single subproject within a monorepo.
+
+    Returns analysis specific to that subproject.
+    """
+    print(f"   📂 Analyzing subproject: {subproject_name} ({subproject_type})")
+
+    # Run full analysis on the subproject directory
+    analysis = {
+        "subproject_name": subproject_name,
+        "subproject_type": subproject_type,
+        "subproject_path": str(subproject_path),
+    }
+
+    # Merge with full codebase analysis of that directory
+    sub_analysis = _analyze_single_project(subproject_path)
+    analysis.update(sub_analysis)
+
+    return analysis
+
+
+def _analyze_single_project(repo_dir: Path) -> Dict[str, object]:
+    """
+    Analyze a single project directory (used for both root and subprojects).
+    This is the core analysis logic extracted for reuse.
+    """
     analysis: Dict[str, object] = {
         "project_name": Path(repo_dir).name,
         "file_count": 0,
@@ -587,6 +991,7 @@ def analyze_full_codebase(repo_dir: Path) -> Dict[str, object]:
         "database_tech": [],
         "deployment_tech": [],
     }
+
     try:
         analysis["file_count"] = int(
             subprocess.run("find . -type f | wc -l", shell=True,
@@ -604,6 +1009,7 @@ def analyze_full_codebase(repo_dir: Path) -> Dict[str, object]:
             )
             if count:
                 analysis["languages"].append(ext[1:])
+
         dirs = subprocess.run(
             "find . -maxdepth 2 -type d | head -20",
             shell=True,
@@ -613,26 +1019,87 @@ def analyze_full_codebase(repo_dir: Path) -> Dict[str, object]:
         ).stdout.strip()
         analysis["main_directories"] = dirs.split("\n")
 
-        # Analyze Python dependencies and imports (like old codebase)
+        # Analyze Python dependencies and imports
         if "py" in analysis["languages"]:
             _analyze_python_dependencies(repo_dir, analysis)
 
-        # Analyze JavaScript/TypeScript dependencies from package.json
+        # Analyze JavaScript/TypeScript dependencies
         if "js" in analysis["languages"] or "ts" in analysis["languages"]:
-            print("🔍 Analyzing JS/TS project...")
             _analyze_js_dependencies(repo_dir, analysis)
-            # Analyze source files for JS/TS projects
-            print("🔍 Analyzing source files...")
             _analyze_js_source_files(repo_dir, analysis)
-            print(
-                f"🔍 Source file analysis complete: {analysis.get('total_source_files', 0)} files found")
 
-        # Detect technologies (like old codebase)
+        # Detect technologies
         _detect_technologies(repo_dir, analysis)
 
     except Exception as exc:
-        logger.warning("Codebase scan failed: %s", exc)
+        logger.warning("Single project scan failed: %s", exc)
+
     return analysis
+
+
+def analyze_full_codebase(repo_dir: Path) -> Dict[str, object]:
+    """
+    Analyze the entire codebase structure with detailed insights.
+
+    Supports both single projects and monorepos:
+    - For single projects: Standard analysis
+    - For monorepos: Analyzes each subproject and merges results
+    """
+    print(f"📊 Starting codebase analysis for: {repo_dir}")
+
+    # Detect repo structure first
+    repo_structure = detect_repo_structure(repo_dir)
+
+    if repo_structure["type"] == "monorepo" and repo_structure["subprojects"]:
+        # MONOREPO: Analyze each subproject
+        print(
+            f"   📦 Monorepo detected with {len(repo_structure['subprojects'])} subprojects")
+
+        # Start with root-level analysis
+        analysis = _analyze_single_project(repo_dir)
+        analysis["repo_structure"] = "monorepo"
+        analysis["subprojects"] = {}
+
+        # Analyze each subproject
+        for subproject in repo_structure["subprojects"]:
+            sub_name = subproject["name"]
+            sub_path = subproject["path"]
+            sub_type = subproject["type"]
+
+            sub_analysis = analyze_subproject(sub_path, sub_name, sub_type)
+            analysis["subprojects"][sub_name] = sub_analysis
+
+            # Merge key data into root analysis
+            # Languages
+            for lang in sub_analysis.get("languages", []):
+                if lang not in analysis["languages"]:
+                    analysis["languages"].append(lang)
+
+            # Frameworks
+            for fw in sub_analysis.get("frameworks", []):
+                if fw not in analysis["frameworks"]:
+                    analysis["frameworks"].append(fw)
+
+            # Dependencies (prefix with subproject name)
+            for dep, version in sub_analysis.get("dependencies", {}).items():
+                analysis["dependencies"][f"{sub_name}/{dep}"] = version
+
+            # Source files (prefix with subproject name)
+            for sf in sub_analysis.get("source_files", []):
+                prefixed_file = f"{sub_name}/{sf}"
+                if "source_files" not in analysis:
+                    analysis["source_files"] = []
+                analysis["source_files"].append(prefixed_file)
+
+        print(
+            f"   ✅ Monorepo analysis complete: {len(analysis['subprojects'])} subprojects")
+        return analysis
+    else:
+        # SINGLE PROJECT: Standard analysis
+        print(f"   📦 Single project detected")
+        analysis = _analyze_single_project(repo_dir)
+        analysis["repo_structure"] = "single"
+        return analysis
 
 
 def _analyze_js_source_files(repo_dir: Path, analysis: Dict[str, object]) -> None:

@@ -1,26 +1,30 @@
 """
-Documentation Planner - Phase 1/3: Metadata-only planning layer with semantic signals
+Documentation Planner - Archetype-Aware Planning Layer
 
 This module introduces a planning layer that determines which documentation sections
-should exist for a given repository, WITHOUT changing the generation mechanism.
+should exist for a given repository, using the Staff Engineer archetype system.
 
-Current Phase 1/3 Behavior:
-- Analyzes repository structure
-- Accepts optional SemanticSnapshot from Phase 3 extractors
-- Produces structured plan with section metadata
-- Plan is used to build prompts but NOT for per-section generation
-- Single LLM call still generates all content
-- Output format remains unchanged (4 markdown sections)
-
-Future Phases:
-- Phase 4: Use plan for section-level generation
-- Phase 5: User customization of plan
+Staff Engineer Approach:
+- Uses archetype detection (Backend API, Frontend UI, Monorepo, DevOps)
+- Generates meaningful section titles (NOT generic "Overview", "Architecture")
+- Adapts sections based on persona (Internal vs Public)
+- Passes the "So What?" test - every section helps debugging at 2 AM
 """
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Set
 from pathlib import Path
 import re
+
+# Import archetype system
+from app.services.documentation.archetype_detector import (
+    detect_archetype,
+    get_archetype_sections,
+    get_evidence_based_sections,
+    slugify_section_title,
+    Archetype,
+    ArchetypeSection,
+)
 
 
 @dataclass
@@ -448,6 +452,21 @@ class DocumentationPlanner:
         frameworks = repo_analysis.get("frameworks", [])
         languages = repo_analysis.get("languages", [])
 
+        # Monorepo detection (priority check)
+        if repo_analysis.get("repo_structure") == "monorepo":
+            subprojects = repo_analysis.get("subprojects", {})
+            has_frontend = any(sp.get("subproject_type") ==
+                               "frontend" for sp in subprojects.values())
+            has_backend = any(sp.get("subproject_type") ==
+                              "backend" for sp in subprojects.values())
+            if has_frontend and has_backend:
+                return "fullstack-monorepo"
+            elif has_frontend:
+                return "frontend-monorepo"
+            elif has_backend:
+                return "backend-monorepo"
+            return "monorepo"
+
         # Web API detection
         if features.get("api") and ("fastapi" in frameworks or "express" in frameworks or "django" in frameworks):
             return "web-api"
@@ -499,21 +518,62 @@ class DocumentationPlanner:
         persona: str = "internal",
     ) -> DocumentationPlan:
         """
-        Create a truly dynamic documentation plan based on persona and actual codebase.
+        Create a Staff Engineer quality documentation plan using archetype detection.
+
+        Uses the archetype system to generate meaningful section titles that
+        pass the "So What?" test - every section helps an engineer debugging at 2 AM.
+
+        IMPORTANT: Uses evidence-based filtering - does NOT generate sections
+        for features that don't exist (e.g., no deployment section without Dockerfile).
 
         Args:
             repo_analysis: Repository analysis data
             semantic_snapshot: Optional semantic extraction results
-            persona: 'internal' (code-focused) or 'dev' (functionality-focused)
+            persona: 'internal' (Surgeon's Manual) or 'dev' (Owner's Manual)
 
         Returns:
-            DocumentationPlan with dynamically determined sections
+            DocumentationPlan with archetype-specific meaningful sections
         """
         try:
             if not repo_analysis or not isinstance(repo_analysis, dict):
                 return self._fallback_plan
 
+            # Detect archetype using Staff Engineer system
+            archetype = detect_archetype(repo_analysis)
+            print(f"🎭 Planner detected archetype: {archetype.value}")
+
+            # Get archetype-specific sections WITH evidence filtering
+            # This ensures we ONLY generate sections for features that exist
+            archetype_sections = get_evidence_based_sections(
+                archetype, persona, repo_analysis)
+
+            if not archetype_sections:
+                # Fallback to unfiltered sections if all were filtered out
+                print(
+                    "⚠️ All sections filtered out by evidence check, using unfiltered sections")
+                archetype_sections = get_archetype_sections(archetype, persona)
+
+            print(
+                f"📋 Planning {len(archetype_sections)} evidence-based sections")
+
+            # Convert ArchetypeSections to SectionPlans
             sections = []
+            for arch_section in archetype_sections:
+                # Use slugified section title as folder name
+                folder_name = slugify_section_title(arch_section.title)
+                section = SectionPlan(
+                    id=folder_name,  # Use meaningful folder name, NOT generic
+                    title=arch_section.title,
+                    type=self._map_archetype_section_to_type(arch_section),
+                    dependencies=arch_section.subsections,
+                    priority=10 if arch_section.required else 7,
+                    required=arch_section.required,
+                    description=arch_section.description,
+                )
+                sections.append(section)
+                print(f"   - {folder_name}: {arch_section.title}")
+
+            # Also run legacy feature detection for additional signals
             detected_features = self._detect_features(repo_analysis)
 
             # Enhance with semantic signals
@@ -521,32 +581,9 @@ class DocumentationPlanner:
                 self._enhance_with_semantic_signals(
                     detected_features, semantic_snapshot)
 
-            # Get actual repository info
-            languages = repo_analysis.get("languages", [])
-            frameworks = repo_analysis.get("frameworks", [])
-            dependencies = repo_analysis.get("dependencies", {})
-            primary_framework = semantic_snapshot.get(
-                "primary_framework") if semantic_snapshot else None
-
-            # === DYNAMIC SECTION GENERATION BASED ON PERSONA ===
-
-            if persona == "internal":
-                # INTERNAL DOCS: Code-focused for company developers
-                sections = self._create_internal_sections(
-                    detected_features, primary_framework, languages, dependencies
-                )
-            else:
-                # DEV DOCS: Functionality-focused for external developers
-                sections = self._create_dev_sections(
-                    detected_features, primary_framework, languages, dependencies
-                )
-
-            # Sort by priority
-            sections.sort(key=lambda s: s.priority, reverse=True)
-
-            # Detect repo type
-            repo_type = self._detect_repo_type(
-                repo_analysis, detected_features)
+            # Detect repo type based on archetype
+            repo_type = self._archetype_to_repo_type(
+                archetype, repo_analysis, detected_features)
             complexity = self._estimate_complexity(repo_analysis)
 
             return DocumentationPlan(
@@ -558,7 +595,62 @@ class DocumentationPlanner:
 
         except Exception as e:
             print(f"⚠️ Dynamic planner error, using fallback: {e}")
+            import traceback
+            traceback.print_exc()
             return self._fallback_plan
+
+    def _map_archetype_section_to_type(self, arch_section: ArchetypeSection) -> str:
+        """Map archetype section ID to standard section type."""
+        type_mapping = {
+            # Backend API
+            "request_lifecycle": "architecture",
+            "data_persistence": "architecture",
+            "security_perimeter": "architecture",
+            "service_integration": "api",
+            "error_taxonomy": "workflow",
+            # Frontend UI
+            "component_hierarchy": "architecture",
+            "state_management": "architecture",
+            "user_journey": "workflow",
+            "api_integration": "api",
+            "build_pipeline": "deployment",
+            # Monorepo
+            "workspace_topology": "architecture",
+            "dependency_graph": "architecture",
+            "build_orchestration": "deployment",
+            "cross_package_patterns": "api",
+            # DevOps
+            "deployment_topology": "deployment",
+            "secret_management": "deployment",
+            "observability": "deployment",
+            "disaster_recovery": "deployment",
+            # Fullstack
+            "system_architecture": "architecture",
+            "backend_service": "architecture",
+            "frontend_components": "components",
+            "development_workflow": "workflow",
+            # Public sections
+            "quickstart": "summary",
+            "api_reference": "api",
+            "integration_patterns": "api",
+            "component_usage": "components",
+            "configuration": "deployment",
+            "package_guide": "components",
+        }
+        return type_mapping.get(arch_section.id, "custom")
+
+    def _archetype_to_repo_type(self, archetype: Archetype, repo_analysis: Dict, detected_features: Dict[str, bool]) -> str:
+        """Convert archetype to repo_type string."""
+        archetype_mapping = {
+            Archetype.BACKEND_API: "web-api",
+            Archetype.FRONTEND_UI: "frontend-app",
+            Archetype.MONOREPO: "fullstack-monorepo" if detected_features.get("frontend") else "monorepo",
+            Archetype.DEVOPS_INFRA: "devops-infra",
+            Archetype.FULLSTACK: "fullstack-monorepo",
+            Archetype.LIBRARY: "library",
+            Archetype.UNKNOWN: "generic",
+        }
+        return archetype_mapping.get(archetype, "generic")
 
     def _create_internal_sections(
         self,
@@ -655,6 +747,100 @@ class DocumentationPlanner:
                 title="Deployment Configuration",
                 type="deployment",
                 description="Deployment setup, environment configuration",
+                priority=5,
+                required=False,
+            ))
+
+        return sections
+
+    def _create_monorepo_sections(
+        self,
+        detected_features: Dict[str, bool],
+        subprojects: Dict[str, Any],
+        persona: str,
+    ) -> List[SectionPlan]:
+        """
+        Create sections for MONOREPO projects (backend + frontend).
+
+        Focus: System-wide architecture, subproject details, integration
+        """
+        sections = []
+
+        # Determine subproject types
+        has_backend = any(sp.get("subproject_type") ==
+                          "backend" for sp in subprojects.values())
+        has_frontend = any(sp.get("subproject_type") ==
+                           "frontend" for sp in subprojects.values())
+
+        # Always start with project overview
+        sections.append(SectionPlan(
+            id="overview",
+            title="Project Overview",
+            type="summary",
+            description="Monorepo structure, subprojects, and overall purpose",
+            priority=10,
+            required=True,
+        ))
+
+        # System Architecture (showing how subprojects connect)
+        sections.append(SectionPlan(
+            id="architecture",
+            title="System Architecture",
+            type="architecture",
+            description="Overall system design, subproject architecture, communication patterns between services",
+            priority=9,
+            required=True,
+        ))
+
+        # Development Workflow
+        sections.append(SectionPlan(
+            id="development",
+            title="Development Setup & Workflow",
+            type="workflow",
+            description="Setup instructions for all subprojects, local development, testing across services",
+            priority=8,
+            required=True,
+        ))
+
+        # Backend-specific section (if backend exists)
+        if has_backend:
+            sections.append(SectionPlan(
+                id="api",
+                title="Backend API & Services",
+                type="api",
+                description="API endpoints, service layer, data models, backend-specific implementation",
+                priority=7,
+                required=True,
+            ))
+
+        # Frontend-specific section (if frontend exists)
+        if has_frontend:
+            sections.append(SectionPlan(
+                id="components",
+                title="Frontend Components",
+                type="components",
+                description="UI components, pages, state management, frontend architecture",
+                priority=7,
+                required=True,
+            ))
+
+        # Dependencies (for all subprojects)
+        sections.append(SectionPlan(
+            id="dependencies",
+            title="Dependencies & Libraries",
+            type="architecture",
+            description="Dependencies for each subproject, shared libraries",
+            priority=6,
+            required=False,
+        ))
+
+        # Deployment (if configured)
+        if detected_features.get("deployment"):
+            sections.append(SectionPlan(
+                id="deployment",
+                title="Deployment Configuration",
+                type="deployment",
+                description="Deployment setup for all services, orchestration, infrastructure",
                 priority=5,
                 required=False,
             ))

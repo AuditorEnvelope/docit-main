@@ -110,70 +110,55 @@ class ManualDocGenerator:
             self._write_text(persona_dir / "README.md", summary)
 
             # ============================================================
-            # STANDARDIZED FOLDER STRUCTURE
-            # All sections follow: <section>/current.md pattern
-            # All sections get versioning: <section>/v{X.Y}-{section}.md
-            # Versioning uses semantic versioning (v1.0 → v1.1 → v2.0)
+            # DYNAMIC SECTION WRITING FROM PLAN
+            # Writes sections using meaningful folder names from the plan
+            # e.g., "component-hierarchy/", "state-management/"
             # ============================================================
 
-            # Architecture folder (with versioning)
-            architecture_dir = persona_dir / "architecture"
-            architecture_dir.mkdir(exist_ok=True)
-            self._write_text(architecture_dir / "current.md", architecture)
-            # Use proper versioning - get next version number
-            arch_version = get_current_version(persona_dir, "architecture")
-            self._write_text(architecture_dir /
-                             f"v{arch_version}-architecture.md", architecture)
-            print(f"   📐 Architecture: v{arch_version}")
+            # Get the plan from generated_docs (contains meaningful section IDs)
+            plan_data = generated_docs.get("plan", {})
+            planned_sections = plan_data.get("sections", [])
 
-            # Workflow folder (with versioning)
-            workflow_dir = persona_dir / "workflow"
-            workflow_dir.mkdir(exist_ok=True)
-            self._write_text(workflow_dir / "current.md", workflow)
-            # Use proper versioning - get next version number
-            workflow_version = get_current_version(persona_dir, "workflow")
-            self._write_text(
-                workflow_dir / f"v{workflow_version}-workflow.md", workflow)
-            print(f"   🔄 Workflow: v{workflow_version}")
+            written_sections = []
+            for section_info in planned_sections:
+                # e.g., "component-hierarchy"
+                section_id = section_info.get("id", "")
+                section_title = section_info.get("title", "")
 
-            # API folder (with versioning)
-            if api_doc:
-                api_dir = persona_dir / "api"
-                api_dir.mkdir(exist_ok=True)
-                self._write_text(api_dir / "current.md", api_doc)
-                api_version = get_current_version(persona_dir, "api")
-                self._write_text(api_dir / f"v{api_version}-api.md", api_doc)
-                print(f"   📡 API: v{api_version}")
+                # Get content for this section
+                section_content = generated_docs.get(section_id, "")
 
-            # Components folder (with versioning)
-            if components:
-                components_dir = persona_dir / "components"
-                components_dir.mkdir(exist_ok=True)
-                self._write_text(components_dir / "current.md", components)
-                comp_version = get_current_version(persona_dir, "components")
-                self._write_text(components_dir /
-                                 f"v{comp_version}-components.md", components)
-                print(f"   🧩 Components: v{comp_version}")
+                if section_content:
+                    section_dir = persona_dir / section_id
+                    section_dir.mkdir(exist_ok=True)
+                    self._write_text(
+                        section_dir / "current.md", section_content)
+                    version = get_current_version(persona_dir, section_id)
+                    self._write_text(
+                        section_dir / f"v{version}-{section_id}.md", section_content)
+                    print(f"   📄 {section_title}: v{version}")
+                    written_sections.append(section_id)
 
-            # Dependencies folder (with versioning)
-            if dependencies:
-                dependencies_dir = persona_dir / "dependencies"
-                dependencies_dir.mkdir(exist_ok=True)
-                self._write_text(dependencies_dir / "current.md", dependencies)
-                deps_version = get_current_version(persona_dir, "dependencies")
-                self._write_text(
-                    dependencies_dir / f"v{deps_version}-dependencies.md", dependencies)
-                print(f"   📦 Dependencies: v{deps_version}")
+            # Fallback: Write any standard sections not in plan (backward compatibility)
+            fallback_mapping = [
+                ("architecture", architecture, "📐 Architecture"),
+                ("workflow", workflow, "🔄 Workflow"),
+                ("api", api_doc, "📡 API"),
+                ("components", components, "🧩 Components"),
+                ("dependencies", dependencies, "📦 Dependencies"),
+                ("deployment", deployment, "🚀 Deployment"),
+            ]
 
-            # Deployment folder (with versioning)
-            if deployment:
-                deployment_dir = persona_dir / "deployment"
-                deployment_dir.mkdir(exist_ok=True)
-                self._write_text(deployment_dir / "current.md", deployment)
-                deploy_version = get_current_version(persona_dir, "deployment")
-                self._write_text(
-                    deployment_dir / f"v{deploy_version}-deployment.md", deployment)
-                print(f"   🚀 Deployment: v{deploy_version}")
+            for folder_name, content, label in fallback_mapping:
+                if folder_name not in written_sections and content:
+                    section_dir = persona_dir / folder_name
+                    section_dir.mkdir(exist_ok=True)
+                    self._write_text(section_dir / "current.md", content)
+                    version = get_current_version(persona_dir, folder_name)
+                    self._write_text(
+                        section_dir / f"v{version}-{folder_name}.md", content)
+                    print(f"   {label}: v{version} [fallback]")
+                    written_sections.append(folder_name)
 
             # Create changes folder inside the persona folder
             (persona_dir / "changes").mkdir(exist_ok=True)
