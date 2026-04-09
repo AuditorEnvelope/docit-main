@@ -448,42 +448,38 @@ class DocumentationPlanner:
         )
 
     def _detect_repo_type(self, repo_analysis: Dict, features: Dict[str, bool]) -> str:
-        """Detect the type of repository for metadata purposes."""
+        """
+        Detect the type of repository for metadata purposes.
+        
+        TRULY ADAPTIVE: No hardcoded patterns whatsoever.
+        Simply concatenates what was actually discovered.
+        """
+        discovered_types = set()
+        
+        # Collect types from discovered subprojects
+        subprojects = repo_analysis.get("subprojects", {})
+        for sp in subprojects.values():
+            sp_type = sp.get("subproject_type") or sp.get("type", "")
+            if sp_type:
+                discovered_types.add(sp_type.lower())
+        
+        # Collect types from frameworks - use them directly
         frameworks = repo_analysis.get("frameworks", [])
-        languages = repo_analysis.get("languages", [])
-
-        # Monorepo detection (priority check)
-        if repo_analysis.get("repo_structure") == "monorepo":
-            subprojects = repo_analysis.get("subprojects", {})
-            has_frontend = any(sp.get("subproject_type") ==
-                               "frontend" for sp in subprojects.values())
-            has_backend = any(sp.get("subproject_type") ==
-                              "backend" for sp in subprojects.values())
-            if has_frontend and has_backend:
-                return "fullstack-monorepo"
-            elif has_frontend:
-                return "frontend-monorepo"
-            elif has_backend:
-                return "backend-monorepo"
-            return "monorepo"
-
-        # Web API detection
-        if features.get("api") and ("fastapi" in frameworks or "express" in frameworks or "django" in frameworks):
-            return "web-api"
-
-        # Frontend detection
-        if features.get("frontend") or "react" in frameworks or "vue" in frameworks:
-            return "frontend-app"
-
-        # CLI tool detection
-        if "cli" in str(frameworks).lower() or "command" in str(repo_analysis.get("main_directories", [])).lower():
-            return "cli-tool"
-
-        # Library detection
-        if repo_analysis.get("file_count", 0) < 20 and not features.get("deployment"):
-            return "library"
-
-        return "generic"
+        for fw in frameworks:
+            fw_lower = fw.lower()
+            discovered_types.add(fw_lower)
+        
+        # Add features as types
+        for feature, enabled in features.items():
+            if enabled:
+                discovered_types.add(feature.lower())
+        
+        # Build type string from all discovered types
+        if discovered_types:
+            return "-".join(sorted(discovered_types))
+        
+        # Pure fallback - no assumptions
+        return "project"
 
     def _estimate_complexity(self, repo_analysis: Dict) -> int:
         """Estimate repository complexity (1-10) for metadata."""

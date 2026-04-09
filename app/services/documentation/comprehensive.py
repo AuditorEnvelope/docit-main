@@ -353,20 +353,26 @@ class ComprehensiveDocBuilder:
         docs["_semantic_snapshot"] = semantic_snapshot.to_dict()
 
         # Phase 1: Store plan in returned dict for upstream inspection
-        docs["plan"] = {
-            "repo_type": plan.repo_type,
-            "complexity_score": plan.complexity_score,
-            "sections": [
-                {
-                    "id": s.id,
-                    "title": s.title,
-                    "type": s.type,
-                    "required": s.required,
-                    "priority": s.priority,
-                }
-                for s in plan.sections
-            ]
-        }
+        # NOTE: If docs already has a plan from discovery-based generation, preserve it
+        if "plan" not in docs or not docs["plan"].get("sections"):
+            docs["plan"] = {
+                "repo_type": plan.repo_type,
+                "complexity_score": plan.complexity_score,
+                "sections": [
+                    {
+                        "id": s.id,
+                        "title": s.title,
+                        "type": s.type,
+                        "required": s.required,
+                        "priority": s.priority,
+                    }
+                    for s in plan.sections
+                ]
+            }
+        else:
+            # Preserve the discovery-based plan but add metadata
+            docs["plan"]["repo_type"] = plan.repo_type
+            docs["plan"]["complexity_score"] = plan.complexity_score
 
         # Store token data in the returned dict for upstream usage tracking
         docs["token_data"] = token_data
