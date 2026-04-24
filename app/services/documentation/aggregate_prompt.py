@@ -1,570 +1,626 @@
 """
-Staff Engineer Documentation Prompt Builder
+Staff Engineer Documentation - LLM-First Approach
 
-Generates high-fidelity, high-density technical documentation that serves
-as a source of truth for engineers debugging at 2 AM.
+The LLM decides what sections a repo needs. No templates. No fixed section lists.
+The discovery scanner provides raw signals; the LLM interprets them and invents
+section titles that are specific to THIS codebase.
 
-Core Philosophy:
-- Internal Docs (Surgeon's Manual): The guts - private methods, transactions, race conditions
-- Public Docs (Owner's Manual): The surface - entry points, API contracts, quickstarts
-
-Anti-Vague Mandate:
-- BANNED: "Overview", "Components", "Architecture", "Workflow"
-- REQUIRED: Interaction, Transformation, Persistence, Error Handling
+Pipeline:
+  1. Discovery scanner → raw signals (imports, ingress, egress, state, files)
+  2. LLM STEP 1 → decides what sections THIS repo needs (planning call)
+  3. LLM STEP 2 → writes each section with full depth (generation call)
 """
 
+from dataclasses import dataclass, field
 import json
 import re
+import logging
 from pathlib import Path
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, Optional, List, Any
+
 from app.services.llm.rotator import get_rotator
 from app.services.documentation.parsing import extract_section
 from app.services.documentation.planner import DocumentationPlan
-from app.services.documentation.archetype_detector import (
-    detect_archetype,
-    get_archetype_sections,
-    get_archetype_context,
-    Archetype,
-    ArchetypeSection,
-)
-# Discovery-based system
-from app.services.documentation.discovery_integration import (
-    run_discovery_and_generate_sections,
-    build_discovery_prompt,
+from app.services.documentation.discovery_scanner import (
+    DiscoveryReport,
+    discover_repository,
 )
 
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Data class mirrors DynamicSection so the rest of the pipeline doesn't break
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DynamicSection:
+    id: str
+    title: str
+    description: str
+    primitives: List[str] = field(default_factory=list)
+    subsections: List[str] = field(default_factory=list)
+    priority: int = 50
+    persona: str = "internal"
+
+
+# ---------------------------------------------------------------------------
+# Main entry point (called from comprehensive.py)
+# ---------------------------------------------------------------------------
 
 async def generate_all_docs_in_single_call(
-    repo_dir, analysis, recent_changes, persona, plan: Optional[DocumentationPlan] = None, repo_name: str = None
-) -> Tuple[Dict[str, str], Dict[str, any]]:
+    repo_dir,
+    analysis: Dict,
+    recent_changes: Dict,
+    persona: str,
+    plan: Optional[DocumentationPlan] = None,
+    repo_name: str = None,
+) -> Tuple[Dict[str, str], Dict[str, Any]]:
     """
-    Generate Staff Engineer quality documentation in a single LLM call.
+    Generate Staff Engineer quality documentation.
 
-    This is NOT a summary generator. This is a knowledge engineering system
-    that produces documentation dense enough to debug production issues.
+    Two-call strategy:
+      Call 1 – Planning: LLM reads the raw signals and decides what sections
+                         this specific repo deserves (≤ 900 tokens out).
+      Call 2 – Writing:  LLM writes every planned section in full.
     """
-    project_name = repo_name or repo_dir.name
     repo_path = Path(repo_dir) if isinstance(repo_dir, str) else repo_dir
+    project_name = _clean_project_name(repo_name, repo_path, analysis)
 
-    # =========================================================================
-    # PHASE 1: DISCOVERY SCAN - Find the soul of the code
-    # =========================================================================
-    print("\n" + "=" * 80)
-    print("🔭 PHASE 1: DISCOVERY SCAN - Finding the soul of the code")
-    print("=" * 80)
-    
-    discovery_report, dynamic_sections, archetype = run_discovery_and_generate_sections(
-        repo_path, analysis, persona
+    print(f"\n{'='*80}")
+    print(f"📖 Starting LLM-first documentation for: {project_name}")
+    print(f"{'='*80}")
+
+    # ── Step 1: Run discovery scanner ────────────────────────────────────────
+    print("\n🔭 Running discovery scanner …")
+    try:
+        discovery_report = discover_repository(repo_path, analysis)
+    except Exception as exc:
+        logger.warning("Discovery scanner failed: %s", exc)
+        discovery_report = None
+
+    # ── Step 2: Compact evidence bundle ──────────────────────────────────────
+    evidence = _build_evidence_bundle(repo_path, analysis, discovery_report)
+
+    # ── Step 3: PLANNING CALL ────────────────────────────────────────────────
+    print("\n🧠 Planning call: asking LLM what sections THIS repo needs …")
+    planned_sections = await _planning_call(
+        project_name, persona, evidence
     )
-    
-    # =========================================================================
-    # PHASE 2: BUILD PROMPT WITH DISCOVERY CONTEXT
-    # =========================================================================
-    print("\n" + "=" * 80)
-    print("🏗️ PHASE 2: Building discovery-based prompt")
-    print("=" * 80)
-    
-    prompt = build_discovery_prompt(
-        project_name, 
-        analysis, 
-        recent_changes, 
-        persona, 
-        archetype,
-        discovery_report,
-        dynamic_sections,
+    print(f"   → Planned {len(planned_sections)} sections:")
+    for s in planned_sections:
+        print(f"      • [{s['id']}] {s['title']}")
+
+    # ── Step 4: GENERATION CALL ──────────────────────────────────────────────
+    print("\n✍️  Generation call: writing every section …")
+    docs, token_data = await _generation_call(
+        project_name, persona, evidence, planned_sections
     )
 
-    rotator = get_rotator()
-    llm_result = rotator.generate_with_rotation(prompt)
-
-    if not llm_result:
-        return _get_fallback_docs(archetype, persona), _get_empty_token_data()
-
-    # Extract content and token data
-    raw = llm_result.content
-    token_data = {
-        "input_tokens": llm_result.input_tokens,
-        "output_tokens": llm_result.output_tokens,
-        "model_name": llm_result.model_name,
-    }
-
-    # Extract sections using dynamic section IDs
-    docs = _extract_dynamic_sections(raw, dynamic_sections)
-
-    # Post-process: Sanitize Mermaid diagrams to prevent parse errors
-    docs = _sanitize_mermaid_diagrams(docs)
-    
-    # Store dynamic sections in plan format for writing
+    # ── Step 5: Store plan for downstream writers ────────────────────────────
     docs["plan"] = {
         "sections": [
-            {"id": s.id, "title": s.title, "type": "dynamic"}
-            for s in dynamic_sections
+            {"id": s["id"], "title": s["title"], "type": "llm-planned"}
+            for s in planned_sections
         ],
-        "repo_type": archetype.value,
-        "complexity": 7,
+        "repo_type": _infer_repo_type(discovery_report, analysis),
+        "complexity": _infer_complexity(analysis),
+        "complexity_score": _infer_complexity(analysis),
     }
 
     return docs, token_data
 
 
+# ---------------------------------------------------------------------------
+# PLANNING CALL
+# ---------------------------------------------------------------------------
+
+async def _planning_call(
+    project_name: str,
+    persona: str,
+    evidence: Dict,
+) -> List[Dict]:
+    """
+    Ask the LLM: 'Given this specific codebase, what sections should the
+    documentation have?'
+
+    Returns a list of dicts: [{id, title, description, subsections}, …]
+    """
+    persona_guidance = (
+        "INTERNAL (Surgeon's Manual) – document the guts: private methods, "
+        "transactions, failure modes, race conditions, gotchas."
+        if persona in ("internal", "dev")
+        else
+        "PUBLIC (Owner's Manual) – document the surface: entry points, "
+        "API contracts, quickstarts, integration examples."
+    )
+
+    prompt = f"""You are a Staff Software Engineer (equivalent to Meta L6).
+Your job: READ the evidence about a real codebase and decide what documentation
+sections it actually needs.
+
+DO NOT use generic section names like "Overview", "Architecture", "Workflow".
+EVERY title must be specific to THIS codebase, describing what the code actually does.
+
+Title formula: [Action Verb] + [Specific Domain] + [System Impact / Constraint]
+Examples of GOOD titles:
+  "Enforcing JWT Expiry & Refresh Token Rotation"
+  "Propagating Wallet Connect State Across Component Tree"
+  "Serializing Solidity Events to PostgreSQL via Ethers.js Listeners"
+  "Circuit-Breaking External Price-Feed Calls with Exponential Back-off"
+
+Examples of BAD titles (FORBIDDEN):
+  "Overview", "Architecture", "API", "Workflow", "Components", "Database"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PROJECT: {project_name}
+PERSONA: {persona_guidance}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CODEBASE EVIDENCE:
+{json.dumps(evidence, indent=2, default=str)[:12000]}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TASK: Return ONLY a JSON array (no markdown, no explanation) of 5–9 sections.
+Each section object must have exactly these keys:
+  "id"          – slug, e.g. "jwt-refresh-rotation"
+  "title"       – intent-based title (see formula above)
+  "description" – 1 sentence: what an engineer will learn from this section
+  "subsections" – list of 3–5 specific sub-headings
+
+Base sections ENTIRELY on the evidence. If you don't see evidence for something,
+don't invent a section for it.
+
+Return ONLY valid JSON. No prose before or after.
+"""
+
+    rotator = get_rotator()
+    result = rotator.generate_with_rotation(prompt)
+
+    if not result:
+        return _fallback_sections(evidence)
+
+    raw = result.content.strip()
+    # Strip markdown fences if present
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+
+    try:
+        sections = json.loads(raw)
+        if isinstance(sections, list) and sections:
+            # Validate & normalise
+            return [_normalise_section(s) for s in sections if isinstance(s, dict)]
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "Planning call JSON parse failed: %s\nRaw: %s", exc, raw[:500])
+
+    return _fallback_sections(evidence)
 
 
-def _extract_dynamic_sections(raw: str, dynamic_sections) -> Dict[str, str]:
+# ---------------------------------------------------------------------------
+# GENERATION CALL
+# ---------------------------------------------------------------------------
+
+async def _generation_call(
+    project_name: str,
+    persona: str,
+    evidence: Dict,
+    planned_sections: List[Dict],
+) -> Tuple[Dict[str, str], Dict]:
     """
-    Extract documentation sections from LLM output using dynamic section IDs.
-    
-    This replaces the old archetype-based extraction with truly dynamic extraction
-    that works with any section IDs generated by the discovery system.
+    Write every planned section with full depth.
     """
-    docs = {}
-    
-    for section in dynamic_sections:
-        section_id = section.id
-        # Try to extract using the section ID tag
-        extracted = extract_section(raw, section_id)
-        if extracted:
-            docs[section_id] = extracted
-            print(f"   ✅ Extracted section: {section_id}")
+    persona_guidance = (
+        "INTERNAL (Surgeon's Manual): document private implementation details, "
+        "failure modes, race conditions, transaction boundaries, gotchas. "
+        "Every sentence must help an on-call engineer debug at 2 AM."
+        if persona in ("internal", "dev")
+        else
+        "PUBLIC (Owner's Manual): focus on developer experience, clear examples, "
+        "integration patterns, and time-to-value."
+    )
+
+    # Build the section output format
+    section_format_lines = []
+    for s in planned_sections:
+        tag = s["id"].upper().replace("-", "_")
+        sub_text = "\n".join(f"## {sub}" for sub in s.get("subsections", []))
+        section_format_lines.append(
+            f"<{tag}_START>\n# {s['title']}\n\n{sub_text}\n\n"
+            f"[Write detailed technical content here]\n<{tag}_END>"
+        )
+    section_format = "\n\n".join(section_format_lines)
+
+    # Build what-to-cover brief
+    section_briefs = "\n".join(
+        f"• [{s['id']}] {s['title']}\n  → {s['description']}\n"
+        f"  Subsections: {', '.join(s.get('subsections', []))}"
+        for s in planned_sections
+    )
+
+    prompt = f"""You are a Staff Software Engineer (Meta L6) writing production documentation.
+
+PROJECT: {project_name}
+PERSONA: {persona_guidance}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE "SO WHAT?" TEST (apply to every sentence you write):
+Would this sentence help an on-call engineer debug a production incident right now?
+If NO → delete it and write specifics.
+
+BANNED phrases: "This module handles …", "This component is responsible for …",
+"Overview", "This section covers …", "In summary …"
+
+REQUIRED: file paths, function names, exact config keys, error codes, data shapes,
+timing constraints, failure modes, and concrete code snippets.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CODEBASE EVIDENCE:
+{json.dumps(evidence, indent=2, default=str)[:16000]}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTIONS TO WRITE:
+{section_briefs}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MERMAID DIAGRAM RULES:
+- No parentheses anywhere in node labels or edge labels
+- No slashes in labels (use "and" instead of "/")
+- Only: graph TD, A[Label] --> B[Label], A --> |edge label| B
+- NO classDef, NO style, NO fill
+
+OUTPUT FORMAT (use EXACT tags):
+{section_format}
+
+Write ONLY the tagged sections. No preamble. No summary after.
+Every section must have at minimum 400 words of specific, useful content.
+Include code snippets showing real patterns from the evidence where possible.
+"""
+
+    rotator = get_rotator()
+    result = rotator.generate_with_rotation(prompt)
+
+    empty_token_data = {"input_tokens": 0,
+                        "output_tokens": 0, "model_name": "unknown"}
+
+    if not result:
+        logger.error("Generation call returned no result")
+        return _make_fallback_docs(planned_sections), empty_token_data
+
+    token_data = {
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "model_name": result.model_name,
+    }
+
+    raw = result.content
+
+    # Extract each section
+    docs: Dict[str, str] = {}
+    for s in planned_sections:
+        tag = s["id"].upper().replace("-", "_")
+        content = extract_section(raw, tag)
+        if content:
+            docs[s["id"]] = content
+            print(f"   ✅ [{s['id']}] extracted ({len(content)} chars)")
         else:
-            # Fallback: try to find by title
-            title_pattern = f"# {re.escape(section.title)}"
-            if re.search(title_pattern, raw, re.IGNORECASE):
-                # Try to extract content after title
-                match = re.search(
-                    rf"# {re.escape(section.title)}\s*\n(.*?)(?=\n#|$)",
-                    raw,
-                    re.DOTALL | re.IGNORECASE
-                )
-                if match:
-                    docs[section_id] = match.group(1).strip()
-                    print(f"   ✅ Extracted section by title: {section_id}")
+            # Fallback: look for the markdown h1 title
+            escaped = re.escape(s["title"])
+            m = re.search(
+                rf"#\s+{escaped}\s*\n(.*?)(?=\n#\s|\Z)", raw, re.DOTALL | re.IGNORECASE
+            )
+            if m:
+                docs[s["id"]] = f"# {s['title']}\n\n{m.group(1).strip()}"
+                print(f"   ✅ [{s['id']}] extracted via title fallback")
             else:
-                print(f"   ⚠️ Section not found: {section_id}")
-    
-    return docs
+                print(f"   ⚠️  [{s['id']}] NOT found in output")
 
-def _sanitize_mermaid_diagrams(docs: Dict[str, str]) -> Dict[str, str]:
+    # Post-process Mermaid
+    docs = _sanitize_mermaid(docs)
+
+    return docs, token_data
+
+
+# ---------------------------------------------------------------------------
+# Evidence builder – compacts repo signals into a dense JSON object
+# ---------------------------------------------------------------------------
+
+def _build_evidence_bundle(
+    repo_path: Path,
+    analysis: Dict,
+    discovery: Optional[DiscoveryReport],
+) -> Dict:
     """
-    Post-process documentation to fix Mermaid syntax issues.
-
-    Fixes common LLM mistakes:
-    - Parentheses in node labels: [Text (path/)] -> [Text - path dir]
-    - Parentheses in edge labels: |Action (tool)| -> |Action via tool|
-    - Slashes in labels: HTTP/HTTPS -> HTTP or HTTPS
+    Build a dense evidence bundle for the LLM.
+    Includes: file tree, key files' content snippets, tech stack, discovery signals.
     """
-    import re
+    bundle: Dict[str, Any] = {}
 
-    def fix_mermaid_block(match):
-        """Fix a single mermaid code block."""
-        content = match.group(1)
+    # Basic analysis data
+    bundle["tech_stack"] = {
+        "languages": analysis.get("languages", []),
+        "frameworks": analysis.get("frameworks", []),
+        "databases": analysis.get("database_tech", []),
+        "deployment": analysis.get("deployment_tech", []),
+        "state_management": analysis.get("state_management", []),
+    }
+    bundle["package_info"] = {
+        "name": analysis.get("package_name", ""),
+        "description": analysis.get("package_description", ""),
+        "version": analysis.get("package_version", ""),
+        "scripts": analysis.get("scripts", {}),
+    }
+    bundle["repo_structure"] = {
+        "type": analysis.get("repo_structure", "unknown"),
+        "root_directories": analysis.get("root_directories", []),
+        "subprojects": list(analysis.get("subprojects", {}).keys()),
+    }
+    bundle["file_counts"] = {
+        "total": analysis.get("file_count", 0),
+        "source_files": analysis.get("total_source_files", 0),
+        "components": analysis.get("total_components", 0),
+        "pages": analysis.get("total_pages", 0),
+    }
 
-        # Fix node labels with parentheses: [Text (stuff)] -> [Text - stuff]
-        # Match: [anything (anything)] but not [(database)]
-        content = re.sub(
-            r'\[([^\[\]()]+)\s*\(([^)]+)\)\]',
-            lambda m: f'[{m.group(1).strip()} - {m.group(2).replace("/", " ").strip()}]',
-            content
-        )
+    # Key file listings
+    bundle["key_files"] = {
+        "source": analysis.get("source_files", [])[:40],
+        "pages": analysis.get("page_files", [])[:15],
+        "components": analysis.get("component_files", [])[:15],
+        "api": analysis.get("api_files", [])[:15],
+        "config": analysis.get("config_files", [])[:10],
+    }
 
-        # Fix edge labels with parentheses: |Text (stuff)| -> |Text via stuff|
-        content = re.sub(
-            r'\|([^|()]+)\s*\(([^)]+)\)\|',
-            lambda m: f'|{m.group(1).strip()} via {m.group(2).replace("/", " and ").strip()}|',
-            content
-        )
+    bundle["dependencies"] = _top_dependencies(analysis)
 
-        # Fix slashes in edge labels: |HTTP/HTTPS| -> |HTTP and HTTPS|
-        content = re.sub(
-            r'\|([^|]*)/([^|]*)\|',
-            lambda m: f'|{m.group(1).strip()} and {m.group(2).strip()}|',
-            content
-        )
+    # Read critical files for content snippets
+    bundle["file_snippets"] = _read_critical_files(repo_path, analysis)
 
-        return f'```mermaid\n{content}\n```'
+    # Discovery signals
+    if discovery:
+        bundle["discovery"] = {
+            "ingress_count": len(discovery.ingress_points),
+            "egress_count": len(discovery.egress_points),
+            "state_models": [p.name for p in discovery.state_models[:10]],
+            "orchestrators": [
+                {"file": p.file_path, "role": p.description,
+                    "centrality": round(p.centrality_score, 2)}
+                for p in sorted(discovery.orchestrators, key=lambda x: -x.centrality_score)[:8]
+            ],
+            "ingress_samples": [
+                {"file": p.file_path, "name": p.name, "type": p.description}
+                for p in discovery.ingress_points[:10]
+            ],
+            "egress_samples": [
+                {"file": p.file_path, "type": p.description}
+                for p in discovery.egress_points[:10]
+            ],
+            "constraints": discovery.constraints[:10],
+            "brittle_points": discovery.brittle_points[:10],
+            "tech_stack": discovery.tech_stack,
+            "data_journeys": [
+                {
+                    "data_type": j.data_type,
+                    "from": j.ingress_point,
+                    "through": j.transformation_points[:3],
+                    "to": j.egress_points[:3],
+                }
+                for j in discovery.data_journeys[:3]
+            ],
+        }
+
+    return bundle
+
+
+def _read_critical_files(repo_path: Path, analysis: Dict) -> Dict[str, str]:
+    """Read the most important files and return content snippets."""
+    snippets: Dict[str, str] = {}
+
+    SKIP_DIRS = {"node_modules", ".git", "__pycache__",
+                 "dist", "build", "venv", ".venv"}
+    READ_LIMIT = 3000  # chars per file
+    MAX_FILES = 12
+
+    # Priority files to always try to read
+    priority_patterns = [
+        "package.json", "pyproject.toml", "requirements.txt",
+        "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
+        "README.md", ".env.example",
+        # Entry points
+        "src/index.ts", "src/main.ts", "src/app.ts", "src/index.js",
+        "app/main.py", "main.py", "app.py", "server.py", "server.ts", "server.js",
+        # Config
+        "tsconfig.json", "next.config.js", "next.config.ts",
+        "tailwind.config.js", "vite.config.ts",
+    ]
+
+    count = 0
+    for pattern in priority_patterns:
+        if count >= MAX_FILES:
+            break
+        target = repo_path / pattern
+        if target.exists() and target.is_file():
+            try:
+                content = target.read_text(
+                    encoding="utf-8", errors="ignore")[:READ_LIMIT]
+                snippets[pattern] = content
+                count += 1
+            except Exception:
+                pass
+
+    # Also read orchestrators (high-centrality files)
+    source_files = analysis.get("source_files", [])
+    api_files = analysis.get("api_files", [])
+    interesting = list(set(source_files[:8] + api_files[:4]))
+
+    for rel_path in interesting:
+        if count >= MAX_FILES:
+            break
+        if rel_path in snippets:
+            continue
+        full = repo_path / rel_path
+        if full.exists() and full.is_file():
+            if any(skip in full.parts for skip in SKIP_DIRS):
+                continue
+            try:
+                content = full.read_text(
+                    encoding="utf-8", errors="ignore")[:READ_LIMIT]
+                snippets[rel_path] = content
+                count += 1
+            except Exception:
+                pass
+
+    return snippets
+
+
+def _top_dependencies(analysis: Dict) -> Dict[str, List[str]]:
+    """Return the most relevant dependencies."""
+    raw_deps = analysis.get("dependencies", {})
+    if isinstance(raw_deps, dict):
+        # Filter out dev tooling noise
+        skip_prefixes = ("@types/", "eslint", "prettier",
+                         "typescript", "ts-node", "@testing-library")
+        filtered = [k for k in raw_deps if not any(
+            k.startswith(p) for p in skip_prefixes)]
+        return {"production": filtered[:30]}
+    return {"raw": str(raw_deps)[:500]}
+
+
+# ---------------------------------------------------------------------------
+# Helper utilities
+# ---------------------------------------------------------------------------
+
+def _clean_project_name(repo_name: Optional[str], repo_path: Path, analysis: Dict) -> str:
+    pkg = analysis.get("package_name", "")
+    if pkg and not pkg.startswith("docai"):
+        return pkg
+    if repo_name and not repo_name.startswith("docai"):
+        return repo_name.split("/")[-1] if "/" in repo_name else repo_name
+    name = analysis.get("project_name", "")
+    if name and not name.startswith("docai"):
+        return name
+    return repo_path.name
+
+
+def _infer_repo_type(discovery: Optional[DiscoveryReport], analysis: Dict) -> str:
+    rt = analysis.get("repo_structure", "")
+    if rt == "monorepo":
+        langs = analysis.get("languages", [])
+        if "typescript" in [l.lower() for l in langs] or "javascript" in [l.lower() for l in langs]:
+            return "fullstack-monorepo"
+        return "monorepo"
+    fws = [f.lower() for f in analysis.get("frameworks", [])]
+    if any(f in fws for f in ["react", "vue", "next.js", "svelte"]):
+        if any(f in fws for f in ["fastapi", "express", "django", "flask"]):
+            return "fullstack"
+        return "frontend"
+    if any(f in fws for f in ["fastapi", "express", "django", "flask", "nestjs"]):
+        return "backend-api"
+    return "unknown"
+
+
+def _infer_complexity(analysis: Dict) -> int:
+    fc = analysis.get("file_count", 0)
+    if fc > 500:
+        return 9
+    if fc > 200:
+        return 7
+    if fc > 50:
+        return 5
+    return 3
+
+
+def _normalise_section(s: Dict) -> Dict:
+    return {
+        "id": re.sub(r"[^a-z0-9-]", "-", s.get("id", "section").lower()).strip("-"),
+        "title": s.get("title", "Untitled Section"),
+        "description": s.get("description", ""),
+        "subsections": s.get("subsections", []),
+    }
+
+
+def _fallback_sections(evidence: Dict) -> List[Dict]:
+    """
+    Very basic fallback when the planning call fails.
+    Still more specific than the old template – uses detected frameworks.
+    """
+    frameworks = evidence.get("tech_stack", {}).get("frameworks", [])
+    fw_str = ", ".join(frameworks[:3]) if frameworks else "the application"
+    return [
+        {
+            "id": "request-lifecycle",
+            "title": f"Tracing Request Lifecycle Through {fw_str}",
+            "description": "How a request enters, is processed, and returns a response.",
+            "subsections": ["Entry Points", "Middleware Chain", "Response Shaping", "Error Paths"],
+        },
+        {
+            "id": "data-persistence",
+            "title": "Persisting & Querying Application State",
+            "description": "Database schema, query patterns, and transaction boundaries.",
+            "subsections": ["Schema Design", "Read Paths", "Write Paths", "Migrations"],
+        },
+        {
+            "id": "auth-identity",
+            "title": "Enforcing Identity & Access Control",
+            "description": "Authentication flow, token handling, and authorization checks.",
+            "subsections": ["Token Lifecycle", "Auth Middleware", "Permission Model", "Failure Modes"],
+        },
+    ]
+
+
+def _make_fallback_docs(planned_sections: List[Dict]) -> Dict[str, str]:
+    return {
+        s["id"]: f"# {s['title']}\n\nDocumentation unavailable – LLM generation failed. Retry."
+        for s in planned_sections
+    }
+
+
+def _sanitize_mermaid(docs: Dict[str, str]) -> Dict[str, str]:
+    """Fix common Mermaid syntax errors produced by LLMs."""
+    def fix_block(m):
+        c = m.group(1)
+        c = re.sub(r'\[([^\[\]()]+)\s*\(([^)]+)\)\]',
+                   lambda x: f'[{x.group(1).strip()} - {x.group(2).replace("/", " ").strip()}]', c)
+        c = re.sub(r'\|([^|()]+)\s*\(([^)]+)\)\|',
+                   lambda x: f'|{x.group(1).strip()} via {x.group(2).replace("/", " and ").strip()}|', c)
+        c = re.sub(r'\|([^|]*)/([^|]*)\|',
+                   lambda x: f'|{x.group(1).strip()} and {x.group(2).strip()}|', c)
+        return f'```mermaid\n{c}\n```'
 
     sanitized = {}
-    for key, value in docs.items():
-        if isinstance(value, str) and '```mermaid' in value:
-            # Find and fix all mermaid blocks
-            value = re.sub(
-                r'```mermaid\n(.*?)\n```',
-                fix_mermaid_block,
-                value,
-                flags=re.DOTALL
-            )
-        sanitized[key] = value
-
+    for k, v in docs.items():
+        if isinstance(v, str) and "```mermaid" in v:
+            v = re.sub(r'```mermaid\n(.*?)\n```',
+                       fix_block, v, flags=re.DOTALL)
+        sanitized[k] = v
     return sanitized
 
 
-def _build_staff_engineer_prompt(
-    project_name: str,
-    analysis: dict,
-    recent_changes: dict,
-    persona: str,
-    archetype: Archetype,
-    plan: Optional[DocumentationPlan] = None
-) -> str:
+# ---------------------------------------------------------------------------
+# Backward-compat shim: discovery_integration.py calls these
+# ---------------------------------------------------------------------------
+
+def run_discovery_and_generate_sections(repo_path, analysis, persona):
     """
-    Build a Staff Engineer quality documentation prompt.
-
-    This prompt enforces:
-    1. Archetype-specific meaningful sections (no generic titles)
-    2. Evidence-based content (no hallucinations)
-    3. Technical density (the "So What?" test)
-    4. Persona-appropriate depth
+    Shim so discovery_integration.py doesn't break.
+    Returns (report, [], archetype_placeholder).
     """
-    # Determine display name with proper priority:
-    # 1. Package name from package.json (most accurate for npm projects)
-    # 2. Repo name passed from caller (e.g., "org/repo-name" -> "repo-name")
-    # 3. Project name from analysis (last resort)
-    # NEVER use temp directory names like "docai_manual_xxx"
-
-    package_name = analysis.get("package_name", "")
-    analysis_project_name = analysis.get("project_name", "")
-
-    # Extract clean repo name (e.g., "org/mode" -> "mode")
-    clean_project_name = project_name
-    if "/" in project_name:
-        clean_project_name = project_name.split("/")[-1]
-
-    # Determine best display name - avoid temp directory names
-    if package_name and not package_name.startswith("docai") and len(package_name) > 2:
-        display_name = package_name
-    elif clean_project_name and not clean_project_name.startswith("docai"):
-        display_name = clean_project_name
-    elif analysis_project_name and not analysis_project_name.startswith("docai"):
-        display_name = analysis_project_name
-    else:
-        # Last resort - use the full repo name
-        display_name = project_name
-
-    # Get archetype-specific sections
-    sections = get_archetype_sections(archetype, persona)
-    archetype_context = get_archetype_context(archetype)
-
-    # Build section specifications
-    section_specs = _build_section_specifications(sections, persona)
-
-    # Build output format
-    output_format = _build_output_format(sections)
-
-    # Build evidence context (ADRs, commit messages, etc.)
-    evidence_context = _build_evidence_context(analysis)
-
-    # Debug logging
-    print(f"🤖 Building Staff Engineer prompt for: {display_name}")
-    print(f"   Archetype: {archetype.value}")
-    print(f"   Persona: {persona}")
-    print(f"   Sections: {len(sections)}")
-    print(f"   Source files: {len(analysis.get('source_files', []))}")
-
-    prompt = f"""You are a Staff Software Engineer (Meta L6 / SDE 3) producing documentation.
-You do NOT summarize. You ENGINEER KNOWLEDGE.
-
-Your documentation must be high-fidelity, high-density, and technical enough to serve as 
-a source of truth for an engineer debugging at 2 AM.
-
-═══════════════════════════════════════════════════════════════════════════════════════════
-🛑 THE "ANTI-VAGUE" MANDATE
-═══════════════════════════════════════════════════════════════════════════════════════════
-You are FORBIDDEN from writing vague or one-paragraph sections.
-
-BANNED WORDS: Overview, Components, Architecture, Workflow, Deployment, Vague
-
-If you find yourself writing "This folder contains logic for X," you are FAILING.
-Instead, you MUST explain:
-  • INTERACTION: How does this module talk to others?
-  • TRANSFORMATION: What does it do to the data?
-  • PERSISTENCE: Where does the state end up?
-  • ERROR HANDLING: What happens when the "Happy Path" fails?
-
-The "So What?" Test: For EVERY sentence, ask: "If I were an engineer on-call at 2 AM 
-trying to fix this, would this sentence help me?" If NOT, delete it and write specifics.
-
-═══════════════════════════════════════════════════════════════════════════════════════════
-📋 PROJECT CONTEXT
-═══════════════════════════════════════════════════════════════════════════════════════════
-Repository: {display_name}
-Persona: {persona.upper()} {"(Surgeon's Manual - Document the guts)" if persona == "internal" else "(Owner's Manual - Document the surface)"}
-Archetype: {archetype.value.upper()}
-
-{archetype_context}
-
-═══════════════════════════════════════════════════════════════════════════════════════════
-⚖️ EVIDENCE-BASED LOGIC (NO HALLUCINATIONS)
-═══════════════════════════════════════════════════════════════════════════════════════════
-EXTRACTION OVER INFERENCE:
-- Only state a rationale (e.g., "We chose Redis for latency") if you find evidence in:
-  • ADR files (docs/adr, decisions/)
-  • Commit messages in recent_changes
-  • Code comments explicitly stating "why"
-  
-THE TECHNICAL DEFAULT:
-- If no rationale is found, stay OBJECTIVE
-- BAD: "Redis is used because it's fast."
-- GOOD: "Redis serves as a write-through cache for session data, reducing PostgreSQL 
-        I/O during peak traffic. Connection pooling configured with 10 max connections."
-
-{evidence_context}
-
-═══════════════════════════════════════════════════════════════════════════════════════════
-📂 REPOSITORY ANALYSIS (EVIDENCE)
-═══════════════════════════════════════════════════════════════════════════════════════════
-{json.dumps(analysis, indent=2, default=str)[:20000]}
-
-═══════════════════════════════════════════════════════════════════════════════════════════
-🔄 RECENT CHANGES (CONTEXT)
-═══════════════════════════════════════════════════════════════════════════════════════════
-{json.dumps(recent_changes, indent=2)}
-
-═══════════════════════════════════════════════════════════════════════════════════════════
-📝 DOCUMENTATION SECTIONS (MANDATORY)
-═══════════════════════════════════════════════════════════════════════════════════════════
-{section_specs}
-
-═══════════════════════════════════════════════════════════════════════════════════════════
-📤 OUTPUT FORMAT (EXACT STRUCTURE REQUIRED)
-═══════════════════════════════════════════════════════════════════════════════════════════
-{output_format}
-
-═══════════════════════════════════════════════════════════════════════════════════════════
-🚨 CRITICAL RULES
-═══════════════════════════════════════════════════════════════════════════════════════════
-1. Generate EXACTLY the sections listed above - no more, no less
-2. Use the EXACT section tags provided (<SECTION_ID_START>...<SECTION_ID_END>)
-3. ONLY document what actually exists in the codebase
-4. NEVER invent technologies, files, or features not in the analysis
-5. Use SPECIFIC file names and code patterns from the repository
-6. Every section must be DETAILED enough to debug production issues
-7. Include code snippets, file paths, and concrete examples
-8. For INTERNAL: Focus on implementation details, edge cases, failure modes
-9. For PUBLIC: Focus on time-to-value, clear examples, integration patterns
-
-═══════════════════════════════════════════════════════════════════════════════════════════
-📊 MERMAID DIAGRAM RULES (STRICT SYNTAX)
-═══════════════════════════════════════════════════════════════════════════════════════════
-If you include Mermaid diagrams, follow these EXACT syntax rules:
-
-1. NO parentheses anywhere in diagrams (nodes OR edge labels):
-   - BAD: Frontend[React Client (client/)]
-   - BAD: A --> |Connect (Wagmi)| B
-   - GOOD: Frontend[React Client]
-   - GOOD: A --> |Connect via Wagmi| B
-
-2. NO special characters in labels (no /, backslash, parentheses):
-   - BAD: A --> |HTTP/HTTPS| B
-   - GOOD: A --> |HTTP Request| B
-
-3. Keep edge labels simple - no slashes or parens:
-   - BAD: Client --> |Wallet Connect (Wagmi/Ethers)| Blockchain
-   - GOOD: Client --> |Wallet Connection| Blockchain
-
-4. Use simple graph syntax only:
-   ```mermaid
-   graph TD
-       A[Component A] --> B[Component B]
-       A --> |Data Flow| C[Component C]
-   ```
-
-5. NO styling, classDef, fill colors, or custom CSS
-
-═══════════════════════════════════════════════════════════════════════════════════════════
-🚫 NAMING RULES (CRITICAL)
-═══════════════════════════════════════════════════════════════════════════════════════════
-1. NEVER use temp directory names like "docai_manual_xxx" in documentation
-2. Use the ACTUAL project name: "{display_name}"
-3. When referring to the project, use "{display_name}" - NOT the temp folder path
-4. The project name is "{display_name}" - use this throughout the documentation
-
-DO NOT output generic descriptions.
-DO NOT invent technologies not present in the codebase.
-DO NOT write anything that fails the "So What?" test.
-DO NOT use temp directory names - use "{display_name}" as the project name.
-"""
-
-    return prompt
-
-
-def _build_section_specifications(sections: List[ArchetypeSection], persona: str) -> str:
-    """
-    Build detailed specifications for each section.
-
-    Each section spec tells the LLM exactly what technical content is expected.
-    """
-    lines = []
-
-    persona_context = "INTERNAL (Surgeon's Manual)" if persona == "internal" else "PUBLIC (Owner's Manual)"
-    lines.append(f"Generating {persona_context} documentation.\n")
-
-    for i, section in enumerate(sections, 1):
-        lines.append(f"SECTION {i}: {section.title}")
-        lines.append(f"  ID: {section.id}")
-        lines.append(f"  Purpose: {section.description}")
-        lines.append(
-            f"  Required: {'YES' if section.required else 'ONLY IF EVIDENCE EXISTS'}")
-
-        if section.subsections:
-            lines.append("  Must Cover:")
-            for sub in section.subsections:
-                lines.append(f"    • {sub}")
-
-        lines.append("")
-
-    return "\n".join(lines)
-
-
-def _build_output_format(sections: List[ArchetypeSection]) -> str:
-    """
-    Build the exact output format with section tags.
-    """
-    lines = []
-
-    for section in sections:
-        section_id = section.id.upper()
-        lines.append(f"<{section_id}_START>")
-        lines.append(f"# {section.title}")
-        lines.append("")
-        lines.append(
-            f"[Detailed technical documentation covering: {section.description}]")
-        lines.append("")
-        if section.subsections:
-            for sub in section.subsections:
-                lines.append(f"## {sub}")
-                lines.append(
-                    "[Specific technical content with code snippets and file references]")
-                lines.append("")
-        lines.append(f"<{section_id}_END>")
-        lines.append("")
-
-    return "\n".join(lines)
-
-
-def _build_evidence_context(analysis: dict) -> str:
-    """
-    Build context about available evidence for rationale extraction.
-    """
-    evidence_found = []
-
-    # Check for ADR directory
-    directories = analysis.get("main_directories", [])
-    dir_str = " ".join(directories)
-
-    if "adr" in dir_str.lower() or "decisions" in dir_str.lower():
-        evidence_found.append(
-            "• ADR/Decision Records found - extract rationale from these")
-
-    if "changelog" in dir_str.lower():
-        evidence_found.append("• CHANGELOG found - use for historical context")
-
-    if ".github" in dir_str:
-        evidence_found.append(
-            "• GitHub workflows found - document CI/CD based on actual configs")
-
-    if not evidence_found:
-        evidence_found.append(
-            "• No explicit rationale documents found - stay objective and technical")
-
-    return "AVAILABLE EVIDENCE:\n" + "\n".join(evidence_found)
-
-
-def _extract_archetype_sections(raw: str, archetype: Archetype, persona: str) -> Dict[str, str]:
-    """
-    Extract sections based on archetype and persona.
-
-    IMPORTANT: Returns sections with MEANINGFUL IDs (slugified titles),
-    NOT generic keys like "architecture", "deployment".
-
-    Example output:
-        {
-            "component-hierarchy": "# Component Hierarchy & Atomic Design...",
-            "state-management": "# State Management & Data Hydration...",
-            "user-journey": "# User Journey Flows & Route Guards...",
-        }
-    """
-    from app.services.documentation.archetype_detector import slugify_section_title
-
-    sections = get_archetype_sections(archetype, persona)
-
-    docs = {}
-
-    # Extract each section using its MEANINGFUL ID
-    for section in sections:
-        section_id = section.id  # e.g., "component_hierarchy"
-        section_slug = slugify_section_title(
-            section.title)  # e.g., "component-hierarchy"
-
-        # Try multiple extraction patterns
-        content = (
-            extract_section(raw, section_id.upper()) or
-            extract_section(raw, section_slug.upper().replace("-", "_")) or
-            extract_section(raw, section.title.upper().split("&")[0].strip()) or
-            ""
-        )
-
-        if content:
-            docs[section_slug] = content
-
-    # Also extract by generic names for backward compatibility
-    # but store under meaningful names if we have a plan
-    generic_fallbacks = {
-        "overview": ["OVERVIEW", "SUMMARY", "QUICKSTART", "PROJECT_OVERVIEW"],
-        "architecture": ["ARCHITECTURE", "REQUEST_LIFECYCLE", "COMPONENT_HIERARCHY"],
-        "workflow": ["WORKFLOW", "DEVELOPMENT", "USER_JOURNEY"],
-        "api": ["API", "API_REFERENCE", "SERVICE_INTEGRATION"],
-        "components": ["COMPONENTS", "COMPONENT_USAGE"],
-        "dependencies": ["DEPENDENCIES", "DEPENDENCY_GRAPH"],
-        "deployment": ["DEPLOYMENT", "BUILD_PIPELINE", "DEPLOYMENT_TOPOLOGY"],
-    }
-
-    # Only add generic sections if we didn't get meaningful ones
-    for generic_key, patterns in generic_fallbacks.items():
-        if generic_key not in docs:
-            for pattern in patterns:
-                content = extract_section(raw, pattern)
-                if content:
-                    docs[generic_key] = content
-                    break
-
-    return docs
-
-
-def _get_fallback_docs(archetype: Archetype, persona: str) -> Dict[str, str]:
-    """
-    Return fallback documentation if LLM fails.
-    """
-    return {
-        "overview": f"# Documentation Generation Failed\n\nLLM providers unavailable. Archetype: {archetype.value}, Persona: {persona}",
-        "architecture": "# Technical Architecture\n\nUnavailable - retry documentation generation.",
-        "workflow": "# Development Workflow\n\nUnavailable - retry documentation generation.",
-        "api": "# API Reference\n\nUnavailable - retry documentation generation.",
-        "components": "",
-        "dependencies": "",
-        "deployment": "",
-    }
-
-
-def _get_empty_token_data() -> Dict[str, any]:
-    """Return empty token data for fallback cases."""
-    return {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "model_name": "unknown",
-    }
-
-
-# Backward compatibility - keep old function name working
-def _build_prompt(
-    project_name: str,
-    analysis: dict,
-    recent_changes: dict,
-    persona: str,
-    plan: Optional[DocumentationPlan] = None
-) -> str:
-    """
-    Backward compatible wrapper for the Staff Engineer prompt builder.
-    """
-    archetype = detect_archetype(analysis)
-    return _build_staff_engineer_prompt(
-        project_name, analysis, recent_changes, persona, archetype, plan
-    )
+    try:
+        report = discover_repository(repo_path, analysis)
+    except Exception as exc:
+        logger.warning("Discovery shim failed: %s", exc)
+        report = None
+
+    from app.services.documentation.archetype_detector import detect_archetype, Archetype
+    try:
+        archetype = detect_archetype(analysis)
+    except Exception:
+        archetype = None
+
+    return report, [], archetype
+
+
+def build_discovery_prompt(*args, **kwargs) -> str:
+    """Shim – the new pipeline doesn't use a pre-built discovery prompt."""
+    return ""
