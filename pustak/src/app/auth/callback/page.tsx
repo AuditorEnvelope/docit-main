@@ -22,7 +22,7 @@ function AuthCallbackContent() {
   const { login } = useAuth();
 
   const [status, setStatus] = useState<"loading" | "success" | "error">(
-    "loading"
+    "loading",
   );
   const [errorMessage, setErrorMessage] = useState("");
   const hasRun = useRef(false);
@@ -30,32 +30,38 @@ function AuthCallbackContent() {
   const statusContent = {
     loading: {
       title: "Authenticating",
-      description: "We're securing your GitHub connection and setting up your session.",
+      description:
+        "We're securing your GitHub connection and setting up your session.",
       icon: Loader2,
       accent: "from-blue-500/30",
       badge: "Connecting to GitHub",
     },
     success: {
       title: "Authenticated",
-      description: "You're all set! Redirecting you to the docbook dashboard in a moment.",
+      description:
+        "You're all set! Redirecting you to the docbook dashboard in a moment.",
       icon: CheckCircle,
       accent: "from-emerald-500/30",
       badge: "Ready to go",
     },
     error: {
       title: "Authentication Failed",
-      description: "We couldn't complete your login. You can retry below or review the details.",
+      description:
+        "We couldn't complete your login. You can retry below or review the details.",
       icon: XCircle,
       accent: "from-rose-500/30",
       badge: "Needs attention",
     },
-  } satisfies Record<"loading" | "success" | "error", {
-    title: string;
-    description: string;
-    icon: typeof Loader2;
-    accent: string;
-    badge: string;
-  }>;
+  } satisfies Record<
+    "loading" | "success" | "error",
+    {
+      title: string;
+      description: string;
+      icon: typeof Loader2;
+      accent: string;
+      badge: string;
+    }
+  >;
 
   useEffect(() => {
     // Prevent multiple runs in React Strict Mode
@@ -79,7 +85,7 @@ function AuthCallbackContent() {
         // Exchange code for tokens
         const response = await fetch(
           `${BACKEND_URL}/auth/callback?code=${encodeURIComponent(code)}`,
-          { credentials: "include" }
+          { credentials: "include" },
         );
 
         if (!response.ok) {
@@ -95,7 +101,7 @@ function AuthCallbackContent() {
         // Store GitHub token in cookie for server-side API calls
         if (data.github_token) {
           document.cookie = `github_token=${encodeURIComponent(
-            data.github_token
+            data.github_token,
           )}; path=/; max-age=2592000; SameSite=Lax`;
         }
 
@@ -121,10 +127,22 @@ function AuthCallbackContent() {
     <Layout>
       <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
         <div className="absolute inset-0">
-          <div className="absolute left-[-10%] top-[15%] h-[360px] w-[360px] rounded-full bg-blue-600/35 blur-[160px]" aria-hidden />
-          <div className="absolute right-[-5%] top-[35%] h-[320px] w-[320px] rounded-full bg-purple-500/30 blur-[160px]" aria-hidden />
-          <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-blue-500/10 via-transparent to-transparent" aria-hidden />
-          <div className="absolute inset-x-0 bottom-[-35%] h-[420px] bg-gradient-to-t from-slate-950 via-slate-900/40 to-transparent" aria-hidden />
+          <div
+            className="absolute left-[-10%] top-[15%] h-[360px] w-[360px] rounded-full bg-blue-600/35 blur-[160px]"
+            aria-hidden
+          />
+          <div
+            className="absolute right-[-5%] top-[35%] h-[320px] w-[320px] rounded-full bg-purple-500/30 blur-[160px]"
+            aria-hidden
+          />
+          <div
+            className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-blue-500/10 via-transparent to-transparent"
+            aria-hidden
+          />
+          <div
+            className="absolute inset-x-0 bottom-[-35%] h-[420px] bg-gradient-to-t from-slate-950 via-slate-900/40 to-transparent"
+            aria-hidden
+          />
         </div>
 
         <div className="relative mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center px-6 py-16">
@@ -134,17 +152,21 @@ function AuthCallbackContent() {
               Secure OAuth handshake
             </span>
             <h1 className="text-3xl font-semibold leading-tight sm:text-4xl">
-              Finalizing your Pustak session
+              Finalizing your DocIt session
             </h1>
             <p className="max-w-2xl text-sm text-slate-400 sm:text-base">
-              We’re syncing your GitHub identity, refreshing docbook access, and preparing your personalized dashboard.
+              We’re syncing your GitHub identity, refreshing docbook access, and
+              preparing your personalized dashboard.
             </p>
           </div>
 
           <div className="mt-12 w-full max-w-2xl rounded-3xl border border-slate-900/60 bg-slate-900/70 p-10 shadow-2xl shadow-blue-950/40">
             <div className="flex flex-col items-center gap-6 text-center">
               <div className="relative">
-                <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${currentContent.accent} via-transparent to-transparent blur-xl opacity-70`} aria-hidden />
+                <div
+                  className={`absolute inset-0 rounded-full bg-gradient-to-br ${currentContent.accent} via-transparent to-transparent blur-xl opacity-70`}
+                  aria-hidden
+                />
                 <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-slate-800/60 bg-slate-950/80">
                   {status === "loading" ? (
                     <currentContent.icon className="h-7 w-7 animate-spin text-blue-200" />
@@ -163,7 +185,9 @@ function AuthCallbackContent() {
                   {currentContent.title}
                 </h2>
                 <p className="max-w-xl text-sm text-slate-400 sm:text-base">
-                  {status === "error" && errorMessage ? errorMessage : currentContent.description}
+                  {status === "error" && errorMessage
+                    ? errorMessage
+                    : currentContent.description}
                 </p>
               </div>
 
@@ -171,9 +195,7 @@ function AuthCallbackContent() {
                 <div className="w-full rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="mt-0.5 h-4 w-4" />
-                    <p>
-                      {errorMessage || "Something unexpected happened"}
-                    </p>
+                    <p>{errorMessage || "Something unexpected happened"}</p>
                   </div>
                 </div>
               )}
@@ -188,7 +210,8 @@ function AuthCallbackContent() {
                   </button>
                 ) : (
                   <p className="text-xs text-slate-500">
-                    This should take just a moment. We'll auto-redirect once everything is ready.
+                    This should take just a moment. We'll auto-redirect once
+                    everything is ready.
                   </p>
                 )}
               </div>

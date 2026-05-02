@@ -2,6 +2,9 @@
 
 import { ThemeProvider } from "next-themes";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import {
@@ -34,14 +37,14 @@ async function fetchJson<T>(url: string, token: string): Promise<T | null> {
 
 async function checkOnboardingCompletion(token: string): Promise<boolean> {
   const orgsData = await fetchJson<{
-    organizations?: Array<string | { login?: string; org?: string; name?: string }>;
+    organizations?: Array<
+      string | { login?: string; org?: string; name?: string }
+    >;
   }>(`${API_BASE}/user/organizations`, token);
 
   const orgIds = orgsData?.organizations
     ?.map((org) =>
-      typeof org === "string"
-        ? org
-        : org?.login || org?.org || org?.name || ""
+      typeof org === "string" ? org : org?.login || org?.org || org?.name || "",
     )
     .filter(Boolean);
 
@@ -65,7 +68,10 @@ async function checkOnboardingCompletion(token: string): Promise<boolean> {
     const docbookData = await fetchJson<{
       exists?: boolean;
       docbook_repo?: string;
-    }>(`${API_BASE}/docbook/check-exists?org_id=${encodeURIComponent(orgId)}`, token);
+    }>(
+      `${API_BASE}/docbook/check-exists?org_id=${encodeURIComponent(orgId)}`,
+      token,
+    );
 
     if (!docbookData?.exists || !docbookData.docbook_repo) {
       continue;
@@ -75,9 +81,9 @@ async function checkOnboardingCompletion(token: string): Promise<boolean> {
       has_access?: boolean;
     }>(
       `${API_BASE}/org/${orgId}/verify-writer-app-access?repo=${encodeURIComponent(
-        docbookData.docbook_repo
+        docbookData.docbook_repo,
       )}`,
-      token
+      token,
     );
 
     if (accessData?.has_access) {
@@ -115,7 +121,7 @@ function OnboardingRedirect({
   const pathname = usePathname();
   const router = useRouter();
   const [status, setStatus] = useState<"checking" | "redirecting" | "ready">(
-    () => (isDocbookHost ? "ready" : "checking")
+    () => (isDocbookHost ? "ready" : "checking"),
   );
   const [progressIndex, setProgressIndex] = useState(0);
   const completionAttemptedRef = useRef(false);
@@ -124,7 +130,7 @@ function OnboardingRedirect({
     useMemo(() => {
       const current = pathname || "";
       const normalized = current.replace(/\/+$|^$/, (match) =>
-        match === "" ? "/" : ""
+        match === "" ? "/" : "",
       );
       const docsRoute =
         normalized === "/docs" || normalized.startsWith("/docs/");
@@ -251,8 +257,8 @@ function OnboardingRedirect({
   useEffect(() => {
     if (!showSplash) return;
     const interval = setInterval(() => {
-      setProgressIndex((prev) =>
-        (prev + 1) % ONBOARDING_PROGRESS_MESSAGES.length
+      setProgressIndex(
+        (prev) => (prev + 1) % ONBOARDING_PROGRESS_MESSAGES.length,
       );
     }, 1800);
     return () => clearInterval(interval);
@@ -270,6 +276,32 @@ function OnboardingRedirect({
   return <>{children}</>;
 }
 
+const PERSIST_CACHE_KEY = "DocIt_query_cache";
+const ONE_DAY_MS = 1000 * 60 * 60 * 24;
+
+function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 1000 * 60 * 5, // 5 min
+        gcTime: ONE_DAY_MS, // keep cache 24h so persistence works
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: true,
+        retry: 1,
+      },
+    },
+  });
+}
+
+const persister =
+  typeof window !== "undefined"
+    ? createSyncStoragePersister({
+        storage: window.localStorage,
+        key: PERSIST_CACHE_KEY,
+        throttleTime: 1000,
+      })
+    : undefined;
+
 export function Providers({
   children,
   isDocbookHost = false,
@@ -277,7 +309,8 @@ export function Providers({
   children: ReactNode;
   isDocbookHost?: boolean;
 }) {
-  return (
+  const [queryClient] = useState(() => makeQueryClient());
+  const content = (
     <ThemeProvider
       attribute="class"
       defaultTheme="system"
@@ -290,5 +323,23 @@ export function Providers({
         </OnboardingRedirect>
       </AuthProvider>
     </ThemeProvider>
+  );
+
+  if (persister) {
+    return (
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{
+          persister,
+          maxAge: ONE_DAY_MS,
+        }}
+      >
+        {content}
+      </PersistQueryClientProvider>
+    );
+  }
+
+  return (
+    <QueryClientProvider client={queryClient}>{content}</QueryClientProvider>
   );
 }

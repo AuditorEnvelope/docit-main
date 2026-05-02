@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, JSX } from "react";
+import { useState, useEffect, useMemo, JSX } from "react";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import {
   BookOpen,
   ChevronRight,
@@ -18,6 +19,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { mapDocbookPathToDocsSlug } from "@/lib/docsPathMapper";
+import apiClient from "@/lib/apiClient";
 
 interface SidebarProps {
   onClose: () => void;
@@ -41,14 +43,118 @@ interface DocbookRepo {
   hasGeneratedDocs: boolean;
 }
 
+function cleanDocbookFolders(
+  items: DocbookFile[] | undefined,
+  docbookName: string,
+): DocbookFile[] {
+  if (!items || !Array.isArray(items)) return [];
+  return items
+    .filter((item) => item.name !== docbookName)
+    .map((item) =>
+      item.type === "folder"
+        ? {
+            ...item,
+            files: cleanDocbookFolders(item.files, docbookName),
+          }
+        : item,
+    );
+}
+
 export function EnhancedSidebar({ onClose }: SidebarProps) {
-  const [docbooks, setDocbooks] = useState<DocbookRepo[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
-  const [loading, setLoading] = useState(true);
   const pathname = usePathname();
   const router = useRouter();
+
+  // Same query key as dashboard — shared cache, instant on refresh
+  const { data: orgsData, isLoading: loadingOrgs } = useQuery({
+    queryKey: ["user", "organizations"],
+    queryFn: async () => {
+      const response = await apiClient.get<{
+        organizations?: { login: string }[];
+      }>("/user/organizations");
+      return response.data;
+    },
+    enabled:
+      typeof window !== "undefined" &&
+      !!localStorage.getItem("DocIt_access_token"),
+  });
+
+  const orgLogins = useMemo(
+    () =>
+      (orgsData?.organizations ?? [])
+        .map((o) => o.login)
+        .filter(Boolean) as string[],
+    [orgsData],
+  );
+
+  const structureQueries = useQueries({
+    queries: orgLogins.map((orgLogin) => ({
+      queryKey: ["docbook", "structure", orgLogin] as const,
+      queryFn: async (): Promise<DocbookRepo> => {
+        const docbookName = `DocIt-docbook-${orgLogin}`;
+        const token =
+          typeof window !== "undefined"
+            ? localStorage.getItem("DocIt_access_token")
+            : null;
+        if (!token) {
+          return {
+            orgId: orgLogin,
+            fullName: `${orgLogin}/${docbookName}`,
+            hasDocbook: false,
+            folders: [],
+            hasGeneratedDocs: false,
+          };
+        }
+        try {
+          const res = await fetch(
+            `/api/docbook/${orgLogin}/structure?branch=staging`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          if (!res.ok) {
+            return {
+              orgId: orgLogin,
+              fullName: `${orgLogin}/${docbookName}`,
+              hasDocbook: false,
+              folders: [],
+              hasGeneratedDocs: false,
+            };
+          }
+          const structure = (await res.json()) as { folders?: DocbookFile[] };
+          const folders = structure?.folders ?? [];
+          const cleanedFolders = cleanDocbookFolders(folders, docbookName);
+          return {
+            orgId: orgLogin,
+            fullName: `${orgLogin}/${docbookName}`,
+            hasDocbook: true,
+            folders: cleanedFolders,
+            hasGeneratedDocs: cleanedFolders.length > 0,
+          };
+        } catch {
+          return {
+            orgId: orgLogin,
+            fullName: `${orgLogin}/${docbookName}`,
+            hasDocbook: false,
+            folders: [],
+            hasGeneratedDocs: false,
+          };
+        }
+      },
+      enabled: orgLogins.length > 0,
+    })),
+  });
+
+  const docbooks: DocbookRepo[] = useMemo(() => {
+    return structureQueries
+      .filter((q) => q.data !== undefined)
+      .map((q) => q.data as DocbookRepo);
+  }, [structureQueries]);
+
+  const loadingStructures = structureQueries.some((q) => q.isLoading);
+  const loading =
+    loadingOrgs ||
+    (orgLogins.length > 0 && loadingStructures && docbooks.length === 0);
 
   const safeSetExpandedFolders = (updater: (draft: Set<string>) => void) => {
     setExpandedFolders((prev) => {
@@ -57,110 +163,6 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
       return next;
     });
   };
-
-  useEffect(() => {
-    const loadDocbooks = async () => {
-      try {
-        const userToken = localStorage.getItem("pustak_access_token");
-
-        if (!userToken) {
-          console.log("No user token available");
-          setLoading(false);
-          return;
-        }
-
-        // Get user's organizations
-        const response = await fetch("/api/user/organizations", {
-          headers: {
-            Authorization: `Bearer ${userToken}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch organizations");
-        }
-
-        const orgsData = await response.json();
-        const docbookRepos: DocbookRepo[] = [];
-
-        const cleanDocbookFolders = (
-          items: DocbookFile[] | undefined,
-          docbookName: string
-        ): DocbookFile[] => {
-          if (!items || !Array.isArray(items)) return [];
-          return items
-            .filter((item) => item.name !== docbookName)
-            .map((item) =>
-              item.type === "folder"
-                ? {
-                    ...item,
-                    files: cleanDocbookFolders(item.files, docbookName),
-                  }
-                : item
-            );
-        };
-
-        // For each org, check if docbook repo exists and load its structure
-        for (const org of orgsData.organizations || []) {
-          const orgLogin = org.login;
-          const docbookName = `pustak-docbook-${orgLogin}`;
-
-          try {
-            // Check if docbook repo exists and get staging branch structure
-            const structureResponse = await fetch(
-              `/api/docbook/${orgLogin}/structure?branch=staging`,
-              {
-                headers: {
-                  Authorization: `Bearer ${userToken}`,
-                },
-              }
-            );
-
-            if (structureResponse.ok) {
-              const structure = await structureResponse.json();
-              const cleanedFolders = cleanDocbookFolders(
-                structure.folders,
-                docbookName
-              );
-              docbookRepos.push({
-                orgId: orgLogin,
-                fullName: `${orgLogin}/${docbookName}`,
-                hasDocbook: true,
-                folders: cleanedFolders,
-                hasGeneratedDocs: cleanedFolders.length > 0,
-              });
-            } else {
-              // Docbook repo doesn't exist
-              docbookRepos.push({
-                orgId: orgLogin,
-                fullName: `${orgLogin}/${docbookName}`,
-                hasDocbook: false,
-                folders: [],
-                hasGeneratedDocs: false,
-              });
-            }
-          } catch (error) {
-            console.error(`Error loading docbook for ${orgLogin}:`, error);
-            docbookRepos.push({
-              orgId: orgLogin,
-              fullName: `${orgLogin}/${docbookName}`,
-              hasDocbook: false,
-              folders: [],
-              hasGeneratedDocs: false,
-            });
-          }
-        }
-
-        setDocbooks(docbookRepos);
-        setLoading(false);
-      } catch (error) {
-        console.error("Failed to load docbooks:", error);
-        setLoading(false);
-      }
-    };
-
-    loadDocbooks();
-  }, []);
 
   const toggleFolder = (folderKey: string, href?: string) => {
     safeSetExpandedFolders((draft) => {
@@ -220,7 +222,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
   const renderFileTree = (
     items: DocbookFile[],
     basePath: string[] = [],
-    docbook: DocbookRepo
+    docbook: DocbookRepo,
   ): JSX.Element => {
     return (
       <div className="space-y-1">
@@ -257,7 +259,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                 }`}
               >
                 <FileText className="h-3 w-3 text-blue-300/80 flex-shrink-0" />
-                <span className="truncate overflow-hidden text-ellipsis">{item.name}</span>
+                <span className="truncate overflow-hidden text-ellipsis">
+                  {item.name}
+                </span>
               </Link>
             );
           }
@@ -312,7 +316,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
             <div className="flex items-center space-x-2">
               <BookOpen className="h-6 w-6 text-blue-400" />
               <div>
-                <h2 className="text-lg font-semibold text-white">Pustak</h2>
+                <h2 className="text-lg font-semibold text-white">DocIt</h2>
                 <p className="text-xs text-slate-400">Documentation Platform</p>
               </div>
             </div>
@@ -338,7 +342,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
             Orchestrate delightful docs in minutes
           </div>
           <p className="text-[9px] leading-relaxed text-slate-400">
-            Pustak automates docbook staging so every product team ships architecture, workflow, and changelog updates with the same polish as their code.
+            DocIt automates docbook staging so every product team ships
+            architecture, workflow, and changelog updates with the same polish
+            as their code.
           </p>
           <div className="grid gap-1.5 text-[9px] text-slate-300 sm:grid-cols-3">
             <div className="flex items-center gap-1.5 rounded-xl border border-slate-800/80 bg-slate-900/70 px-2 py-1.5 transition duration-300 hover:border-blue-500/50 hover:bg-slate-900/90">
@@ -381,7 +387,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                 Workspace
               </p>
               <h2 className="text-xs font-semibold text-white">
-                Pustak Docs Hub
+                DocIt Docs Hub
               </h2>
             </div>
           </div>
@@ -490,7 +496,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                         <p className="mt-2 text-xs text-amber-200/80">
                           Create{" "}
                           <code className="rounded bg-amber-500/20 px-2">
-                            pustak-docbook-{docbook.orgId}
+                            DocIt-docbook-{docbook.orgId}
                           </code>{" "}
                           and link it from Settings to start publishing
                           documentation.
@@ -541,7 +547,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
       {/* Footer */}
       <div className="border-t border-slate-800/70 px-3 py-2.5 text-[8px] text-slate-500">
         <div className="flex items-center justify-between">
-          <span>Powered by Pustak v1.0.0</span>
+          <span>Powered by DocIt v1.0.0</span>
           <button
             onClick={() => router.refresh()}
             className="rounded-full border border-slate-700/70 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-slate-400 transition hover:border-slate-500/70 hover:text-white"

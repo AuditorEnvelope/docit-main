@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { useIsRestoring } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
@@ -69,7 +70,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 
     const interval = setInterval(() => {
       setProgressIndex(
-        (prev) => (prev + 1) % ONBOARDING_PROGRESS_MESSAGES.length
+        (prev) => (prev + 1) % ONBOARDING_PROGRESS_MESSAGES.length,
       );
     }, 1800);
 
@@ -105,7 +106,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
           .map((org: any) =>
             typeof org === "string"
               ? org
-              : org?.login || org?.org || org?.name || ""
+              : org?.login || org?.org || org?.name || "",
           )
           .filter(Boolean);
 
@@ -175,7 +176,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
             } catch (error) {
               console.error(
                 `Failed to load docbook status for ${orgId}`,
-                error
+                error,
               );
             }
 
@@ -198,7 +199,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
             }
 
             summaries[orgId] = summary;
-          })
+          }),
         );
 
         setOrgSummaries(summaries);
@@ -231,7 +232,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [token]
+    [token],
   );
 
   // Initial check when component mounts
@@ -350,6 +351,8 @@ export default function DashboardPage() {
     }
   };
 
+  const isRestoring = useIsRestoring();
+
   if (loading) {
     return (
       <Layout>
@@ -362,6 +365,34 @@ export default function DashboardPage() {
 
   if (!user) {
     return null;
+  }
+
+  // Single loading state: no "loading at each step" — one gate until we have orgs + repos (or cache restored)
+  const waitingForOrgs = loadingOrgs && connectedOrgs.length === 0;
+  const waitingForRepos =
+    selectedOrg && loadingRepos && repositories.length === 0;
+  const isInitialDashboardLoad = waitingForOrgs || waitingForRepos;
+
+  if (isRestoring) {
+    return (
+      <Layout>
+        <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+          <p className="text-sm text-slate-400">Restoring your dashboard…</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (isInitialDashboardLoad) {
+    return (
+      <Layout>
+        <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+          <p className="text-sm text-slate-400">Loading dashboard…</p>
+        </div>
+      </Layout>
+    );
   }
 
   const currentPlanKey = (actualPlan || user.plan) as PlanName;
@@ -754,8 +785,8 @@ export default function DashboardPage() {
                         ).toLowerCase();
                         // Filter out docbook repositories
                         return (
-                          !fullName.includes("/pustak-docbook-") &&
-                          !fullName.includes("pustak-docbook")
+                          !fullName.includes("/DocIt-docbook-") &&
+                          !fullName.includes("DocIt-docbook")
                         );
                       })
                       .map((repo) => {
@@ -771,7 +802,7 @@ export default function DashboardPage() {
                         const hasDocs = Boolean(repo.last_documented_at);
                         const isDocbookRepo = fullName
                           .toLowerCase()
-                          .includes("/pustak-docbook-");
+                          .includes("/DocIt-docbook-");
                         const docbookNotice =
                           "This is your docbook repository where generated documentation lives. Docs are already stored here.";
                         const repoShortName =
@@ -796,7 +827,7 @@ export default function DashboardPage() {
 
                         // Generate mock activity data for visualization
                         const activityData = Array.from({ length: 14 }, () =>
-                          Math.floor(Math.random() * 100)
+                          Math.floor(Math.random() * 100),
                         );
                         const maxActivity = Math.max(...activityData, 1);
 
@@ -868,7 +899,7 @@ export default function DashboardPage() {
                                           window.location.href = settingsUrl;
                                         } else {
                                           router.push(
-                                            `/repo/settings/${org}/${repo}`
+                                            `/repo/settings/${org}/${repo}`,
                                           );
                                         }
                                       }
@@ -910,7 +941,7 @@ export default function DashboardPage() {
                                   {activityData.map((value, idx) => {
                                     const height = Math.max(
                                       (value / maxActivity) * 100,
-                                      8
+                                      8,
                                     );
                                     const isHighlight = idx === 8;
                                     return (

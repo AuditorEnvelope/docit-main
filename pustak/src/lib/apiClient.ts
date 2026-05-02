@@ -10,9 +10,9 @@ const apiBase = (() => {
   return hasApiSuffix ? normalized : `${normalized}/api/v1`;
 })();
 
-const ACCESS_TOKEN_KEY = "pustak_access_token";
-const REFRESH_TOKEN_KEY = "pustak_refresh_token";
-const USER_KEY = "pustak_user";
+const ACCESS_TOKEN_KEY = "DocIt_access_token";
+const REFRESH_TOKEN_KEY = "DocIt_refresh_token";
+const USER_KEY = "DocIt_user";
 
 export const apiClient = axios.create({
   baseURL: apiBase,
@@ -55,7 +55,7 @@ apiClient.interceptors.response.use(
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 export default apiClient;

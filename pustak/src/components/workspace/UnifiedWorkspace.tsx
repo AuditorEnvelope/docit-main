@@ -1,23 +1,33 @@
 /**
  * Unified Workspace - Main Container
- * 
+ *
  * Combines Sidebar + Editor into a split-pane layout
  * This is the entry point for the new editor experience
  */
 
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
-import { useWorkspaceStore, type FileNode } from '@/stores/useWorkspaceStore';
-import { DocumentSidebar } from './DocumentSidebar';
-import { DocumentEditor } from './DocumentEditor';
-import { SessionActivity } from './SessionActivity';
-import { CommitModal } from '../CommitModal';
-import { BookOpen, Loader2, Search, Sun, Moon, User, LogOut, Settings, Crown } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import apiClient from '@/lib/apiClient';
+import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
+import { useRouter } from "next/navigation";
+import { useWorkspaceStore, type FileNode } from "@/stores/useWorkspaceStore";
+import { DocumentSidebar } from "./DocumentSidebar";
+import { DocumentEditor } from "./DocumentEditor";
+import { SessionActivity } from "./SessionActivity";
+import { CommitModal } from "../CommitModal";
+import {
+  BookOpen,
+  Loader2,
+  Search,
+  Sun,
+  Moon,
+  User,
+  LogOut,
+  Settings,
+  Crown,
+} from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import apiClient from "@/lib/apiClient";
 
 interface UnifiedWorkspaceProps {
   orgId: string;
@@ -25,7 +35,18 @@ interface UnifiedWorkspaceProps {
 }
 
 export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
-  const { fileTree, initializeTree, setActivePageId, activePageId, getNodeById, pendingChanges, structureDirty, syncWorkspace, hasUnsavedChanges, deletedNodes } = useWorkspaceStore();
+  const {
+    fileTree,
+    initializeTree,
+    setActivePageId,
+    activePageId,
+    getNodeById,
+    pendingChanges,
+    structureDirty,
+    syncWorkspace,
+    hasUnsavedChanges,
+    deletedNodes,
+  } = useWorkspaceStore();
   const { token, user, isAuthenticated, logout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -41,7 +62,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
       await syncWorkspace(orgId, repoId, token, message);
       setIsCommitModalOpen(false);
     } catch (error) {
-      console.error('Commit failed:', error);
+      console.error("Commit failed:", error);
     } finally {
       setIsCommitting(false);
     }
@@ -59,7 +80,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
     if (!activePage) return [];
     const path = [];
     let current: FileNode | null = activePage;
-    while (current && current.id !== 'root') {
+    while (current && current.id !== "root") {
       path.unshift(current.title);
       if (current.parentId) {
         current = getNodeById(current.parentId);
@@ -75,27 +96,31 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
   // Load workspace tree on mount
   useEffect(() => {
     setMounted(true);
-    
-    console.log('[UnifiedWorkspace] Effect triggered', { orgId, repoId, hasToken: !!token });
-    
+
+    console.log("[UnifiedWorkspace] Effect triggered", {
+      orgId,
+      repoId,
+      hasToken: !!token,
+    });
+
     if (!token) {
-      console.warn('[UnifiedWorkspace] No auth token available, waiting...');
+      console.warn("[UnifiedWorkspace] No auth token available, waiting...");
       return; // Wait for auth
     }
-    
+
     // ALWAYS fetch fresh data from backend, ignore persisted cache
     const loadWorkspace = async () => {
       try {
         const response = await apiClient.get<{ tree: FileNode }>(
-          `/workspace/${orgId}/${repoId}/tree`
+          `/workspace/${orgId}/${repoId}/tree`,
         );
         const data = response.data;
-        console.log('[UnifiedWorkspace] Received tree data:', data);
+        console.log("[UnifiedWorkspace] Received tree data:", data);
         initializeTree(data.tree);
 
         // Auto-select first page if available (recursively search)
         const findFirstPage = (node: any): any => {
-          if (node.type === 'page') return node;
+          if (node.type === "page") return node;
           if (node.children && node.children.length > 0) {
             for (const child of node.children) {
               const found = findFirstPage(child);
@@ -108,27 +133,30 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
         if (data.tree) {
           const firstPage = findFirstPage(data.tree);
           if (firstPage) {
-            console.log('[UnifiedWorkspace] Auto-selecting first page:', firstPage.title);
+            console.log(
+              "[UnifiedWorkspace] Auto-selecting first page:",
+              firstPage.title,
+            );
             setActivePageId(firstPage.id);
           }
         }
       } catch (error) {
-        console.error('[UnifiedWorkspace] Error loading workspace:', error);
+        console.error("[UnifiedWorkspace] Error loading workspace:", error);
         // Initialize with empty tree
         initializeTree({
-          id: 'root',
-          type: 'folder',
-          title: 'Root',
+          id: "root",
+          type: "folder",
+          title: "Root",
           parentId: null,
           position: 0,
           children: [],
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
         });
       }
     };
 
-    console.log('[UnifiedWorkspace] Calling loadWorkspace...');
+    console.log("[UnifiedWorkspace] Calling loadWorkspace...");
     loadWorkspace();
   }, [orgId, repoId, initializeTree, setActivePageId, token]);
 
@@ -153,10 +181,10 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
       <header className="flex-shrink-0 z-50 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800/50">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center space-x-4 min-w-0 flex-1">
-            {/* Left Section: Pustak Branding */}
+            {/* Left Section: DocIt Branding */}
             <div className="flex items-center space-x-2 shrink-0">
               <BookOpen className="w-5 h-5 text-blue-400 shrink-0" />
-              <h1 className="text-lg font-bold text-white">Pustak</h1>
+              <h1 className="text-lg font-bold text-white">DocIt</h1>
               <span className="text-[10px] bg-blue-900 text-blue-200 px-1.5 py-0.5 rounded-full shrink-0">
                 Beta
               </span>
@@ -173,12 +201,13 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                   Workspace
                 </span>
               </div>
-              
+
               {/* Org/Repo Badge */}
               <div className="flex items-center shrink-0">
                 <div className="px-3 py-1.5 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20 border border-blue-500/30 rounded-lg backdrop-blur-sm">
                   <span className="text-xs font-semibold bg-gradient-to-r from-blue-300 via-purple-300 to-blue-300 bg-clip-text text-transparent">
-                    {orgId} <span className="text-slate-500/60">/</span> {repoId}
+                    {orgId} <span className="text-slate-500/60">/</span>{" "}
+                    {repoId}
                   </span>
                 </div>
               </div>
@@ -190,10 +219,18 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                 <span className="text-slate-600">/</span>
                 {breadcrumb.map((item, index) => (
                   <span key={index} className="flex items-center shrink-0">
-                    <span className={index === breadcrumb.length - 1 ? 'text-white font-medium' : 'text-slate-400'}>
+                    <span
+                      className={
+                        index === breadcrumb.length - 1
+                          ? "text-white font-medium"
+                          : "text-slate-400"
+                      }
+                    >
                       {item}
                     </span>
-                    {index < breadcrumb.length - 1 && <span className="mx-1.5 text-slate-600">/</span>}
+                    {index < breadcrumb.length - 1 && (
+                      <span className="mx-1.5 text-slate-600">/</span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -209,24 +246,30 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
               >
                 <span className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
                 <span className="hidden sm:inline">Publish</span>
-                {changeCount > 0 && <span className="text-[10px]">({changeCount})</span>}
+                {changeCount > 0 && (
+                  <span className="text-[10px]">({changeCount})</span>
+                )}
               </button>
             )}
             {/* Search Button - Compact */}
-            <button
-              className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-slate-400 border border-slate-700 rounded-md hover:bg-slate-800 hover:border-slate-600 transition-colors shrink-0"
-            >
+            <button className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs text-slate-400 border border-slate-700 rounded-md hover:bg-slate-800 hover:border-slate-600 transition-colors shrink-0">
               <Search className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden md:inline">Search</span>
-              <kbd className="hidden lg:inline text-[10px] bg-slate-700 px-1 rounded">⌘K</kbd>
+              <kbd className="hidden lg:inline text-[10px] bg-slate-700 px-1 rounded">
+                ⌘K
+              </kbd>
             </button>
 
             {/* Theme Toggle */}
             <button
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             >
-              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {theme === "dark" ? (
+                <Sun className="w-4 h-4" />
+              ) : (
+                <Moon className="w-4 h-4" />
+              )}
             </button>
 
             {/* User Menu */}
@@ -239,12 +282,12 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                   {user.avatar_url ? (
                     <img
                       src={user.avatar_url}
-                      alt={user.name || user.username || 'User'}
+                      alt={user.name || user.username || "User"}
                       className="w-6 h-6 rounded-full border-2 border-blue-500"
                     />
                   ) : (
                     <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold">
-                      {(user.name || user.username || 'U')[0].toUpperCase()}
+                      {(user.name || user.username || "U")[0].toUpperCase()}
                     </div>
                   )}
                 </button>
@@ -266,13 +309,20 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                           {user.email || `@${user.username}`}
                         </p>
                         <div className="mt-2">
-                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                            user.plan === 'free' ? 'bg-slate-700 text-slate-300' :
-                            user.plan === 'pro' ? 'bg-blue-900/30 text-blue-400' :
-                            user.plan === 'team' ? 'bg-purple-900/30 text-purple-400' :
-                            'bg-gradient-to-r from-yellow-400 to-orange-500 text-white'
-                          }`}>
-                            {user.plan !== 'free' && <Crown className="w-3 h-3" />}
+                          <span
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                              user.plan === "free"
+                                ? "bg-slate-700 text-slate-300"
+                                : user.plan === "pro"
+                                  ? "bg-blue-900/30 text-blue-400"
+                                  : user.plan === "team"
+                                    ? "bg-purple-900/30 text-purple-400"
+                                    : "bg-gradient-to-r from-yellow-400 to-orange-500 text-white"
+                            }`}
+                          >
+                            {user.plan !== "free" && (
+                              <Crown className="w-3 h-3" />
+                            )}
                             {user.plan.toUpperCase()}
                           </span>
                         </div>
@@ -283,7 +333,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                         <button
                           onClick={() => {
                             setUserMenuOpen(false);
-                            router.push('/dashboard');
+                            router.push("/dashboard");
                           }}
                           className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
                         >
@@ -293,7 +343,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                         <button
                           onClick={() => {
                             setUserMenuOpen(false);
-                            router.push('/pricing');
+                            router.push("/pricing");
                           }}
                           className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
                         >
@@ -303,7 +353,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
                         <button
                           onClick={() => {
                             setUserMenuOpen(false);
-                            router.push('/settings');
+                            router.push("/settings");
                           }}
                           className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
                         >
@@ -331,7 +381,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
               </div>
             ) : (
               <button
-                onClick={() => router.push('/login')}
+                onClick={() => router.push("/login")}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
               >
                 Login
@@ -368,7 +418,7 @@ export function UnifiedWorkspace({ orgId, repoId }: UnifiedWorkspaceProps) {
         isOpen={isCommitModalOpen}
         onClose={() => setIsCommitModalOpen(false)}
         onCommit={handleCommit}
-        pageTitle={activePage?.title ?? 'Document'}
+        pageTitle={activePage?.title ?? "Document"}
         isLoading={isCommitting}
       />
     </div>

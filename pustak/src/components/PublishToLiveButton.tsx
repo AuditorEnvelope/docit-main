@@ -40,7 +40,7 @@ export function PublishToLiveButton({
   }>({ type: null, message: "" });
 
   const handlePublish = async () => {
-    const token = localStorage.getItem("pustak_access_token");
+    const token = localStorage.getItem("DocIt_access_token");
     if (!token) {
       setStatus({
         type: "error",

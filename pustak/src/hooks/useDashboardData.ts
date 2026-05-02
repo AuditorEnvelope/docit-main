@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import apiClient from "@/lib/apiClient";
 
@@ -63,32 +64,135 @@ interface UseDashboardDataResult {
 
 export function useDashboardData(): UseDashboardDataResult {
   const { token, user } = useAuth();
-
-  const [repositories, setRepositories] = useState<RepositorySummary[]>([]);
-  const [loadingRepos, setLoadingRepos] = useState(false);
   const [repoSearchQuery, setRepoSearchQuery] = useState("");
 
-  const [connectedOrgs, setConnectedOrgs] = useState<string[]>([]);
-  const [loadingOrgs, setLoadingOrgs] = useState(false);
-  const [selectedOrg, setSelectedOrg] = useState<string>("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [docbookRepo, setDocbookRepo] = useState<string | null>(null);
+  // 1. User organizations
+  const {
+    data: orgsData,
+    isLoading: loadingOrgs,
+  } = useQuery({
+    queryKey: ["user", "organizations"],
+    queryFn: async () => {
+      const response = await apiClient.get<{
+        organizations?: { login: string }[];
+      }>("/user/organizations");
+      const orgs =
+        response.data.organizations?.map((org) => org.login).filter(Boolean) ??
+        [];
+      return { organizations: orgs };
+    },
+    enabled: Boolean(token),
+  });
 
-  const [pendingReviewsLoading, setPendingReviewsLoading] = useState(false);
-  const [pendingReviewsError, setPendingReviewsError] = useState<string | null>(
-    null
-  );
-  const [pendingReviewsCount, setPendingReviewsCount] = useState(0);
+  const connectedOrgs = orgsData?.organizations ?? [];
+  const [selectedOrg, setSelectedOrgState] = useState<string>("");
 
-  const [actualPlan, setActualPlan] = useState<string | null>(null);
+  // Sync selectedOrg when orgs load: keep current if still in list, else first org
+  useEffect(() => {
+    if (connectedOrgs.length === 0) return;
+    setSelectedOrgState((current) =>
+      current && connectedOrgs.includes(current) ? current : connectedOrgs[0] ?? ""
+    );
+  }, [connectedOrgs]);
 
+  const setSelectedOrg = useCallback((org: string) => {
+    setSelectedOrgState(org);
+  }, []);
+
+  // 2. Repo summary for selected org
+  const {
+    data: reposData,
+    isLoading: loadingRepos,
+    isError: reposError,
+    error: reposErrorObj,
+    refetch: refetchRepositories,
+  } = useQuery({
+    queryKey: ["repo", "summary", selectedOrg],
+    queryFn: async () => {
+      const response = await apiClient.get<{
+        repositories?: RepositorySummary[];
+      }>(`/org/${selectedOrg}/repositories/summary`);
+      const repos: RepositorySummary[] = Array.isArray(
+        response.data.repositories
+      )
+        ? response.data.repositories
+        : [];
+      return { repositories: repos };
+    },
+    enabled: Boolean(token && selectedOrg),
+  });
+
+  const repositories = reposData?.repositories ?? [];
+  const errorMessage = reposError
+    ? (reposErrorObj instanceof Error
+        ? reposErrorObj.message
+        : "Unable to load repositories")
+    : null;
+
+  // 3. Usage / plan
+  const { data: usageData } = useQuery({
+    queryKey: ["usage", "plan"],
+    queryFn: async () => {
+      const response = await apiClient.get<{ plan?: string }>("/usage/me");
+      return { plan: response.data.plan ?? null };
+    },
+    enabled: Boolean(token),
+    retry: (failureCount, error: unknown) => {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 404) return false;
+      return failureCount < 1;
+    },
+  });
+
+  const actualPlan = usageData?.plan ?? user?.plan ?? null;
+
+  // 4. Docbook check-exists for selected org
+  const { data: docbookData } = useQuery({
+    queryKey: ["docbook", "check-exists", selectedOrg],
+    queryFn: async () => {
+      const response = await apiClient.get<{
+        exists: boolean;
+        docbook_repo?: string | null;
+      }>("/docbook/check-exists", { params: { org_id: selectedOrg } });
+      return {
+        docbookRepo:
+          response.data.exists ? response.data.docbook_repo ?? null : null,
+      };
+    },
+    enabled: Boolean(token && selectedOrg),
+  });
+
+  const docbookRepo = docbookData?.docbookRepo ?? null;
+
+  // 5. Pending reviews for selected org
+  const {
+    data: pendingData,
+    isLoading: pendingReviewsLoading,
+    isError: pendingReviewsIsError,
+    error: pendingReviewsErrorObj,
+    refetch: refetchPendingReviews,
+  } = useQuery({
+    queryKey: ["docbook", "pending-reviews", selectedOrg],
+    queryFn: async () => {
+      const response = await apiClient.get<{ reviews?: unknown[] }>(
+        "/docbook/pending-reviews",
+        { params: { org_id: selectedOrg } }
+      );
+      const reviews = Array.isArray(response.data.reviews)
+        ? response.data.reviews
+        : [];
+      return { reviews, count: reviews.length };
+    },
+    enabled: Boolean(token && selectedOrg),
+  });
+
+  const pendingReviewsCount = pendingData?.count ?? 0;
   const pendingReviewsDisabled = !selectedOrg || !token;
-
-  const documentedCount = useMemo(
-    () =>
-      repositories.filter((repo) => Boolean(repo.last_documented_at)).length,
-    [repositories]
-  );
+  const pendingReviewsError = pendingReviewsIsError
+    ? (pendingReviewsErrorObj instanceof Error
+        ? pendingReviewsErrorObj.message
+        : "Unable to load pending reviews")
+    : null;
 
   const pendingReviewStatusMessage = useMemo(() => {
     if (pendingReviewsDisabled) {
@@ -111,162 +215,19 @@ export function useDashboardData(): UseDashboardDataResult {
     pendingReviewsCount,
   ]);
 
-  const loadOrganizations = useCallback(async () => {
-    if (!token) {
-      setConnectedOrgs([]);
-      setSelectedOrg("");
-      setDocbookRepo(null);
-      return;
-    }
-
-    setLoadingOrgs(true);
-    try {
-      const response = await apiClient.get<{
-        organizations?: { login: string }[];
-      }>("/user/organizations");
-      const orgs =
-        response.data.organizations?.map((org) => org.login).filter(Boolean) ??
-        [];
-      setConnectedOrgs(orgs);
-      setSelectedOrg((current) =>
-        current && orgs.includes(current) ? current : orgs[0] || ""
-      );
-    } catch (error) {
-      console.error("Error fetching organizations", error);
-      setConnectedOrgs([]);
-      setSelectedOrg("");
-      setDocbookRepo(null);
-    } finally {
-      setLoadingOrgs(false);
-    }
-  }, [token]);
-
-  const loadDocbookRepo = useCallback(async () => {
-    if (!token || !selectedOrg) {
-      setDocbookRepo(null);
-      return;
-    }
-
-    try {
-      const response = await apiClient.get<{
-        exists: boolean;
-        docbook_repo?: string | null;
-      }>("/docbook/check-exists", {
-        params: { org_id: selectedOrg },
-      });
-      setDocbookRepo(
-        response.data.exists ? response.data.docbook_repo ?? null : null
-      );
-    } catch (error) {
-      console.error("Error fetching docbook repo", error);
-      setDocbookRepo(null);
-    }
-  }, [selectedOrg, token]);
-
   const loadRepositories = useCallback(async () => {
-    if (!token || !selectedOrg) {
-      setRepositories([]);
-      return;
-    }
-
-    setLoadingRepos(true);
-    setErrorMessage(null);
-
-    try {
-      const response = await apiClient.get<{
-        repositories?: RepositorySummary[];
-      }>(`/org/${selectedOrg}/repositories/summary`);
-
-      const repos: RepositorySummary[] = Array.isArray(
-        response.data.repositories
-      )
-        ? response.data.repositories
-        : [];
-      setRepositories(repos);
-    } catch (error: unknown) {
-      console.error("Error loading repositories", error);
-      setRepositories([]);
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to load repositories"
-      );
-    } finally {
-      setLoadingRepos(false);
-    }
-  }, [selectedOrg, token]);
+    await refetchRepositories();
+  }, [refetchRepositories]);
 
   const reloadPendingReviews = useCallback(async () => {
-    if (pendingReviewsDisabled) {
-      setPendingReviewsLoading(false);
-      setPendingReviewsError(null);
-      setPendingReviewsCount(0);
-      return;
-    }
+    await refetchPendingReviews();
+  }, [refetchPendingReviews]);
 
-    setPendingReviewsLoading(true);
-    setPendingReviewsError(null);
-
-    try {
-      const response = await apiClient.get<{ reviews?: unknown[] }>(
-        "/docbook/pending-reviews",
-        {
-          params: { org_id: selectedOrg },
-        }
-      );
-      const reviews = Array.isArray(response.data.reviews)
-        ? response.data.reviews
-        : [];
-      setPendingReviewsCount(reviews.length);
-    } catch (error) {
-      console.error("Error loading pending reviews", error);
-      setPendingReviewsCount(0);
-      setPendingReviewsError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load pending reviews"
-      );
-    } finally {
-      setPendingReviewsLoading(false);
-    }
-  }, [pendingReviewsDisabled, selectedOrg]);
-
-  const loadActualPlan = useCallback(async () => {
-    if (!token) return;
-
-    try {
-      const response = await apiClient.get<{ plan?: string }>("/usage/me");
-      if (response.data.plan) {
-        setActualPlan(response.data.plan);
-      } else {
-        setActualPlan(user?.plan ?? null);
-      }
-    } catch (error) {
-      console.error("Failed to fetch actual plan:", error);
-      setActualPlan(user?.plan ?? null);
-    }
-  }, [token, user?.plan]);
-
-  // Initial loads
-  useEffect(() => {
-    loadOrganizations();
-  }, [loadOrganizations]);
-
-  useEffect(() => {
-    loadDocbookRepo();
-  }, [loadDocbookRepo]);
-
-  useEffect(() => {
-    loadRepositories();
-  }, [loadRepositories]);
-
-  useEffect(() => {
-    reloadPendingReviews();
-  }, [reloadPendingReviews]);
-
-  useEffect(() => {
-    loadActualPlan();
-  }, [loadActualPlan]);
-
-  // Derived filtered repos live in the consumer to keep hook focused on data
+  const documentedCount = useMemo(
+    () =>
+      repositories.filter((repo) => Boolean(repo.last_documented_at)).length,
+    [repositories]
+  );
 
   return {
     repositories,

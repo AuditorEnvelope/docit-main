@@ -31,9 +31,9 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Storage keys
-const ACCESS_TOKEN_KEY = "pustak_access_token";
-const REFRESH_TOKEN_KEY = "pustak_refresh_token";
-const USER_KEY = "pustak_user";
+const ACCESS_TOKEN_KEY = "DocIt_access_token";
+const REFRESH_TOKEN_KEY = "DocIt_refresh_token";
+const USER_KEY = "DocIt_user";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -46,8 +46,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
         const storedUser = localStorage.getItem(USER_KEY);
-        
-        console.log('[AuthContext] Initializing auth...', { hasToken: !!accessToken, hasUser: !!storedUser });
+
+        console.log("[AuthContext] Initializing auth...", {
+          hasToken: !!accessToken,
+          hasUser: !!storedUser,
+        });
 
         if (accessToken && storedUser) {
           try {
@@ -55,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const response = await apiClient.get<User>("/auth/me");
             console.log(
               "[AuthContext] Token verification response:",
-              response.status
+              response.status,
             );
 
             const userData = response.data;
@@ -66,21 +69,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser));
             setUser(normalizedUser);
             setToken(accessToken);
-            console.log('[AuthContext] Auth initialized successfully');
+            console.log("[AuthContext] Auth initialized successfully");
           } catch (err) {
             // Token invalid or request failed, clear storage
             console.warn("[AuthContext] Token invalid, clearing auth", err);
             clearAuth();
           }
         } else {
-          console.warn('[AuthContext] No stored credentials found');
+          console.warn("[AuthContext] No stored credentials found");
         }
       } catch (error) {
         console.error("Auth initialization error:", error);
         clearAuth();
       } finally {
         setLoading(false);
-        console.log('[AuthContext] Auth init complete');
+        console.log("[AuthContext] Auth init complete");
       }
     };
 

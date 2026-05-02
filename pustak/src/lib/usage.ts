@@ -135,7 +135,7 @@ export interface UsageLimitError {
  * console.log(`Docs used: ${usage.limits.docs_generated?.used}`);
  * ```
  */
-export async function fetchUsageStats(token: string): Promise<UsageStats> {
+export async function fetchUsageStats(token: string): Promise<UsageStats | null> {
 	if (!token) {
 		throw new Error("Authentication required. Please log in.");
 	}
@@ -150,10 +150,11 @@ export async function fetchUsageStats(token: string): Promise<UsageStats> {
 		if (status === 401) {
 			throw new Error("Authentication required. Please log in.");
 		}
+		
+		// 404 = no subscription yet - this is a valid state for new users
+		// Return null instead of throwing to allow graceful handling
 		if (status === 404) {
-			throw new Error(
-				"No active subscription found. Please subscribe to a plan."
-			);
+			return null;
 		}
 
 		throw new Error(

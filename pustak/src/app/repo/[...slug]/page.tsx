@@ -66,7 +66,7 @@ const normalizeDocType = (value: string): string => {
 };
 
 const extractDocInfo = (
-  pathSegments: string[]
+  pathSegments: string[],
 ): {
   filePath: string;
   docType: string;
@@ -185,21 +185,21 @@ export default function RepoPage({ params }: RepoPageProps) {
 
         const filePath = docInfo.filePath;
 
-        const userToken = localStorage.getItem("pustak_access_token");
+        const userToken = localStorage.getItem("DocIt_access_token");
         const response = await fetch(
           `/api/fetch-doc?repo=${encodeURIComponent(
-            parsedRepoName
+            parsedRepoName,
           )}&filePath=${encodeURIComponent(filePath)}`,
           {
             headers: userToken ? { Authorization: `Bearer ${userToken}` } : {},
-          }
+          },
         );
         if (!response.ok) {
           if (!isMounted) return;
           setError(
             response.status === 401
               ? "Not authenticated"
-              : "Failed to fetch documentation"
+              : "Failed to fetch documentation",
           );
           setLoading(false);
           return;
@@ -223,8 +223,8 @@ export default function RepoPage({ params }: RepoPageProps) {
               tracked_branch?: string | null;
             }>(
               `/repositories/${encodeURIComponent(
-                parsedRepoName
-              )}/tracked-branch`
+                parsedRepoName,
+              )}/tracked-branch`,
             );
             const branchData = branchResponse.data;
             if (branchData.tracked_branch) {
@@ -237,7 +237,7 @@ export default function RepoPage({ params }: RepoPageProps) {
       } catch (err) {
         if (!isMounted) return;
         setError(
-          err instanceof Error ? err.message : "Failed to load documentation"
+          err instanceof Error ? err.message : "Failed to load documentation",
         );
       } finally {
         if (isMounted) {
@@ -325,11 +325,11 @@ export default function RepoPage({ params }: RepoPageProps) {
       // Reload the page content
       const reloadResponse = await fetch(
         `/api/fetch-doc?repo=${encodeURIComponent(
-          repoName
+          repoName,
         )}&filePath=${encodeURIComponent(sourcePath)}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (reloadResponse.ok) {

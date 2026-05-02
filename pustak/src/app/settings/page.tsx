@@ -42,8 +42,8 @@ function formatPlanLabel(plan?: string | null) {
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-const READER_APP_URL = "https://github.com/apps/pustak-analyser-ai-test";
-const WRITER_APP_URL = "https://github.com/apps/pustak-publisher-ai-test";
+const READER_APP_URL = "https://github.com/apps/DocIt-analyser-ai-test";
+const WRITER_APP_URL = "https://github.com/apps/DocIt-publisher-ai-test";
 
 const STATUS_TONE_CLASSES = {
   success:
@@ -82,7 +82,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [organizations, setOrganizations] = useState<string[]>([]);
   const [orgSummaries, setOrgSummaries] = useState<Record<string, OrgSummary>>(
-    {}
+    {},
   );
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
@@ -106,7 +106,7 @@ export default function SettingsPage() {
         .map((org: { login?: string }) => org?.login)
         .filter(
           (login): login is string =>
-            typeof login === "string" && login.length > 0
+            typeof login === "string" && login.length > 0,
         );
 
       setOrganizations(orgIds);
@@ -170,7 +170,7 @@ export default function SettingsPage() {
                 } catch (err) {
                   console.error(
                     `Failed to load writer access for ${orgId}`,
-                    err
+                    err,
                   );
                 }
               }
@@ -183,14 +183,14 @@ export default function SettingsPage() {
             summary.loading = false;
             summaries[orgId] = summary;
           }
-        })
+        }),
       );
 
       setOrgSummaries(summaries);
     } catch (error) {
       console.error("Settings load error", error);
       setFetchError(
-        error instanceof Error ? error.message : "Unable to fetch settings"
+        error instanceof Error ? error.message : "Unable to fetch settings",
       );
     } finally {
       setLoading(false);
@@ -258,7 +258,7 @@ export default function SettingsPage() {
                       {user?.name || user?.username || "Your Account"}
                     </h1>
                     <p className="text-slate-300">
-                      {user?.email || `@${user?.username ?? "pustak-user"}`}
+                      {user?.email || `@${user?.username ?? "DocIt-user"}`}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
@@ -480,13 +480,13 @@ export default function SettingsPage() {
                           status: !summary.docbookLinked
                             ? "Link docbook first"
                             : summary.writerHasAccess
-                            ? "Granted"
-                            : "Pending",
+                              ? "Granted"
+                              : "Pending",
                           tone: !summary.docbookLinked
                             ? "neutral"
                             : summary.writerHasAccess
-                            ? "success"
-                            : "warning",
+                              ? "success"
+                              : "warning",
                           action:
                             summary.docbookLinked && !summary.writerHasAccess
                               ? {
@@ -578,7 +578,7 @@ export default function SettingsPage() {
                                   : "Link docbook"}
                               </button>
                               <a
-                                href="https://github.com/apps/pustak-analyser-ai-test"
+                                href="https://github.com/apps/DocIt-analyser-ai-test"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700/70 bg-slate-900/60 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-indigo-400 hover:text-white"
@@ -647,7 +647,7 @@ export default function SettingsPage() {
                                         )
                                       ) : null}
                                     </div>
-                                  )
+                                  ),
                                 )}
                               </div>
                             </div>

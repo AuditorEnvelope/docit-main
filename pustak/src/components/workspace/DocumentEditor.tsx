@@ -63,7 +63,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
       lastSavedRef.current = content;
       setIsSaving(false);
     }, 500),
-    [updateContent]
+    [updateContent],
   );
 
   // Load content when active page changes OR when cache is updated (for revert)
@@ -184,13 +184,13 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
         debouncedSave(activePageId, markdown);
       }
     },
-    [activePageId, debouncedSave]
+    [activePageId, debouncedSave],
   );
 
   // Handle commit
   const handleCommit = useCallback(
     async (commitMessage: string) => {
-      const token = localStorage.getItem("pustak_access_token");
+      const token = localStorage.getItem("DocIt_access_token");
       if (!token) {
         throw new Error("No auth token available");
       }
@@ -207,7 +207,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
         setIsCommitting(false);
       }
     },
-    [orgId, repoId, syncWorkspace]
+    [orgId, repoId, syncWorkspace],
   );
 
   if (!activePage) {

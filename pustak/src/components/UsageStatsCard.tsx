@@ -17,430 +17,469 @@
 
 import { useState, useEffect } from "react";
 import {
-	TrendingUp,
-	AlertTriangle,
-	CheckCircle,
-	ArrowUpCircle,
-	Loader2,
-	Calendar,
-	Zap,
+  TrendingUp,
+  AlertTriangle,
+  CheckCircle,
+  ArrowUpCircle,
+  Loader2,
+  Calendar,
+  Zap,
+  Sparkles,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
 import {
-	fetchUsageStats,
-	getUsagePercentage,
-	getUsageColor,
-	formatNumber,
-	formatDate,
-	type UsageStats,
-	type ResourceUsage,
+  fetchUsageStats,
+  getUsagePercentage,
+  getUsageColor,
+  formatNumber,
+  formatDate,
+  type UsageStats,
+  type ResourceUsage,
 } from "@/lib/usage";
 
 interface UsageStatsCardProps {
-	/**
-	 * Show compact version (only docs_generated)
-	 * Default: false (shows all resources)
-	 */
-	compact?: boolean;
+  /**
+   * Show compact version (only docs_generated)
+   * Default: false (shows all resources)
+   */
+  compact?: boolean;
 
-	/**
-	 * Callback when user clicks "Upgrade" button
-	 */
-	onUpgradeClick?: () => void;
+  /**
+   * Callback when user clicks "Upgrade" button
+   */
+  onUpgradeClick?: () => void;
 
-	/**
-	 * Custom class name for container
-	 */
-	className?: string;
+  /**
+   * Custom class name for container
+   */
+  className?: string;
 }
 
 /**
  * Single resource usage progress bar
  */
 interface ResourceProgressBarProps {
-	label: string;
-	usage: ResourceUsage;
-	icon?: React.ReactNode;
+  label: string;
+  usage: ResourceUsage;
+  icon?: React.ReactNode;
 }
 
 function ResourceProgressBar({ label, usage, icon }: ResourceProgressBarProps) {
-	const percentage = getUsagePercentage(usage.used, usage.limit);
-	const color = getUsageColor(percentage);
+  const percentage = getUsagePercentage(usage.used, usage.limit);
+  const color = getUsageColor(percentage);
 
-	// Color classes mapping
-	const colorClasses = {
-		green: {
-			bg: "bg-green-500",
-			text: "text-green-700 dark:text-green-300",
-			border: "border-green-200 dark:border-green-700",
-			lightBg: "bg-green-50 dark:bg-green-900/20",
-		},
-		yellow: {
-			bg: "bg-yellow-500",
-			text: "text-yellow-700 dark:text-yellow-300",
-			border: "border-yellow-200 dark:border-yellow-700",
-			lightBg: "bg-yellow-50 dark:bg-yellow-900/20",
-		},
-		red: {
-			bg: "bg-red-500",
-			text: "text-red-700 dark:text-red-300",
-			border: "border-red-200 dark:border-red-700",
-			lightBg: "bg-red-50 dark:bg-red-900/20",
-		},
-	};
+  // Color classes mapping
+  const colorClasses = {
+    green: {
+      bg: "bg-green-500",
+      text: "text-green-700 dark:text-green-300",
+      border: "border-green-200 dark:border-green-700",
+      lightBg: "bg-green-50 dark:bg-green-900/20",
+    },
+    yellow: {
+      bg: "bg-yellow-500",
+      text: "text-yellow-700 dark:text-yellow-300",
+      border: "border-yellow-200 dark:border-yellow-700",
+      lightBg: "bg-yellow-50 dark:bg-yellow-900/20",
+    },
+    red: {
+      bg: "bg-red-500",
+      text: "text-red-700 dark:text-red-300",
+      border: "border-red-200 dark:border-red-700",
+      lightBg: "bg-red-50 dark:bg-red-900/20",
+    },
+  };
 
-	const colors = colorClasses[color];
+  const colors = colorClasses[color];
 
-	return (
-		<div className="space-y-2">
-			{/* Header */}
-			<div className="flex items-center justify-between text-sm">
-				<div className="flex items-center gap-2">
-					{icon}
-					<span className="font-medium text-gray-700 dark:text-gray-200">
-						{label}
-					</span>
-				</div>
-				<span className={`font-semibold ${colors.text}`}>
-					{formatNumber(usage.used)} / {formatNumber(usage.limit)}
-				</span>
-			</div>
+  return (
+    <div className="space-y-2">
+      {/* Header */}
+      <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center gap-2">
+          {icon}
+          <span className="font-medium text-gray-700 dark:text-gray-200">
+            {label}
+          </span>
+        </div>
+        <span className={`font-semibold ${colors.text}`}>
+          {formatNumber(usage.used)} / {formatNumber(usage.limit)}
+        </span>
+      </div>
 
-			{/* Progress Bar */}
-			<div className="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-				<div
-					className={`absolute left-0 top-0 h-full ${colors.bg} transition-all duration-300`}
-					style={{
-						width: percentage !== null ? `${percentage}%` : "0%",
-					}}
-				/>
-			</div>
+      {/* Progress Bar */}
+      <div className="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+        <div
+          className={`absolute left-0 top-0 h-full ${colors.bg} transition-all duration-300`}
+          style={{
+            width: percentage !== null ? `${percentage}%` : "0%",
+          }}
+        />
+      </div>
 
-			{/* Percentage & Warning */}
-			<div className="flex items-center justify-between text-xs">
-				<span className="text-gray-600 dark:text-gray-400">
-					{percentage !== null ? `${percentage.toFixed(1)}% used` : "Unlimited"}
-				</span>
+      {/* Percentage & Warning */}
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-gray-600 dark:text-gray-400">
+          {percentage !== null ? `${percentage.toFixed(1)}% used` : "Unlimited"}
+        </span>
 
-				{percentage !== null && percentage >= 90 && (
-					<span
-						className={`flex items-center gap-1 ${colors.text} font-medium`}
-					>
-						<AlertTriangle className="w-3 h-3" />
-						Running Low
-					</span>
-				)}
+        {percentage !== null && percentage >= 90 && (
+          <span
+            className={`flex items-center gap-1 ${colors.text} font-medium`}
+          >
+            <AlertTriangle className="w-3 h-3" />
+            Running Low
+          </span>
+        )}
 
-				{percentage !== null && percentage >= 80 && percentage < 90 && (
-					<span
-						className={`flex items-center gap-1 ${colors.text} font-medium`}
-					>
-						<TrendingUp className="w-3 h-3" />
-						Nearing Limit
-					</span>
-				)}
+        {percentage !== null && percentage >= 80 && percentage < 90 && (
+          <span
+            className={`flex items-center gap-1 ${colors.text} font-medium`}
+          >
+            <TrendingUp className="w-3 h-3" />
+            Nearing Limit
+          </span>
+        )}
 
-				{(percentage === null || percentage < 80) && usage.allowed && (
-					<span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium">
-						<CheckCircle className="w-3 h-3" />
-						Good
-					</span>
-				)}
-			</div>
-		</div>
-	);
+        {(percentage === null || percentage < 80) && usage.allowed && (
+          <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium">
+            <CheckCircle className="w-3 h-3" />
+            Good
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /**
  * Main usage stats card component
  */
 export function UsageStatsCard({
-	compact = false,
-	onUpgradeClick,
-	className = "",
+  compact = false,
+  onUpgradeClick,
+  className = "",
 }: UsageStatsCardProps) {
-	const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
-	const [isLoading, setIsLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-	const { token } = useAuth();
+  const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { token } = useAuth();
 
-	// Fetch usage stats
-	useEffect(() => {
-		const loadUsageStats = async () => {
-			if (!token) {
-				setIsLoading(false);
-				setError("Not authenticated");
-				return;
-			}
+  // Fetch usage stats
+  useEffect(() => {
+    const loadUsageStats = async () => {
+      if (!token) {
+        setIsLoading(false);
+        setError("Not authenticated");
+        return;
+      }
 
-			try {
-				setIsLoading(true);
-				setError(null);
-				const data = await fetchUsageStats(token);
-				setUsageStats(data);
-			} catch (err) {
-				console.error("Failed to load usage stats:", err);
-				setError(err instanceof Error ? err.message : "Failed to load usage");
-			} finally {
-				setIsLoading(false);
-			}
-		};
+      try {
+        setIsLoading(true);
+        setError(null);
+        const data = await fetchUsageStats(token);
+        setUsageStats(data);
+      } catch (err) {
+        console.error("Failed to load usage stats:", err);
+        setError(err instanceof Error ? err.message : "Failed to load usage");
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-		loadUsageStats();
+    loadUsageStats();
 
-		// UX FIX: Removed aggressive polling (was 30s, causing flicker)
-		// Usage stats are now only fetched on mount.
-		// If real-time updates are needed, consider WebSockets or manual refresh button.
-		// const interval = setInterval(loadUsageStats, 30000);
-		// return () => clearInterval(interval);
-	}, [token]);
+    // UX FIX: Removed aggressive polling (was 30s, causing flicker)
+    // Usage stats are now only fetched on mount.
+    // If real-time updates are needed, consider WebSockets or manual refresh button.
+    // const interval = setInterval(loadUsageStats, 30000);
+    // return () => clearInterval(interval);
+  }, [token]);
 
-	// Loading state
-	if (isLoading) {
-		return (
-			<div
-				className={`border border-gray-200 dark:border-gray-700 rounded-lg p-6 ${className}`}
-			>
-				<div className="flex items-center justify-center py-8">
-					<Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-				</div>
-			</div>
-		);
-	}
+  // Loading state
+  if (isLoading) {
+    return (
+      <div
+        className={`border border-gray-200 dark:border-gray-700 rounded-lg p-6 ${className}`}
+      >
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        </div>
+      </div>
+    );
+  }
 
-	// Error state
-	if (error || !usageStats) {
-		return (
-			<div
-				className={`border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 rounded-lg p-6 ${className}`}
-			>
-				<div className="flex items-center gap-2 text-red-700 dark:text-red-300">
-					<AlertTriangle className="w-5 h-5" />
-					<span className="text-sm">
-						{error || "Could not load usage stats"}
-					</span>
-				</div>
-			</div>
-		);
-	}
+  // Error state - only show for real errors, not missing subscription
+  if (error && error !== "No subscription") {
+    return (
+      <div
+        className={`border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 rounded-lg p-6 ${className}`}
+      >
+        <div className="flex items-center gap-2 text-red-700 dark:text-red-300">
+          <AlertTriangle className="w-5 h-5" />
+          <span className="text-sm">
+            {error || "Could not load usage stats"}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
-	// Check if nearing any limit
-	const nearingLimit = Object.values(usageStats.limits).some((limit) => {
-		if (!limit) return false;
-		const percentage = getUsagePercentage(limit.used, limit.limit);
-		return percentage !== null && percentage >= 80;
-	});
+  // No subscription state - show sleek glassmorphic welcome banner
+  if (!usageStats) {
+    return (
+      <div
+        className={`relative overflow-hidden rounded-xl border border-blue-500/20 bg-gradient-to-r from-blue-500/10 to-purple-500/10 backdrop-blur-md px-5 py-4 ${className}`}
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          {/* Left: Icon + Text */}
+          <div className="flex items-center gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 border border-blue-400/20">
+              <Sparkles className="h-5 w-5 text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-medium text-white">
+                Welcome to DocIt
+              </h3>
+              <p className="text-sm text-slate-400">
+                Select a plan to start generating documentation for your
+                repositories.
+              </p>
+            </div>
+          </div>
 
-	// Check if at any limit
-	const atLimit = Object.values(usageStats.limits).some((limit) => {
-		return limit && !limit.allowed;
-	});
+          {/* Right: CTA Button */}
+          <button
+            onClick={
+              onUpgradeClick || (() => (window.location.href = "/pricing"))
+            }
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-500 hover:shadow-blue-500/30 cursor-pointer"
+          >
+            View Plans
+            <ArrowUpCircle className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-	return (
-		<div
-			className={`border border-gray-200 dark:border-gray-700 rounded-lg p-6 space-y-6 ${className}`}
-		>
-			{/* Header */}
-			<div className="flex items-center justify-between">
-				<div>
-					<h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-						Usage & Limits
-					</h3>
-					<p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-						Plan:{" "}
-						<span className="font-medium capitalize">{usageStats.plan}</span>
-					</p>
-				</div>
+  // Check if nearing any limit
+  const nearingLimit = Object.values(usageStats.limits).some((limit) => {
+    if (!limit) return false;
+    const percentage = getUsagePercentage(limit.used, limit.limit);
+    return percentage !== null && percentage >= 80;
+  });
 
-				{/* Cycle end date */}
-				<div className="text-right">
-					<div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
-						<Calendar className="w-3 h-3" />
-						<span>Resets</span>
-					</div>
-					<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-1">
-						{formatDate(usageStats.cycle_end)}
-					</p>
-				</div>
-			</div>
+  // Check if at any limit
+  const atLimit = Object.values(usageStats.limits).some((limit) => {
+    return limit && !limit.allowed;
+  });
 
-			{/* Usage Bars */}
-			<div className="space-y-4">
-				{/* Documents Generated (Always show) */}
-				{usageStats.limits.docs_generated && (
-					<ResourceProgressBar
-						label="Documents Generated"
-						usage={usageStats.limits.docs_generated}
-						icon={<Zap className="w-4 h-4 text-purple-500" />}
-					/>
-				)}
+  return (
+    <div
+      className={`border border-gray-200 dark:border-gray-700 rounded-lg p-6 space-y-6 ${className}`}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            Usage & Limits
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Plan:{" "}
+            <span className="font-medium capitalize">{usageStats.plan}</span>
+          </p>
+        </div>
 
-				{/* Other resources (only in non-compact mode) */}
-				{!compact && (
-					<>
-						{usageStats.limits.repos_connected && (
-							<ResourceProgressBar
-								label="Repositories Connected"
-								usage={usageStats.limits.repos_connected}
-								icon={<TrendingUp className="w-4 h-4 text-blue-500" />}
-							/>
-						)}
+        {/* Cycle end date */}
+        <div className="text-right">
+          <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+            <Calendar className="w-3 h-3" />
+            <span>Resets</span>
+          </div>
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mt-1">
+            {formatDate(usageStats.cycle_end)}
+          </p>
+        </div>
+      </div>
 
-						{/* UX FIX: Hide API Calls (not relevant to users) */}
-						{/* {usageStats.limits.api_calls && (
+      {/* Usage Bars */}
+      <div className="space-y-4">
+        {/* Documents Generated (Always show) */}
+        {usageStats.limits.docs_generated && (
+          <ResourceProgressBar
+            label="Documents Generated"
+            usage={usageStats.limits.docs_generated}
+            icon={<Zap className="w-4 h-4 text-purple-500" />}
+          />
+        )}
+
+        {/* Other resources (only in non-compact mode) */}
+        {!compact && (
+          <>
+            {usageStats.limits.repos_connected && (
+              <ResourceProgressBar
+                label="Repositories Connected"
+                usage={usageStats.limits.repos_connected}
+                icon={<TrendingUp className="w-4 h-4 text-blue-500" />}
+              />
+            )}
+
+            {/* UX FIX: Hide API Calls (not relevant to users) */}
+            {/* {usageStats.limits.api_calls && (
 							<ResourceProgressBar
 								label="API Calls"
 								usage={usageStats.limits.api_calls}
 								icon={<TrendingUp className="w-4 h-4 text-green-500" />}
 							/>
 						)} */}
-					</>
-				)}
-			</div>
+          </>
+        )}
+      </div>
 
-			{/* Phase 6: Token Usage Statistics */}
-			{usageStats.token_usage &&
-				usageStats.token_usage.generations_count > 0 && (
-					<div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-						<h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-							<Zap className="w-4 h-4 text-purple-500" />
-							Token Usage (This Cycle)
-						</h4>
+      {/* Phase 6: Token Usage Statistics */}
+      {usageStats.token_usage &&
+        usageStats.token_usage.generations_count > 0 && (
+          <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-purple-500" />
+              Token Usage (This Cycle)
+            </h4>
 
-						<div className="grid grid-cols-2 gap-3">
-							{/* Total Tokens */}
-							<div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-								<p className="text-xs text-gray-600 dark:text-gray-400">
-									Total Tokens
-								</p>
-								<p className="text-lg font-bold text-purple-700 dark:text-purple-300">
-									{formatNumber(usageStats.token_usage.total_tokens)}
-								</p>
-							</div>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Total Tokens */}
+              <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Total Tokens
+                </p>
+                <p className="text-lg font-bold text-purple-700 dark:text-purple-300">
+                  {formatNumber(usageStats.token_usage.total_tokens)}
+                </p>
+              </div>
 
-							{/* Generations Count */}
-							<div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-								<p className="text-xs text-gray-600 dark:text-gray-400">
-									Generations
-								</p>
-								<p className="text-lg font-bold text-blue-700 dark:text-blue-300">
-									{usageStats.token_usage.generations_count}
-								</p>
-							</div>
+              {/* Generations Count */}
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Generations
+                </p>
+                <p className="text-lg font-bold text-blue-700 dark:text-blue-300">
+                  {usageStats.token_usage.generations_count}
+                </p>
+              </div>
 
-							{/* Input Tokens */}
-							<div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-								<p className="text-xs text-gray-600 dark:text-gray-400">
-									Input Tokens
-								</p>
-								<p className="text-lg font-bold text-green-700 dark:text-green-300">
-									{formatNumber(usageStats.token_usage.total_input_tokens)}
-								</p>
-								<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-									Avg: {formatNumber(usageStats.token_usage.avg_input_tokens)}
-								</p>
-							</div>
+              {/* Input Tokens */}
+              <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Input Tokens
+                </p>
+                <p className="text-lg font-bold text-green-700 dark:text-green-300">
+                  {formatNumber(usageStats.token_usage.total_input_tokens)}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Avg: {formatNumber(usageStats.token_usage.avg_input_tokens)}
+                </p>
+              </div>
 
-							{/* Output Tokens */}
-							<div className="p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
-								<p className="text-xs text-gray-600 dark:text-gray-400">
-									Output Tokens
-								</p>
-								<p className="text-lg font-bold text-orange-700 dark:text-orange-300">
-									{formatNumber(usageStats.token_usage.total_output_tokens)}
-								</p>
-								<p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-									Avg: {formatNumber(usageStats.token_usage.avg_output_tokens)}
-								</p>
-							</div>
-						</div>
+              {/* Output Tokens */}
+              <div className="p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Output Tokens
+                </p>
+                <p className="text-lg font-bold text-orange-700 dark:text-orange-300">
+                  {formatNumber(usageStats.token_usage.total_output_tokens)}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Avg: {formatNumber(usageStats.token_usage.avg_output_tokens)}
+                </p>
+              </div>
+            </div>
 
-						{/* Model Breakdown */}
-						{Object.keys(usageStats.token_usage.model_breakdown).length > 0 && (
-							<div className="mt-3">
-								<p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
-									Models Used:
-								</p>
-								<div className="space-y-2">
-									{Object.entries(usageStats.token_usage.model_breakdown).map(
-										([model, stats]) => (
-											<div
-												key={model}
-												className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-800 p-2 rounded"
-											>
-												<span className="font-mono text-gray-700 dark:text-gray-300">
-													{model}
-												</span>
-												<span className="text-gray-600 dark:text-gray-400">
-													{stats.count}x •{" "}
-													{formatNumber(
-														stats.input_tokens + stats.output_tokens
-													)}{" "}
-													tokens
-												</span>
-											</div>
-										)
-									)}
-								</div>
-							</div>
-						)}
-					</div>
-				)}
+            {/* Model Breakdown */}
+            {Object.keys(usageStats.token_usage.model_breakdown).length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                  Models Used:
+                </p>
+                <div className="space-y-2">
+                  {Object.entries(usageStats.token_usage.model_breakdown).map(
+                    ([model, stats]) => (
+                      <div
+                        key={model}
+                        className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-800 p-2 rounded"
+                      >
+                        <span className="font-mono text-gray-700 dark:text-gray-300">
+                          {model}
+                        </span>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {stats.count}x •{" "}
+                          {formatNumber(
+                            stats.input_tokens + stats.output_tokens,
+                          )}{" "}
+                          tokens
+                        </span>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
-			{/* Warning/Upgrade CTA */}
-			{atLimit && (
-				<div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-md space-y-3">
-					<div className="flex items-start gap-2">
-						<AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-						<div className="flex-1">
-							<h4 className="font-semibold text-red-900 dark:text-red-100 text-sm">
-								Limit Reached
-							</h4>
-							<p className="text-xs text-red-700 dark:text-red-300 mt-1">
-								You've reached your plan's limit. Upgrade to continue using
-								Pustak.
-							</p>
-						</div>
-					</div>
+      {/* Warning/Upgrade CTA */}
+      {atLimit && (
+        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-md space-y-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="font-semibold text-red-900 dark:text-red-100 text-sm">
+                Limit Reached
+              </h4>
+              <p className="text-xs text-red-700 dark:text-red-300 mt-1">
+                You've reached your plan's limit. Upgrade to continue using
+                DocIt.
+              </p>
+            </div>
+          </div>
 
-					<button
-						onClick={
-							onUpgradeClick || (() => (window.location.href = "/pricing"))
-						}
-						className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium transition-colors"
-					>
-						<ArrowUpCircle className="w-4 h-4" />
-						Upgrade Plan
-					</button>
-				</div>
-			)}
+          <button
+            onClick={
+              onUpgradeClick || (() => (window.location.href = "/pricing"))
+            }
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium transition-colors"
+          >
+            <ArrowUpCircle className="w-4 h-4" />
+            Upgrade Plan
+          </button>
+        </div>
+      )}
 
-			{nearingLimit && !atLimit && (
-				<div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md space-y-3">
-					<div className="flex items-start gap-2">
-						<TrendingUp className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
-						<div className="flex-1">
-							<h4 className="font-semibold text-yellow-900 dark:text-yellow-100 text-sm">
-								Approaching Limit
-							</h4>
-							<p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
-								You're using over 80% of your quota. Consider upgrading soon.
-							</p>
-						</div>
-					</div>
+      {nearingLimit && !atLimit && (
+        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md space-y-3">
+          <div className="flex items-start gap-2">
+            <TrendingUp className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="font-semibold text-yellow-900 dark:text-yellow-100 text-sm">
+                Approaching Limit
+              </h4>
+              <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
+                You're using over 80% of your quota. Consider upgrading soon.
+              </p>
+            </div>
+          </div>
 
-					<button
-						onClick={
-							onUpgradeClick || (() => (window.location.href = "/pricing"))
-						}
-						className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md text-sm font-medium transition-colors"
-					>
-						<ArrowUpCircle className="w-4 h-4" />
-						View Plans
-					</button>
-				</div>
-			)}
-		</div>
-	);
+          <button
+            onClick={
+              onUpgradeClick || (() => (window.location.href = "/pricing"))
+            }
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md text-sm font-medium transition-colors"
+          >
+            <ArrowUpCircle className="w-4 h-4" />
+            View Plans
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }

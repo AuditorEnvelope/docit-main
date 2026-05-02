@@ -1,5 +1,5 @@
 {
-  "name": "pustak",
+  "name": "DocIt",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -12,6 +12,9 @@
     "@blocknote/core": "^0.44.2",
     "@blocknote/mantine": "^0.44.2",
     "@blocknote/react": "^0.44.2",
+    "@tanstack/query-sync-storage-persister": "^5.90.22",
+    "@tanstack/react-query": "^5.90.21",
+    "@tanstack/react-query-persist-client": "^5.90.22",
     "@types/marked": "^6.0.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "axios": "^1.13.5",

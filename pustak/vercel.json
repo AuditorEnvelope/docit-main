@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "name": "pustak",
+  "name": "DocIt",
   "builds": [
     {
       "src": "package.json",
@@ -18,7 +18,7 @@
     }
   ],
   "env": {
-    "NEXT_PUBLIC_API_URL": "@pustak_api_url",
+    "NEXT_PUBLIC_API_URL": "@DocIt_api_url",
     "DOCAI_WEBHOOK_URL": "@docai_webhook_url"
   },
   "functions": {

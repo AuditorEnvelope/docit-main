@@ -32,7 +32,7 @@ def _normalize_repo_key(value: Optional[str]) -> str:
     return (value or "").strip().lower()
 
 
-async def _get_user_orgs(github_token: str) -> List[Dict[str, Any]]:
+async def _get_user_orgs(github_token: str) -> tuple[List[Dict[str, Any]], str]:
     headers = {
         "Authorization": f"Bearer {github_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -43,18 +43,99 @@ async def _get_user_orgs(github_token: str) -> List[Dict[str, Any]]:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get("https://api.github.com/user/orgs", headers=headers)
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"GitHub API error: {exc}")
+        logger.warning(f"[orgs] /user/orgs network error: {exc}")
+        return [], f"network_error: {exc}"
+
+    scopes = response.headers.get("x-oauth-scopes", "unknown")
+    logger.info(f"[orgs] /user/orgs status={response.status_code} scopes={scopes}")
 
     if response.status_code == 200:
-        return response.json()
+        return response.json(), f"ok scopes={scopes}"
 
     if response.status_code == 401:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="GitHub token unauthorized")
+        logger.warning(f"[orgs] /user/orgs 401 — token likely missing read:org scope (scopes={scopes})")
+        return [], f"401 scopes={scopes}"
 
-    raise HTTPException(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        detail=f"Failed to fetch organizations (status {response.status_code})",
-    )
+    if response.status_code == 403:
+        logger.warning(f"[orgs] /user/orgs 403 — rate limit or insufficient scope (scopes={scopes})")
+        return [], f"403 scopes={scopes}"
+
+    logger.warning(f"[orgs] /user/orgs unexpected status={response.status_code}")
+    return [], f"unexpected_{response.status_code}"
+
+
+async def _get_user_org_memberships(github_token: str) -> tuple[List[Dict[str, Any]], str]:
+    """Fetch organizations via memberships endpoint as a fallback."""
+    headers = {
+        "Authorization": f"Bearer {github_token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Pustak-AI",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                "https://api.github.com/user/memberships/orgs?state=active",
+                headers=headers,
+            )
+    except httpx.HTTPError as exc:
+        logger.warning(f"[orgs] /user/memberships/orgs network error: {exc}")
+        return [], f"network_error: {exc}"
+
+    scopes = response.headers.get("x-oauth-scopes", "unknown")
+    logger.info(f"[orgs] /user/memberships/orgs status={response.status_code} scopes={scopes}")
+
+    if response.status_code == 200:
+        memberships = response.json()
+        orgs: List[Dict[str, Any]] = []
+        for membership in memberships:
+            org = membership.get("organization")
+            if org and isinstance(org, dict):
+                orgs.append(org)
+        return orgs, f"ok count={len(orgs)} scopes={scopes}"
+
+    if response.status_code == 401:
+        logger.warning(f"[orgs] /user/memberships/orgs 401 (scopes={scopes})")
+        return [], f"401 scopes={scopes}"
+
+    if response.status_code in (403, 404):
+        return [], f"{response.status_code}"
+
+    logger.warning(f"[orgs] /user/memberships/orgs unexpected status={response.status_code}")
+    return [], f"unexpected_{response.status_code}"
+
+
+async def _get_public_user_orgs(username: str, github_token: str) -> tuple[List[Dict[str, Any]], str]:
+    """Fallback to public org listing for the authenticated username."""
+    if not username:
+        return [], "no_username"
+
+    headers = {
+        "Authorization": f"Bearer {github_token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Pustak-AI",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"https://api.github.com/users/{username}/orgs",
+                headers=headers,
+            )
+    except httpx.HTTPError as exc:
+        logger.warning(f"[orgs] /users/{username}/orgs network error: {exc}")
+        return [], f"network_error: {exc}"
+
+    logger.info(f"[orgs] /users/{username}/orgs status={response.status_code}")
+
+    if response.status_code == 200:
+        return response.json(), f"ok count={len(response.json())}"
+
+    if response.status_code in (403, 404):
+        return [], f"{response.status_code}"
+
+    logger.warning(f"[orgs] /users/{username}/orgs unexpected status={response.status_code}")
+    return [], f"unexpected_{response.status_code}"
 
 
 async def _get_org_installations(org_id: str, github_token: str) -> List[Dict[str, Any]]:
@@ -172,8 +253,35 @@ async def get_user_organizations(
 ):
     """List GitHub organizations available to the authenticated user."""
     github_token = _require_github_token(user)
-    orgs = await _get_user_orgs(github_token)
-    return {"organizations": orgs}
+    logger.info(f"[orgs] fetching for user={user.username} token_length={len(github_token) if github_token else 0}")
+
+    orgs_direct, direct_debug = await _get_user_orgs(github_token)
+    orgs_memberships, membership_debug = await _get_user_org_memberships(github_token)
+    orgs_public, public_debug = await _get_public_user_orgs(user.username or "", github_token)
+
+    orgs = [*orgs_direct, *orgs_memberships, *orgs_public]
+    logger.info(f"[orgs] sources: direct={len(orgs_direct)}({direct_debug}) memberships={len(orgs_memberships)}({membership_debug}) public={len(orgs_public)}({public_debug})")
+
+    deduped: Dict[str, Dict[str, Any]] = {}
+    for org in orgs:
+        login = (org.get("login") or "").strip().lower()
+        if not login:
+            continue
+        if login not in deduped:
+            deduped[login] = org
+
+    return {
+        "organizations": list(deduped.values()),
+        "_debug": {
+            "direct_count": len(orgs_direct),
+            "membership_count": len(orgs_memberships),
+            "public_count": len(orgs_public),
+            "direct_debug": direct_debug,
+            "membership_debug": membership_debug,
+            "public_debug": public_debug,
+            "username": user.username,
+        }
+    }
 
 
 @router.get("/org/{org_id}/verify-apps")

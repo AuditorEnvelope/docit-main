@@ -105,7 +105,7 @@ export default function BlockNoteEditorClient({
       <style jsx global>{`
         /* TODO: Replace hardcoded color values below with Tailwind-driven CSS variables
            or a shared theme token system so BlockNote styling stays in sync with Tailwind. */
-        /* BlockNote CSS Variables - Match Pustak Theme */
+        /* BlockNote CSS Variables - Match DocIt Theme */
         .blocknote-editor {
           --bn-colors-menu-background: rgb(
             15,
