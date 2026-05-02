@@ -84,7 +84,10 @@ export async function middleware(request: NextRequest) {
   let org: string | null = null;
 
   // 2. SUBDOMAIN EXTRACTION LOGIC
-  if (hostname.includes("docbook.site")) {
+
+  // if (hostname.includes("docbook.site")) {
+  if (hostname.includes("docit.in")) {
+
     // Production: fakeorg.docbook.site -> ["fakeorg", "docbook", "site"]
     // We want to verify we actually HAVE a subdomain (length >= 3)
     // Special case: www subdomain should be treated as the main portal, not an org
