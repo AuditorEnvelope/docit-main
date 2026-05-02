@@ -13,7 +13,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Search Documentation",
-  description: "Search across all documentation in Pustak",
+  description: "Search across all documentation in DocIt",
 };
 
 interface SearchPageProps {
@@ -36,7 +36,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
       if (repoFilter) {
         url = `${backendUrl}/repos/${repoFilter}/search?query=${encodeURIComponent(
-          query
+          query,
         )}`;
       }
 
@@ -146,7 +146,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                 >
                   {type}
                 </Link>
-              )
+              ),
             )}
 
             {typeFilter && (

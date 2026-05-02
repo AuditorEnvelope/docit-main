@@ -1,7 +1,7 @@
 const DEFAULT_PERSONA = "dev";
 const VALID_PERSONAS = new Set(["dev", "internal"]);
 
-const DOCBOOK_REPO_PREFIX = "pustak-docbook-";
+const DOCBOOK_REPO_PREFIX = "DocIt-docbook-";
 
 interface DocsRouteInput {
   org: string;
@@ -53,7 +53,11 @@ function ensureMarkdownFile(segment: string): string {
   return segment.toLowerCase().endsWith(".md") ? segment : `${segment}.md`;
 }
 
-function normalizeRepoPath(repo: string, persona: string, segments: string[]): string[] {
+function normalizeRepoPath(
+  repo: string,
+  persona: string,
+  segments: string[],
+): string[] {
   const lowerFirst = segments[0]?.toLowerCase();
   const remainder = segments.slice(1);
 
@@ -62,7 +66,11 @@ function normalizeRepoPath(repo: string, persona: string, segments: string[]): s
   }
 
   if (segments.length === 1) {
-    if (lowerFirst === "introduction" || lowerFirst === "summary" || lowerFirst === "readme") {
+    if (
+      lowerFirst === "introduction" ||
+      lowerFirst === "summary" ||
+      lowerFirst === "readme"
+    ) {
       return [repo, "docs", persona, "SUMMARY.md"];
     }
 
@@ -83,13 +91,20 @@ function normalizeRepoPath(repo: string, persona: string, segments: string[]): s
   return [repo, "docs", persona, ...pathSegments];
 }
 
-export function mapDocsRouteToRepoSlug({ org, repo, slug }: DocsRouteInput): DocsRouteMapping {
+export function mapDocsRouteToRepoSlug({
+  org,
+  repo,
+  slug,
+}: DocsRouteInput): DocsRouteMapping {
   const sanitized = sanitizeSegments(slug);
 
   let persona = DEFAULT_PERSONA;
   let remainingSegments = sanitized;
 
-  if (remainingSegments.length > 0 && VALID_PERSONAS.has(remainingSegments[0].toLowerCase())) {
+  if (
+    remainingSegments.length > 0 &&
+    VALID_PERSONAS.has(remainingSegments[0].toLowerCase())
+  ) {
     persona = remainingSegments[0].toLowerCase();
     remainingSegments = remainingSegments.slice(1);
   }
@@ -101,7 +116,10 @@ export function mapDocsRouteToRepoSlug({ org, repo, slug }: DocsRouteInput): Doc
   const normalizedPath = normalizeRepoPath(repo, persona, remainingSegments);
   const docbookRepoName = getDocbookRepoName(org);
 
-  const canonicalSlug = persona === DEFAULT_PERSONA ? remainingSegments : [persona, ...remainingSegments];
+  const canonicalSlug =
+    persona === DEFAULT_PERSONA
+      ? remainingSegments
+      : [persona, ...remainingSegments];
 
   return {
     repoSlug: [org, docbookRepoName, ...normalizedPath],
@@ -115,7 +133,11 @@ export function mapDocsRouteToRepoSlug({ org, repo, slug }: DocsRouteInput): Doc
 export function mapDocbookPathToDocsSlug({
   org,
   pathSegments,
-}: DocbookPathInput): { href: string; slugSegments: string[]; persona: string } | null {
+}: DocbookPathInput): {
+  href: string;
+  slugSegments: string[];
+  persona: string;
+} | null {
   if (!Array.isArray(pathSegments) || pathSegments.length < 4) {
     return null;
   }
@@ -135,8 +157,11 @@ export function mapDocbookPathToDocsSlug({
     }
   }
 
-  const finalSlug = persona === DEFAULT_PERSONA ? slugSegments : [persona, ...slugSegments];
-  const encodedSlug = finalSlug.map((segment) => encodeURIComponent(segment)).join("/");
+  const finalSlug =
+    persona === DEFAULT_PERSONA ? slugSegments : [persona, ...slugSegments];
+  const encodedSlug = finalSlug
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
 
   const href = encodedSlug.length
     ? `/docs/${encodeURIComponent(org)}/${encodeURIComponent(repoName)}/${encodedSlug}`
@@ -176,29 +201,44 @@ export function mapDocbookPathToPublicSlug({
     }
   }
 
-  const finalSlug = persona === DEFAULT_PERSONA ? slugSegments : [persona, ...slugSegments];
+  const finalSlug =
+    persona === DEFAULT_PERSONA ? slugSegments : [persona, ...slugSegments];
   const normalizedSlug =
     finalSlug.length === 1 && finalSlug[0].toLowerCase() === "introduction"
       ? []
       : finalSlug;
 
-  const encodedSlug = normalizedSlug.map((segment) => encodeURIComponent(segment)).join("/");
+  const encodedSlug = normalizedSlug
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
   const href = encodedSlug.length
     ? `/${encodeURIComponent(repo)}/${encodedSlug}`
     : `/${encodeURIComponent(repo)}`;
 
-  return { href, slugSegments: normalizedSlug.length ? normalizedSlug : finalSlug, persona };
+  return {
+    href,
+    slugSegments: normalizedSlug.length ? normalizedSlug : finalSlug,
+    persona,
+  };
 }
 
 export { DEFAULT_PERSONA, VALID_PERSONAS };
 
-export function mapPublicRouteToRepoPath({ repo, slug }: PublicRouteInput): PublicRouteMapping {
-  const sanitized = sanitizeSegments(slug).map((segment) => stripExtension(segment));
+export function mapPublicRouteToRepoPath({
+  repo,
+  slug,
+}: PublicRouteInput): PublicRouteMapping {
+  const sanitized = sanitizeSegments(slug).map((segment) =>
+    stripExtension(segment),
+  );
 
   let persona = DEFAULT_PERSONA;
   let remainingSegments = sanitized;
 
-  if (remainingSegments.length > 0 && VALID_PERSONAS.has(remainingSegments[0].toLowerCase())) {
+  if (
+    remainingSegments.length > 0 &&
+    VALID_PERSONAS.has(remainingSegments[0].toLowerCase())
+  ) {
     persona = remainingSegments[0].toLowerCase();
     remainingSegments = remainingSegments.slice(1);
   }
@@ -218,7 +258,9 @@ export function mapPublicRouteToRepoPath({ repo, slug }: PublicRouteInput): Publ
   const normalizedPath = normalizeRepoPath(repo, persona, canonicalSegments);
 
   const canonicalSlug =
-    persona === DEFAULT_PERSONA ? canonicalSegments : [persona, ...canonicalSegments];
+    persona === DEFAULT_PERSONA
+      ? canonicalSegments
+      : [persona, ...canonicalSegments];
 
   const renderSlug = (() => {
     if (canonicalSegments.length === 1) {

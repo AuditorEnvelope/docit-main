@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Pustak Integration Script
-This script integrates DocAI with the Pustak documentation platform.
+DocIt Integration Script
+This script integrates DocAI with the DocIt documentation platform.
 """
 
 import requests
@@ -10,15 +10,15 @@ import os
 from pathlib import Path
 from typing import Dict, Any
 
-class PustakIntegration:
-    """Integration between DocAI and Pustak platform"""
+class DocItIntegration:
+    """Integration between DocAI and DocIt platform"""
     
-    def __init__(self, pustak_url: str = None):
-        self.pustak_url = pustak_url or os.getenv("PUSTAK_URL", "http://localhost:3000")
-        self.api_url = f"{self.pustak_url}/api"
+    def __init__(self, docit_url: str = None):
+        self.docit_url = docit_url or os.getenv("DOCIT_URL", "http://localhost:3000")
+        self.api_url = f"{self.docit_url}/api"
         
     def sync_documentation(self, repo_name: str, doc_type: str, content: str, metadata: Dict[str, Any] = None):
-        """Sync documentation with Pustak platform"""
+        """Sync documentation with DocIt platform"""
         
         payload = {
             "repoName": repo_name,
@@ -36,18 +36,18 @@ class PustakIntegration:
             )
             
             if response.status_code == 200:
-                print(f"✅ Successfully synced {repo_name}/{doc_type} to Pustak")
+                print(f"✅ Successfully synced {repo_name}/{doc_type} to DocIt")
                 return True
             else:
                 print(f"❌ Failed to sync {repo_name}/{doc_type}: {response.status_code}")
                 return False
                 
         except requests.exceptions.RequestException as e:
-            print(f"❌ Error syncing to Pustak: {e}")
+            print(f"❌ Error syncing to DocIt: {e}")
             return False
     
     def notify_doc_generated(self, repo_name: str, doc_type: str, file_path: str, commit_sha: str):
-        """Notify Pustak that new documentation has been generated"""
+        """Notify DocIt that new documentation has been generated"""
         
         # Read the generated documentation
         try:
@@ -66,8 +66,8 @@ class PustakIntegration:
         
         return self.sync_documentation(repo_name, doc_type, content, metadata)
 
-def update_smart_processor_with_pustak():
-    """Update the smart processor to integrate with Pustak"""
+def update_smart_processor_with_docit():
+    """Update the smart processor to integrate with DocIt"""
     
     smart_processor_path = Path("smart_processor.py")
     
@@ -79,27 +79,27 @@ def update_smart_processor_with_pustak():
     with open(smart_processor_path, 'r') as f:
         content = f.read()
     
-    # Check if Pustak integration is already added
-    if "PustakIntegration" in content:
-        print("✅ Pustak integration already exists in smart_processor.py")
+    # Check if DocIt integration is already added
+    if "DocItIntegration" in content:
+        print("✅ DocIt integration already exists in smart_processor.py")
         return True
     
-    # Add Pustak integration
+    # Add DocIt integration
     integration_code = '''
-# Pustak Integration
-from pustak_integration import PustakIntegration
+# DocIt Integration
+from docit_integration import DocItIntegration
 
-def notify_pustak(repo_name: str, doc_type: str, file_path: str, commit_sha: str):
-    """Notify Pustak platform of new documentation"""
+def notify_docit(repo_name: str, doc_type: str, file_path: str, commit_sha: str):
+    """Notify DocIt platform of new documentation"""
     try:
-        pustak = PustakIntegration()
+        docit = DocItIntegration()
         success = pustak.notify_doc_generated(repo_name, doc_type, file_path, commit_sha)
         if success:
-            print(f"📚 Notified Pustak of {repo_name}/{doc_type}")
+            print(f"📚 Notified DocIt of {repo_name}/{doc_type}")
         else:
-            print(f"⚠️  Failed to notify Pustak of {repo_name}/{docType}")
+            print(f"⚠️  Failed to notify DocIt of {repo_name}/{docType}")
     except Exception as e:
-        print(f"❌ Pustak notification error: {e}")
+        print(f"❌ DocIt notification error: {e}")
 '''
     
     # Insert the integration code before the commit_and_push_changes function
@@ -114,78 +114,78 @@ def notify_pustak(repo_name: str, doc_type: str, file_path: str, commit_sha: str
         with open(smart_processor_path, 'w') as f:
             f.write(new_content)
         
-        print("✅ Added Pustak integration to smart_processor.py")
+        print("✅ Added DocIt integration to smart_processor.py")
         
-        # Now update the create_change_documentation function to call Pustak
+        # Now update the create_change_documentation function to call DocIt
         with open(smart_processor_path, 'r') as f:
             content = f.read()
         
-        # Find the create_change_documentation function and add Pustak notification
+        # Find the create_change_documentation function and add DocIt notification
         if 'print(f"📝 Created detailed change documentation: {change_file}")' in content:
             content = content.replace(
                 'print(f"📝 Created detailed change documentation: {change_file}")',
                 '''print(f"📝 Created detailed change documentation: {change_file}")
         
-        # Notify Pustak
-        notify_pustak(repo_full.split("/")[-1], analysis['type'], str(change_file), commit_sha)'''
+        # Notify DocIt
+        notify_docit(repo_full.split("/")[-1], analysis['type'], str(change_file), commit_sha)'''
             )
             
             with open(smart_processor_path, 'w') as f:
                 f.write(content)
             
-            print("✅ Added Pustak notification to change documentation")
+            print("✅ Added DocIt notification to change documentation")
         
         return True
     else:
         print("❌ Could not find insertion point in smart_processor.py")
         return False
 
-def create_pustak_config():
-    """Create Pustak configuration file"""
+def create_docit_config():
+    """Create DocIt configuration file"""
     
-    config_content = '''# Pustak Configuration
-# This file configures the integration between DocAI and Pustak
+    config_content = '''# DocIt Configuration
+# This file configures the integration between DocAI and DocIt
 
-PUSTAK_URL = "http://localhost:3000"  # Change to your Pustak URL
-PUSTAK_API_URL = "http://localhost:3000/api"
+DOCIT_URL = "http://localhost:3000"  # Change to your DocIt URL
+DOCIT_API_URL = "http://localhost:3000/api"
 
 # Optional: Authentication token if required
-# PUSTAK_API_TOKEN = "your-api-token"
+# DOCIT_API_TOKEN = "your-api-token"
 
 # Sync settings
 AUTO_SYNC_TO_PUSTAK = True
 SYNC_TIMEOUT = 30  # seconds
 '''
     
-    with open("pustak_config.py", "w") as f:
+    with open("docit_config.py", "w") as f:
         f.write(config_content)
     
-    print("✅ Created pustak_config.py")
+    print("✅ Created docit_config.py")
 
 def main():
     """Main integration setup"""
-    print("🚀 Setting up Pustak integration for DocAI")
+    print("🚀 Setting up DocIt integration for DocAI")
     print("=" * 50)
     
-    # Create Pustak integration file
-    print("📁 Creating Pustak integration module...")
+    # Create DocIt integration file
+    print("📁 Creating DocIt integration module...")
     
     # Create configuration
-    create_pustak_config()
+    create_docit_config()
     
     # Update smart processor
     print("🔧 Updating smart_processor.py...")
-    if update_smart_processor_with_pustak():
+    if update_smart_processor_with_docit():
         print("✅ Integration setup complete!")
         
         print("\n📋 Next steps:")
-        print("1. Update pustak_config.py with your Pustak URL")
-        print("2. Deploy Pustak to Vercel or your preferred platform")
-        print("3. Update PUSTAK_URL in your environment variables")
+        print("1. Update docit_config.py with your DocIt URL")
+        print("2. Deploy DocIt to Vercel or your preferred platform")
+        print("3. Update DOCIT_URL in your environment variables")
         print("4. Test the integration by pushing code changes")
         
-        print("\n🎉 DocAI is now integrated with Pustak!")
-        print("Your documentation will automatically sync to the Pustak platform.")
+        print("\n🎉 DocAI is now integrated with DocIt!")
+        print("Your documentation will automatically sync to the DocIt platform.")
     else:
         print("❌ Integration setup failed")
 

@@ -17,13 +17,36 @@ from app.services.documentation.quality_integration import (
 )
 from app.services.github.change_analysis import smart_analyze_change
 from app.utils.github_dual_app import GitHubDualAppHelper
+
+
+def _repo_doc_persona_to_folders(doc_persona: str | None) -> list[str]:
+    """Map repositories.doc_persona (e.g. developer) to docs/ subfolders (dev, internal)."""
+    if doc_persona is None:
+        return ["internal", "dev"]
+    raw = str(doc_persona).strip().lower()
+    if raw in ("developer", "dev", "public"):
+        return ["dev"]
+    if raw == "internal":
+        return ["internal"]
+    return ["internal", "dev"]
+
+
 async def handle_push_event(
     payload: Dict[str, object],
     *,
     github_token: str | None = None,
-    doc_personas: list[str] = ["internal", "dev"],
+    doc_personas: list[str] | None = None,
+    doc_persona: str | None = None,
 ) -> None:
     """Clone the repo at the pushed commit, analyse, generate docs, and publish."""
+
+    if doc_personas is not None:
+        personas: list[str] = list(doc_personas)
+    elif doc_persona is not None:
+        personas = _repo_doc_persona_to_folders(doc_persona)
+        print(f"📚 Resolved doc_personas from repo setting {doc_persona!r} -> {personas}")
+    else:
+        personas = ["internal", "dev"]
 
     repository = payload.get("repository") or {}
     repo_full = repository.get("full_name") if isinstance(repository, dict) else None
@@ -73,7 +96,7 @@ async def handle_push_event(
 
         ref = payload.get("ref", "unknown")
         # Generate documentation for each persona
-        for persona in doc_personas:
+        for persona in personas:
             print(f"\n{'=' * 80}")
             print(f"📚 Generating {persona} documentation")
             print(f"{'=' * 80}")

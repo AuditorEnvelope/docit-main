@@ -67,7 +67,7 @@ class DocbookPublisher:
             main_branch = docbook_repo["main_branch"]
             print(f"✅ Found linked docbook repo: {docbook_full_name}")
         else:
-            docbook_full_name = f"{org_id}/pustak-docbook-{org_id}"
+            docbook_full_name = f"{org_id}/docit-docbook-{org_id}"
             docbook_url = f"https://github.com/{docbook_full_name}"
             staging_branch = DEFAULT_STAGING_BRANCH
             main_branch = DEFAULT_MAIN_BRANCH
@@ -106,7 +106,7 @@ class DocbookPublisher:
         print(f"📁 Working directory: {tmp_dir}")
         
         # Check if repository exists
-        repo_exists = await self._check_repo_exists(org_id, f"pustak-docbook-{org_id}", writer_token)
+        repo_exists = await self._check_repo_exists(org_id, f"docit-docbook-{org_id}", writer_token)
         if not repo_exists:
             print(f"❌ Error publishing to docbook: Repository {docbook_full_name} not found")
             print("ℹ️ You may need to create this repository first or check the organization name")
@@ -751,8 +751,8 @@ class DocbookPublisher:
 
     def _writer_identity(self) -> Tuple[str, str]:
         helper = self._get_dual_app_helper()
-        app_id = helper.writer_app_id or helper.github_app_id or "pustak-bot"
-        slug = "pustak-publisher-ai"
+        app_id = helper.writer_app_id or helper.github_app_id or "docit-bot"
+        slug = "docit-publisher-ai"
         bot_name = f"{slug}[bot]"
         bot_email = f"{app_id}+{slug}[bot]@users.noreply.github.com"
         return bot_name, bot_email

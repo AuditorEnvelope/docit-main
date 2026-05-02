@@ -194,19 +194,20 @@ export function GenerateDocsButton({
     <button
       onClick={handleGenerate}
       disabled={isGenerating}
-      className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium transition-all ${
+      className={`group relative flex cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold transition-all overflow-hidden ${
         fullWidth ? "w-full" : ""
-      } bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 hover:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed`}
+      } bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/25 hover:border-emerald-500/40 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed`}
     >
+      <div className="absolute inset-0 bg-gradient-to-r from-emerald-400/0 via-emerald-400/10 to-emerald-400/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
       {hasDocsFolder ? (
         <>
-          <RefreshCw className="w-4 h-4" />
-          <span>Regenerate Docs</span>
+          <RefreshCw className="w-3.5 h-3.5 relative z-10" />
+          <span className="relative z-10">Regenerate Docs</span>
         </>
       ) : (
         <>
-          <Zap className="w-4 h-4" />
-          <span>Generate Docs</span>
+          <Zap className="w-3.5 h-3.5 relative z-10" />
+          <span className="relative z-10">Generate Docs</span>
         </>
       )}
     </button>

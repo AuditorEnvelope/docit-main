@@ -111,7 +111,7 @@ class DocbookPublisher:
             
             # If no docbook found, create a default one following the pattern
             if not docbook:
-                docbook_full_name = f"{org_id}/pustak-docbook-{org_id}"
+                docbook_full_name = f"{org_id}/docit-docbook-{org_id}"
                 docbook_url = f"https://github.com/{docbook_full_name}"
                 print(f"ℹ️  No docbook repo linked, using default: {docbook_full_name}")
                 docbook = {
@@ -470,10 +470,10 @@ class DocbookPublisher:
             try:
                 key_paths = [
                     os.getenv('GITHUB_PRIVATE_KEY_PATH'),
-                    'pustak-publisher-ai.private-key.pem',
-                    'keys/pustak-publisher-ai.private-key.pem',
-                    '.secrets/pustak-publisher-ai.private-key.pem',
-                    str(Path.home() / ".ssh/pustak-publisher-ai.private-key.pem")
+                    'docit-publisher-ai.private-key.pem',
+                    'keys/docit-publisher-ai.private-key.pem',
+                    '.secrets/docit-publisher-ai.private-key.pem',
+                    str(Path.home() / ".ssh/docit-publisher-ai.private-key.pem")
                 ]
                 
                 print("\n🔍 Checking for private key files:")
@@ -505,7 +505,7 @@ class DocbookPublisher:
         """Get writer app identity (name, email)"""
         # Default values
         app_id = "2229202"  # Default writer app ID
-        app_slug = "pustak-publisher-ai"
+        app_slug = "docit-publisher-ai"
         
         # Try to get from dual app helper if available
         if hasattr(self, 'dual_app_helper') and self.dual_app_helper:

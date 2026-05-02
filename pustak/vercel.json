@@ -1,24 +1,8 @@
 {
   "version": 2,
-  "name": "pustak",
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/next"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/$1"
-    }
-  ],
+  "name": "DocIt",
   "env": {
-    "NEXT_PUBLIC_API_URL": "@pustak_api_url",
+    "NEXT_PUBLIC_API_URL": "@DocIt_api_url",
     "DOCAI_WEBHOOK_URL": "@docai_webhook_url"
   },
   "functions": {

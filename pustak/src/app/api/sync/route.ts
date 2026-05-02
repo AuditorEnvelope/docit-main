@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     if (!repoName || !docType || !content) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     console.error("Sync error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: "ok",
-    message: "Pustak API is running",
+    message: "DocIt API is running",
     timestamp: new Date().toISOString(),
   });
 }

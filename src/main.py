@@ -363,7 +363,7 @@ async def get_user_organizations(user = Depends(get_auth_user)):
                 headers={
                     "Authorization": f"Bearer {github_token}",
                     "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Pustak-AI"
+                    "User-Agent": "DocIt-AI"
                 }
             ) as response:
                 if response.status == 200:
@@ -394,7 +394,7 @@ async def get_user_organizations_v1(user = Depends(get_current_user)):
                 headers={
                     "Authorization": f"Bearer {github_token}",
                     "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Pustak-AI"
+                    "User-Agent": "DocIt-AI"
                 }
             ) as response:
                 if response.status == 200:
@@ -452,7 +452,7 @@ async def fetch_file_from_github(
                 headers={
                     "Authorization": f"Bearer {github_token}",
                     "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Pustak-AI"
+                    "User-Agent": "DocIt-AI"
                 },
                 params={"ref": branch}
             ) as response:
@@ -562,7 +562,7 @@ async def generate_documentation_v4(repo_name: str, user = Depends(get_auth_user
             installation_id = await docbook_service.get_docbook_installation_id(org_id)
 
             if not installation_id:
-                raise HTTPException(status_code=412, detail="Writer app is not installed for this organization. Please install pustak-publisher-ai.")
+                raise HTTPException(status_code=412, detail="Writer app is not installed for this organization. Please install docit-publisher-ai.")
 
             try:
                 writer_token = await dual_app.get_writer_token(installation_id)
@@ -1124,7 +1124,7 @@ async def get_docbook_structure(
             headers={
                 "Authorization": f"Bearer {github_token}",
                 "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "Pustak-AI"
+                "User-Agent": "DocIt-AI"
             }
         ) as response:
             if response.status != 200:
@@ -1162,7 +1162,7 @@ async def get_docbook_structure(
             raise HTTPException(status_code=401, detail="No GitHub token found")
         
         # Get docbook repo name
-        docbook_repo = f"pustak-docbook-{org_id}"
+        docbook_repo = f"docit-docbook-{org_id}"
         docbook_full_name = f"{org_id}/{docbook_repo}"
         
         print(f"📁 Getting structure for {docbook_full_name} on branch {branch}")
@@ -1759,7 +1759,7 @@ async def list_features():
             "GitHub webhook processing",
             "Multi-LLM support (Gemini, Groq, OpenAI)",
             "Smart documentation generation",
-            "Pustak frontend integration",
+            "DocIt frontend integration",
             "AI Quality Validation (NEW)" if quality_checker else None,
         ],
         "advanced": [
@@ -1794,7 +1794,7 @@ async def get_project_progress():
                     {"name": "GitHub webhook integration", "status": "done"},
                     {"name": "Multi-language code parsing", "status": "done"},
                     {"name": "Basic documentation generation", "status": "done"},
-                    {"name": "Pustak frontend setup", "status": "done"},
+                    {"name": "DocIt frontend setup", "status": "done"},
                 ]
             },
             {
@@ -2031,14 +2031,14 @@ async def verify_apps(org_id: str, user = Depends(get_current_user)):
         return {
             "reader_app": {
                 "installed": reader_installed,
-                "app_name": "Pustak Analyser AI",
+                "app_name": "DocIt Analyser AI",
                 "app_id": dual_app.reader_app_id if apps_configured else None,
                 "permissions": ["contents:read", "metadata:read"],
                 "status": "installed" if reader_installed else ("configured" if apps_configured else "not_configured")
             },
             "writer_app": {
                 "installed": writer_installed,
-                "app_name": "Pustak Publisher AI",
+                "app_name": "DocIt Publisher AI",
                 "app_id": dual_app.writer_app_id if apps_configured else None,
                 "permissions": ["contents:read_write", "metadata:read"],
                 "status": "installed" if writer_installed else ("configured" if apps_configured else "not_configured")

@@ -31,7 +31,7 @@ async def _fetch_github(
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(url, headers=headers, params=params)

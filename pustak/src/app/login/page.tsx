@@ -1,12 +1,21 @@
 "use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Layout } from "@/components/Layout";
-import { Github, Loader2, Sparkles, Zap, ShieldCheck, Globe2, ArrowRight } from "lucide-react";
-import { useAuth } from '@/contexts/AuthContext';
+import {
+  Github,
+  Loader2,
+  Sparkles,
+  Zap,
+  ShieldCheck,
+  Globe2,
+  ArrowRight,
+} from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,19 +41,22 @@ export default function LoginPage() {
     {
       icon: Zap,
       title: "Instant documentation",
-      description: "Generate architecture, workflow, and changelog docs right after every push.",
+      description:
+        "Generate architecture, workflow, and changelog docs right after every push.",
       accent: "from-blue-500/25",
     },
     {
       icon: Github,
       title: "Native GitHub integration",
-      description: "Connect once to sync installations, docbooks, and approvals across orgs.",
+      description:
+        "Connect once to sync installations, docbooks, and approvals across orgs.",
       accent: "from-purple-500/25",
     },
     {
       icon: ShieldCheck,
       title: "Secure & transparent",
-      description: "We respect repository boundaries—your commits stay authored by you.",
+      description:
+        "We respect repository boundaries—your commits stay authored by you.",
       accent: "from-emerald-500/30",
     },
   ];
@@ -52,32 +64,32 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      router.push('/dashboard');
+      router.push("/dashboard");
     }
   }, [isAuthenticated, loading, router]);
 
   const handleGitHubLogin = async () => {
     setIsLoggingIn(true);
-    
+
     try {
       // Get OAuth URL from backend
       const redirectUri = `${window.location.origin}/auth/callback`;
       const response = await fetch(
-        `${BACKEND_URL}/auth/github?redirect_uri=${encodeURIComponent(redirectUri)}`
+        `${BACKEND_URL}/auth/github?redirect_uri=${encodeURIComponent(redirectUri)}`,
       );
-      
+
       if (!response.ok) {
-        throw new Error('Failed to get OAuth URL');
+        throw new Error("Failed to get OAuth URL");
       }
-      
+
       const data = await response.json();
-      
+
       // Redirect to GitHub OAuth
       window.location.href = data.url;
     } catch (error) {
-      console.error('Login error:', error);
+      console.error("Login error:", error);
       setIsLoggingIn(false);
-      alert('Failed to start login. Please try again.');
+      alert("Failed to start login. Please try again.");
     }
   };
 
@@ -95,21 +107,32 @@ export default function LoginPage() {
     <Layout>
       <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
         <div className="absolute inset-0">
-          <div className="absolute left-[-10%] top-[10%] h-[380px] w-[380px] rounded-full bg-blue-600/35 blur-[160px]" aria-hidden />
-          <div className="absolute right-[-5%] top-[25%] h-[320px] w-[320px] rounded-full bg-purple-500/30 blur-[160px]" aria-hidden />
-          <div className="absolute inset-x-0 bottom-[-25%] h-[420px] bg-gradient-to-b from-transparent via-blue-500/10 to-blue-500/5" aria-hidden />
+          <div
+            className="absolute left-[-10%] top-[10%] h-[380px] w-[380px] rounded-full bg-blue-600/35 blur-[160px]"
+            aria-hidden
+          />
+          <div
+            className="absolute right-[-5%] top-[25%] h-[320px] w-[320px] rounded-full bg-purple-500/30 blur-[160px]"
+            aria-hidden
+          />
+          <div
+            className="absolute inset-x-0 bottom-[-25%] h-[420px] bg-gradient-to-b from-transparent via-blue-500/10 to-blue-500/5"
+            aria-hidden
+          />
         </div>
 
         <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-6 py-16">
           <div className="w-full max-w-3xl text-center">
             <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-blue-400/40 bg-blue-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.4em] text-blue-100">
-              Pustak
+              DocIt
             </div>
             <h1 className="mt-6 text-4xl font-semibold leading-tight sm:text-5xl">
               Welcome to the docbook automation hub
             </h1>
             <p className="mt-4 text-sm text-slate-300 sm:text-base">
-              Connect GitHub, ship docs with confidence. Pustak brings AI-powered documentation flows, review gates, and publishing automation into one staging pipeline.
+              Connect GitHub, ship docs with confidence. DocIt brings AI-powered
+              documentation flows, review gates, and publishing automation into
+              one staging pipeline.
             </p>
 
             <div className="mt-8 flex flex-wrap justify-center gap-3">
@@ -137,14 +160,21 @@ export default function LoginPage() {
                     key={benefit.title}
                     className="group relative overflow-hidden rounded-2xl border border-slate-800/60 bg-slate-950/60 p-5 text-left transition hover:border-blue-500/40 hover:bg-slate-950/80"
                   >
-                    <div className={`absolute inset-0 bg-gradient-to-br ${benefit.accent} via-transparent to-transparent opacity-0 transition duration-300 group-hover:opacity-90`} aria-hidden />
+                    <div
+                      className={`absolute inset-0 bg-gradient-to-br ${benefit.accent} via-transparent to-transparent opacity-0 transition duration-300 group-hover:opacity-90`}
+                      aria-hidden
+                    />
                     <div className="relative flex items-center gap-3">
                       <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/80 text-blue-200">
                         <BenefitIcon className="h-5 w-5" />
                       </span>
-                      <h3 className="text-sm font-semibold text-slate-100">{benefit.title}</h3>
+                      <h3 className="text-sm font-semibold text-slate-100">
+                        {benefit.title}
+                      </h3>
                     </div>
-                    <p className="relative mt-3 text-sm text-slate-400">{benefit.description}</p>
+                    <p className="relative mt-3 text-sm text-slate-400">
+                      {benefit.description}
+                    </p>
                   </div>
                 );
               })}
@@ -171,16 +201,29 @@ export default function LoginPage() {
               </button>
 
               <p className="text-xs text-slate-500">
-                By continuing you agree to our{' '}
-                <a href="/terms" className="underline decoration-dotted underline-offset-4 hover:text-slate-300">Terms of Service</a>{' '}
-                and{' '}
-                <a href="/privacy" className="underline decoration-dotted underline-offset-4 hover:text-slate-300">Privacy Policy</a>.
+                By continuing you agree to our{" "}
+                <a
+                  href="/terms"
+                  className="underline decoration-dotted underline-offset-4 hover:text-slate-300"
+                >
+                  Terms of Service
+                </a>{" "}
+                and{" "}
+                <a
+                  href="/privacy"
+                  className="underline decoration-dotted underline-offset-4 hover:text-slate-300"
+                >
+                  Privacy Policy
+                </a>
+                .
               </p>
             </div>
           </div>
 
           <div className="mt-10 text-center text-sm text-slate-400">
-            🎉 Start with our <span className="font-semibold text-blue-300">Free plan</span> — no credit card required
+            🎉 Start with our{" "}
+            <span className="font-semibold text-blue-300">Free plan</span> — no
+            credit card required
           </div>
         </div>
       </div>

@@ -82,7 +82,7 @@ async def _fetch_repo_data(org_id: str, repo_name: str, token: str) -> Optional[
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     logger.debug("🔍 GitHub repo lookup", extra={
@@ -166,7 +166,7 @@ async def _fetch_repo_branches(org_id: str, repo_name: str, token: str) -> List[
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     branches: List[str] = []
@@ -422,7 +422,7 @@ async def _fetch_folder_contents(
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     response = await client.get(url, headers=headers, params={"ref": branch})
@@ -565,7 +565,7 @@ async def check_docbook_exists(
         return {
             "exists": False,
             "org_id": org_id,
-            "message": f"No docbook linked for {org_id}. Create pustak-docbook-{org_id.lower()} and link it.",
+            "message": f"No docbook linked for {org_id}. Create docit-docbook-{org_id.lower()} and link it.",
         }
     
     # Verify the repository actually exists on GitHub
@@ -1016,7 +1016,7 @@ async def publish_docs_live(
         headers = {
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github+json",
-            "User-Agent": "Pustak-AI",
+            "User-Agent": "DocIt-AI",
         }
         
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1222,7 +1222,7 @@ async def _build_live_manifest(
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     try:
@@ -1374,7 +1374,7 @@ async def _fetch_github_file(
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     response = await client.get(url, headers=headers, params={"ref": ref})

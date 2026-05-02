@@ -93,7 +93,7 @@ async def get_workspace_tree(
                 headers = {
                     "Authorization": f"Bearer {token}",  # Use Bearer, not token
                     "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Pustak-AI"
+                    "User-Agent": "DocIt-AI"
                 }
                 
                 response = await client.get(url, headers=headers, params={"ref": branch})
@@ -285,7 +285,7 @@ async def sync_workspace(
                 headers={
                     "Authorization": f"Bearer {token}",
                     "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Pustak-AI"
+                    "User-Agent": "DocIt-AI"
                 }
             )
             
@@ -293,7 +293,7 @@ async def sync_workspace(
                 raise HTTPException(status_code=500, detail="Failed to fetch user information")
             
             user_data = user_response.json()
-            author_name = user_data.get("name") or user_data.get("login", "Pustak User")
+            author_name = user_data.get("name") or user_data.get("login", "DocIt User")
             author_email = user_data.get("email") or f"{user_data.get('id', '')}+{user_data.get('login', 'user')}@users.norever.github.com"
             
             repo_full_name = docbook_repo.docbook_full_name
@@ -323,7 +323,7 @@ async def sync_workspace(
                     headers={
                         "Authorization": f"Bearer {token}",
                         "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "Pustak-AI"
+                        "User-Agent": "DocIt-AI"
                     },
                     params={"ref": branch}
                 )
@@ -353,7 +353,7 @@ async def sync_workspace(
                     headers={
                         "Authorization": f"Bearer {token}",
                         "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "Pustak-AI"
+                        "User-Agent": "DocIt-AI"
                     },
                     params={"ref": branch}
                 )
@@ -374,7 +374,7 @@ async def sync_workspace(
                     headers={
                         "Authorization": f"Bearer {token}",
                         "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "Pustak-AI"
+                        "User-Agent": "DocIt-AI"
                     }
                 )
                 
@@ -389,7 +389,7 @@ async def sync_workspace(
                     headers={
                         "Authorization": f"Bearer {token}",
                         "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "Pustak-AI"
+                        "User-Agent": "DocIt-AI"
                     }
                 )
                 
@@ -415,7 +415,7 @@ async def sync_workspace(
                             headers={
                                 "Authorization": f"Bearer {token}",
                                 "Accept": "application/vnd.github.v3+json",
-                                "User-Agent": "Pustak-AI"
+                                "User-Agent": "DocIt-AI"
                             },
                             json={
                                 "content": change["content"],
@@ -440,7 +440,7 @@ async def sync_workspace(
                     headers={
                         "Authorization": f"Bearer {token}",
                         "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "Pustak-AI"
+                        "User-Agent": "DocIt-AI"
                     },
                     json={
                         "base_tree": base_tree_sha,
@@ -459,7 +459,7 @@ async def sync_workspace(
                     headers={
                         "Authorization": f"Bearer {token}",
                         "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "Pustak-AI"
+                        "User-Agent": "DocIt-AI"
                     },
                     json={
                         "message": commit_message,
@@ -487,7 +487,7 @@ async def sync_workspace(
                     headers={
                         "Authorization": f"Bearer {token}",
                         "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "Pustak-AI"
+                        "User-Agent": "DocIt-AI"
                     },
                     json={"sha": new_commit_sha}
                 )
@@ -557,7 +557,7 @@ async def get_page_content(
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "Pustak-AI"
+                "User-Agent": "DocIt-AI"
             }
             
             response = await client.get(url, headers=headers, params={"ref": branch})

@@ -199,7 +199,7 @@ def create_application() -> FastAPI:
     """Create and configure the FastAPI application"""
     application = FastAPI(
         title=settings.PROJECT_NAME,
-        description="Pustak AI - Automated Documentation System",
+        description="DocIt AI - Automated Documentation System",
         version="1.0.0",
         docs_url="/docs" if settings.DEBUG else None,
         redoc_url="/redoc" if settings.DEBUG else None,

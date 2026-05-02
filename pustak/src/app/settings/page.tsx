@@ -41,8 +41,8 @@ function formatPlanLabel(plan?: string | null) {
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-const READER_APP_URL = "https://github.com/apps/pustak-analyser-ai";
-const WRITER_APP_URL = "https://github.com/apps/pustak-publisher-ai";
+const READER_APP_URL = "https://github.com/apps/DocIt-analyser-ai";
+const WRITER_APP_URL = "https://github.com/apps/DocIt-publisher-ai";
 
 const STATUS_TONE_CLASSES = {
   success:
@@ -71,10 +71,18 @@ type StatusAction =
   | { type: "button"; label: string; onClick: () => void; className?: string };
 
 export default function SettingsPage() {
-  const { user, token, loading: authLoading, isAuthenticated, logout } = useAuth();
+  const {
+    user,
+    token,
+    loading: authLoading,
+    isAuthenticated,
+    logout,
+  } = useAuth();
   const [loading, setLoading] = useState(true);
   const [organizations, setOrganizations] = useState<string[]>([]);
-  const [orgSummaries, setOrgSummaries] = useState<Record<string, OrgSummary>>({});
+  const [orgSummaries, setOrgSummaries] = useState<Record<string, OrgSummary>>(
+    {},
+  );
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [docbookOrg, setDocbookOrg] = useState<string | null>(null);
@@ -241,7 +249,9 @@ export default function SettingsPage() {
                   />
                 ) : (
                   <div className="w-20 h-20 rounded-3xl bg-blue-500/80 flex items-center justify-center text-2xl font-bold">
-                    {(user?.name || user?.username || "U").slice(0, 1).toUpperCase()}
+                    {(user?.name || user?.username || "U")
+                      .slice(0, 1)
+                      .toUpperCase()}
                   </div>
                 )}
                 <div className="space-y-3">
@@ -250,12 +260,13 @@ export default function SettingsPage() {
                       {user?.name || user?.username || "Your Account"}
                     </h1>
                     <p className="text-slate-300">
-                      {user?.email || `@${user?.username ?? "pustak-user"}`}
+                      {user?.email || `@${user?.username ?? "DocIt-user"}`}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <span className="inline-flex items-center gap-2 rounded-full bg-blue-500/20 px-4 py-2 text-xs font-semibold text-blue-200 uppercase tracking-widest">
-                      <Crown className="w-3 h-3" /> {formatPlanLabel(user?.plan)} PLAN
+                      <Crown className="w-3 h-3" />{" "}
+                      {formatPlanLabel(user?.plan)} PLAN
                     </span>
                     {token && (
                       <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-200 uppercase tracking-widest">
@@ -293,11 +304,16 @@ export default function SettingsPage() {
             <div className="rounded-2xl border border-slate-800/80 bg-slate-900/40 p-6 shadow-lg">
               <div className="flex items-center gap-3 text-indigo-200">
                 <SettingsIcon className="w-5 h-5" />
-                <span className="text-xs uppercase tracking-widest">Account</span>
+                <span className="text-xs uppercase tracking-widest">
+                  Account
+                </span>
               </div>
-              <h3 className="mt-4 text-xl font-semibold text-white">Profile & Billing</h3>
+              <h3 className="mt-4 text-xl font-semibold text-white">
+                Profile & Billing
+              </h3>
               <p className="mt-2 text-sm text-slate-400">
-                Update your profile details, manage plan upgrades, and review connected services.
+                Update your profile details, manage plan upgrades, and review
+                connected services.
               </p>
               <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-indigo-500/15 px-3 py-1 text-xs text-indigo-200">
                 <BadgeCheck className="w-3 h-3" /> Account in good standing
@@ -306,11 +322,16 @@ export default function SettingsPage() {
             <div className="rounded-2xl border border-slate-800/80 bg-slate-900/40 p-6 shadow-lg">
               <div className="flex items-center gap-3 text-emerald-200">
                 <Building2 className="w-5 h-5" />
-                <span className="text-xs uppercase tracking-widest">Organizations</span>
+                <span className="text-xs uppercase tracking-widest">
+                  Organizations
+                </span>
               </div>
-              <h3 className="mt-4 text-xl font-semibold text-white">{organizations.length} connected</h3>
+              <h3 className="mt-4 text-xl font-semibold text-white">
+                {organizations.length} connected
+              </h3>
               <p className="mt-2 text-sm text-slate-400">
-                Manage GitHub organization connections, app access, and webhook status.
+                Manage GitHub organization connections, app access, and webhook
+                status.
               </p>
               <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1 text-xs text-emerald-200">
                 <Sparkles className="w-3 h-3" /> Webhooks auto-configured
@@ -319,13 +340,20 @@ export default function SettingsPage() {
             <div className="rounded-2xl border border-slate-800/80 bg-slate-900/40 p-6 shadow-lg">
               <div className="flex items-center gap-3 text-purple-200">
                 <BookOpen className="w-5 h-5" />
-                <span className="text-xs uppercase tracking-widest">Docbooks</span>
+                <span className="text-xs uppercase tracking-widest">
+                  Docbooks
+                </span>
               </div>
               <h3 className="mt-4 text-xl font-semibold text-white">
-                {Object.values(orgSummaries).filter((s) => s.docbookLinked).length} linked
+                {
+                  Object.values(orgSummaries).filter((s) => s.docbookLinked)
+                    .length
+                }{" "}
+                linked
               </h3>
               <p className="mt-2 text-sm text-slate-400">
-                Keep your generated documentation organized across staging and main branches.
+                Keep your generated documentation organized across staging and
+                main branches.
               </p>
               <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-purple-500/15 px-3 py-1 text-xs text-purple-200">
                 <GitBranch className="w-3 h-3" /> Staging → Main review flow
@@ -337,9 +365,12 @@ export default function SettingsPage() {
           <section className="space-y-5">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-semibold text-white">Organization Connections</h2>
+                <h2 className="text-2xl font-semibold text-white">
+                  Organization Connections
+                </h2>
                 <p className="text-sm text-slate-400 mt-1">
-                  Monitor GitHub app installation, webhook access, and docbook linkage for each organization.
+                  Monitor GitHub app installation, webhook access, and docbook
+                  linkage for each organization.
                 </p>
               </div>
               <button
@@ -364,9 +395,12 @@ export default function SettingsPage() {
             ) : organizations.length === 0 ? (
               <div className="rounded-2xl border border-slate-800/70 bg-slate-900/40 p-8 text-center space-y-3">
                 <ShieldCheck className="mx-auto w-10 h-10 text-slate-400" />
-                <h3 className="text-lg font-semibold text-white">No organizations connected yet</h3>
+                <h3 className="text-lg font-semibold text-white">
+                  No organizations connected yet
+                </h3>
                 <p className="text-sm text-slate-400">
-                  Connect your first GitHub organization to enable automated documentation workflows.
+                  Connect your first GitHub organization to enable automated
+                  documentation workflows.
                 </p>
                 <button
                   onClick={() => setShowConnectModal(true)}
@@ -400,16 +434,24 @@ export default function SettingsPage() {
                         {
                           key: "reader",
                           label: "Reader App",
-                          status: summary.readerInstalled ? "Installed" : "Install required",
+                          status: summary.readerInstalled
+                            ? "Installed"
+                            : "Install required",
                           tone: summary.readerInstalled ? "success" : "warning",
                           action: summary.readerInstalled
                             ? undefined
-                            : { type: "link", label: "Install", href: READER_APP_URL },
+                            : {
+                                type: "link",
+                                label: "Install",
+                                href: READER_APP_URL,
+                              },
                         },
                         {
                           key: "docbook",
                           label: "Docbook Repo",
-                          status: summary.docbookLinked ? "Linked" : "Create & link",
+                          status: summary.docbookLinked
+                            ? "Linked"
+                            : "Create & link",
                           tone: summary.docbookLinked ? "success" : "warning",
                           action: summary.docbookLinked
                             ? undefined
@@ -422,11 +464,17 @@ export default function SettingsPage() {
                         {
                           key: "writer",
                           label: "Writer App",
-                          status: summary.writerInstalled ? "Installed" : "Install required",
+                          status: summary.writerInstalled
+                            ? "Installed"
+                            : "Install required",
                           tone: summary.writerInstalled ? "success" : "warning",
                           action: summary.writerInstalled
                             ? undefined
-                            : { type: "link", label: "Install", href: WRITER_APP_URL },
+                            : {
+                                type: "link",
+                                label: "Install",
+                                href: WRITER_APP_URL,
+                              },
                         },
                         {
                           key: "access",
@@ -434,13 +482,13 @@ export default function SettingsPage() {
                           status: !summary.docbookLinked
                             ? "Link docbook first"
                             : summary.writerHasAccess
-                            ? "Granted"
-                            : "Pending",
+                              ? "Granted"
+                              : "Pending",
                           tone: !summary.docbookLinked
                             ? "neutral"
                             : summary.writerHasAccess
-                            ? "success"
-                            : "warning",
+                              ? "success"
+                              : "warning",
                           action:
                             summary.docbookLinked && !summary.writerHasAccess
                               ? {
@@ -469,9 +517,12 @@ export default function SettingsPage() {
                       <div className="relative space-y-8">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                           <div>
-                            <h3 className="text-2xl font-semibold text-white">{orgId}</h3>
+                            <h3 className="text-2xl font-semibold text-white">
+                              {orgId}
+                            </h3>
                             <p className="mt-1 text-sm text-slate-400">
-                              Manage GitHub app access, docbook linkage, and webhook health.
+                              Manage GitHub app access, docbook linkage, and
+                              webhook health.
                             </p>
                             {summaryLoading && (
                               <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-700/70 bg-slate-900/70 px-3 py-1 text-xs font-semibold text-slate-300">
@@ -511,7 +562,8 @@ export default function SettingsPage() {
                                   </>
                                 ) : (
                                   <p className="text-sm text-amber-200">
-                                    No docbook linked yet. Link your docbook repository to publish docs.
+                                    No docbook linked yet. Link your docbook
+                                    repository to publish docs.
                                   </p>
                                 )}
                               </div>
@@ -523,10 +575,12 @@ export default function SettingsPage() {
                                 className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-500/90 px-4 py-2 text-sm font-semibold text-white shadow-lg transition hover:bg-blue-500"
                               >
                                 <GitBranch className="h-4 w-4" />
-                                {summary?.docbookLinked ? "Manage docbook" : "Link docbook"}
+                                {summary?.docbookLinked
+                                  ? "Manage docbook"
+                                  : "Link docbook"}
                               </button>
                               <a
-                                href="https://github.com/apps/pustak-analyser-ai"
+                                href="https://github.com/apps/DocIt-analyser-ai"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700/70 bg-slate-900/60 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-indigo-400 hover:text-white"
@@ -549,46 +603,54 @@ export default function SettingsPage() {
                                 </div>
                               </div>
                               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-2">
-                                {statusItems.map(({ key, label, status, tone, action }) => (
-                                  <div
-                                    key={key}
-                                    className={`rounded-2xl border px-4 py-3 ${STATUS_TONE_CLASSES[tone]} flex flex-col gap-3`}
-                                  >
-                                    <div className="space-y-1">
-                                      <span className="block text-sm font-semibold text-slate-100">
-                                        {label}
-                                      </span>
-                                      <span
-                                        className={`block text-[11px] font-semibold uppercase tracking-[0.35em] ${STATUS_VALUE_CLASSES[tone]}`}
-                                      >
-                                        {status}
-                                      </span>
+                                {statusItems.map(
+                                  ({ key, label, status, tone, action }) => (
+                                    <div
+                                      key={key}
+                                      className={`rounded-2xl border px-4 py-3 ${STATUS_TONE_CLASSES[tone]} flex flex-col gap-3`}
+                                    >
+                                      <div className="space-y-1">
+                                        <span className="block text-sm font-semibold text-slate-100">
+                                          {label}
+                                        </span>
+                                        <span
+                                          className={`block text-[11px] font-semibold uppercase tracking-[0.35em] ${STATUS_VALUE_CLASSES[tone]}`}
+                                        >
+                                          {status}
+                                        </span>
+                                      </div>
+                                      {action ? (
+                                        action.type === "link" ? (
+                                          <a
+                                            href={action.href}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                                              action.className ||
+                                              STATUS_ACTION_DEFAULT_CLASSES[
+                                                tone
+                                              ]
+                                            }`}
+                                          >
+                                            {action.label}
+                                          </a>
+                                        ) : (
+                                          <button
+                                            onClick={action.onClick}
+                                            className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                                              action.className ||
+                                              STATUS_ACTION_DEFAULT_CLASSES[
+                                                tone
+                                              ]
+                                            }`}
+                                          >
+                                            {action.label}
+                                          </button>
+                                        )
+                                      ) : null}
                                     </div>
-                                    {action ? (
-                                      action.type === "link" ? (
-                                        <a
-                                          href={action.href}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                                            action.className || STATUS_ACTION_DEFAULT_CLASSES[tone]
-                                          }`}
-                                        >
-                                          {action.label}
-                                        </a>
-                                      ) : (
-                                        <button
-                                          onClick={action.onClick}
-                                          className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                                            action.className || STATUS_ACTION_DEFAULT_CLASSES[tone]
-                                          }`}
-                                        >
-                                          {action.label}
-                                        </button>
-                                      )
-                                    ) : null}
-                                  </div>
-                                ))}
+                                  ),
+                                )}
                               </div>
                             </div>
 
@@ -601,19 +663,28 @@ export default function SettingsPage() {
                                   <CheckCircle2
                                     className={`h-4 w-4 ${summary?.readerInstalled ? "text-emerald-400" : "text-amber-400"}`}
                                   />
-                                  GitHub Reader App {summary?.readerInstalled ? "installed" : "pending installation"}
+                                  GitHub Reader App{" "}
+                                  {summary?.readerInstalled
+                                    ? "installed"
+                                    : "pending installation"}
                                 </li>
                                 <li className="flex items-center gap-2">
                                   <CheckCircle2
                                     className={`h-4 w-4 ${summary?.writerInstalled ? "text-emerald-400" : "text-amber-400"}`}
                                   />
-                                  Writer App {summary?.writerInstalled ? "installed" : "pending installation"}
+                                  Writer App{" "}
+                                  {summary?.writerInstalled
+                                    ? "installed"
+                                    : "pending installation"}
                                 </li>
                                 <li className="flex items-center gap-2">
                                   <CheckCircle2
                                     className={`h-4 w-4 ${summary?.docbookLinked ? "text-emerald-400" : "text-amber-400"}`}
                                   />
-                                  Docbook {summary?.docbookLinked ? "linked" : "not linked"}
+                                  Docbook{" "}
+                                  {summary?.docbookLinked
+                                    ? "linked"
+                                    : "not linked"}
                                 </li>
                               </ul>
                             </div>

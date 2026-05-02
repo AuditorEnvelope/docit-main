@@ -211,7 +211,7 @@
 # # #     print("TESTING REPOSITORY ACCESS")
 # # #     print("="*80)
     
-# # #     repo = "jai-mahakal-poc/pustak-docbook-jai-mahakal-poc"
+# # #     repo = "jai-mahakal-poc/docit-docbook-jai-mahakal-poc"
 # # #     headers = {
 # # #         "Authorization": f"token {token}",
 # # #         "Accept": "application/vnd.github.v3+json"
@@ -257,7 +257,7 @@
 # # #     print("TESTING WRITE ACCESS")
 # # #     print("="*80)
     
-# # #     repo = "jai-mahakal-poc/pustak-docbook-jai-mahakal-poc"
+# # #     repo = "jai-mahakal-poc/docit-docbook-jai-mahakal-poc"
 # # #     headers = {
 # # #         "Authorization": f"token {token}",
 # # #         "Accept": "application/vnd.github.v3+json"
@@ -381,7 +381,7 @@
 #     print("TESTING REPOSITORY ACCESS")
 #     print("="*80)
     
-#     repo = "jai-mahakal-poc/pustak-docbook-jai-mahakal-poc"
+#     repo = "jai-mahakal-poc/docit-docbook-jai-mahakal-poc"
 #     headers = {
 #         "Authorization": f"token {token}",
 #         "Accept": "application/vnd.github.v3+json"
@@ -418,7 +418,7 @@ import time
 from pathlib import Path
 
 # Configuration
-KEY_PATH = "pustak-publisher-ai.private-key.pem"  # Relative path since we're in src/
+KEY_PATH = "docit-publisher-ai.private-key.pem"  # Relative path since we're in src/
 APP_ID = "2229202"  # Your writer app ID
 
 def test_jwt():

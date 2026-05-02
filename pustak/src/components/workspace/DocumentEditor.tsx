@@ -1,28 +1,28 @@
 /**
  * Document Editor - GitBook/Mintlify Style
- * 
+ *
  * Clean, document-focused editor with minimal UI
  * Focus on content, not structure
  */
 
-'use client';
+"use client";
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
-import { BlockNoteEditor } from '@/components/BlockNoteEditor';
-import { CommitModal } from '@/components/CommitModal';
-import { 
-  Save, 
-  Clock, 
-  AlertCircle, 
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
+import { BlockNoteEditor } from "@/components/BlockNoteEditor";
+import { CommitModal } from "@/components/CommitModal";
+import {
+  Save,
+  Clock,
+  AlertCircle,
   Loader2,
   CheckCircle2,
   FileText,
   Sparkles,
   ArrowRight,
-  BookOpen
-} from 'lucide-react';
-import { debounce } from '@/lib/utils';
+  BookOpen,
+} from "lucide-react";
+import { debounce } from "@/lib/utils";
 
 interface DocumentEditorProps {
   orgId: string;
@@ -39,17 +39,17 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
     hasUnsavedChanges,
     pendingChanges,
     structureDirty,
-    syncWorkspace
+    syncWorkspace,
   } = useWorkspaceStore();
 
-  const [editorContent, setEditorContent] = useState('');
+  const [editorContent, setEditorContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
-  const lastSavedRef = useRef<string>('');
-  const editorKeyRef = useRef<string>('');
-  const lastLoadedPageRef = useRef<string | null>(''); // Track which page was last loaded
+  const lastSavedRef = useRef<string>("");
+  const editorKeyRef = useRef<string>("");
+  const lastLoadedPageRef = useRef<string | null>(""); // Track which page was last loaded
 
   const activePage = activePageId ? getNodeById(activePageId) : null;
   const cachedContent = activePageId ? contentCache[activePageId] : null;
@@ -62,15 +62,15 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
       lastSavedRef.current = content;
       setIsSaving(false);
     }, 500),
-    [updateContent]
+    [updateContent],
   );
 
   // Load content when active page changes OR when cache is updated (for revert)
   useEffect(() => {
     if (!activePageId) {
-      setEditorContent('');
-      lastSavedRef.current = '';
-      editorKeyRef.current = '';
+      setEditorContent("");
+      lastSavedRef.current = "";
+      editorKeyRef.current = "";
       setIsLoading(false);
       return;
     }
@@ -82,7 +82,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
 
     // If we have cached content, use it
     if (cachedContent) {
-      const content = cachedContent.content || '';
+      const content = cachedContent.content || "";
       // Only update if content actually changed (prevents unnecessary re-renders)
       if (content !== lastSavedRef.current) {
         setEditorContent(content);
@@ -95,105 +95,110 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
 
     // No cache - fetch from server
     if (activePage) {
-        setIsLoading(true);
-        const fetchContent = async () => {
-          if (!activePage.path) {
-            console.error('[DocumentEditor] ❌ No path for page:', {
-              pageId: activePageId,
-              title: activePage.title,
-              page: activePage
-            });
-            setEditorContent('');
+      setIsLoading(true);
+      const fetchContent = async () => {
+        if (!activePage.path) {
+          console.error("[DocumentEditor] ❌ No path for page:", {
+            pageId: activePageId,
+            title: activePage.title,
+            page: activePage,
+          });
+          setEditorContent("");
+          setIsLoading(false);
+          return;
+        }
+
+        try {
+          const token = localStorage.getItem("DocIt_access_token");
+          if (!token) {
+            console.error("[DocumentEditor] ❌ No auth token");
+            setEditorContent("");
             setIsLoading(false);
             return;
           }
-          
-          try {
-            const token = localStorage.getItem('pustak_access_token');
-            if (!token) {
-              console.error('[DocumentEditor] ❌ No auth token');
-              setEditorContent('');
-              setIsLoading(false);
-              return;
-            }
-            
-            const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-            const baseUrl = BACKEND_URL.includes('/api/v1') ? BACKEND_URL : `${BACKEND_URL}/api/v1`;
-            const url = `${baseUrl}/workspace/${orgId}/${repoId}/page?path=${encodeURIComponent(activePage.path)}`;
-            
-            console.log('[DocumentEditor] 🔍 Fetching content:', {
-              url,
-              path: activePage.path,
-              pageId: activePageId,
-              title: activePage.title,
-              orgId,
-              repoId
-            });
-            
-            const response = await fetch(url, {
-              headers: { 'Authorization': `Bearer ${token}` },
-            });
-            
-            console.log('[DocumentEditor] 📡 Response:', {
+
+          const BACKEND_URL =
+            process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+          const baseUrl = BACKEND_URL.includes("/api/v1")
+            ? BACKEND_URL
+            : `${BACKEND_URL}/api/v1`;
+          const url = `${baseUrl}/workspace/${orgId}/${repoId}/page?path=${encodeURIComponent(
+            activePage.path,
+          )}`;
+
+          console.log("[DocumentEditor] 🔍 Fetching content:", {
+            url,
+            path: activePage.path,
+            pageId: activePageId,
+            title: activePage.title,
+            orgId,
+            repoId,
+          });
+
+          const response = await fetch(url, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          console.log("[DocumentEditor] 📡 Response:", {
+            status: response.status,
+            statusText: response.statusText,
+            ok: response.ok,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "");
+            console.error("[DocumentEditor] ❌ API Error:", {
               status: response.status,
               statusText: response.statusText,
-              ok: response.ok
+              error: errorText.substring(0, 500),
+              url,
             });
-            
-            if (!response.ok) {
-              const errorText = await response.text().catch(() => '');
-              console.error('[DocumentEditor] ❌ API Error:', {
-                status: response.status,
-                statusText: response.statusText,
-                error: errorText.substring(0, 500),
-                url
-              });
-              setEditorContent('');
-              setIsLoading(false);
-              return;
-            }
-            
-            const data = await response.json();
-            const content = data.content || '';
-            
-            console.log('[DocumentEditor] ✅ Content received:', {
-              contentLength: content.length,
-              hasContent: !!content,
-              path: data.path
-            });
-            
-            if (content) {
-              loadPageContent(activePageId, content);
-              setEditorContent(content);
-              lastSavedRef.current = content;
-              editorKeyRef.current = `${activePageId}-${Date.now()}`;
-              console.log('[DocumentEditor] ✅ Content loaded successfully!');
-            } else {
-              console.warn('[DocumentEditor] ⚠️ Empty content received');
-            }
+            setEditorContent("");
             setIsLoading(false);
-          } catch (error) {
-            console.error('[DocumentEditor] ❌ Fetch error:', error);
-            setEditorContent('');
-            setIsLoading(false);
+            return;
           }
-        };
-        
-        fetchContent();
+
+          const data = await response.json();
+          const content = data.content || "";
+
+          console.log("[DocumentEditor] ✅ Content received:", {
+            contentLength: content.length,
+            hasContent: !!content,
+            path: data.path,
+          });
+
+          if (content) {
+            loadPageContent(activePageId, content);
+            setEditorContent(content);
+            lastSavedRef.current = content;
+            editorKeyRef.current = `${activePageId}-${Date.now()}`;
+            console.log("[DocumentEditor] ✅ Content loaded successfully!");
+          } else {
+            console.warn("[DocumentEditor] ⚠️ Empty content received");
+          }
+          setIsLoading(false);
+        } catch (error) {
+          console.error("[DocumentEditor] ❌ Fetch error:", error);
+          setEditorContent("");
+          setIsLoading(false);
+        }
+      };
+
+      fetchContent();
     }
   }, [activePageId, cachedContent, activePage, loadPageContent, orgId, repoId]);
 
   // Separate effect to detect revert (cache content changed but not dirty)
   useEffect(() => {
     if (!activePageId || !cachedContent) return;
-    
+
     // If cached content changed but is NOT dirty, it was reverted
-    const currentCachedContent = cachedContent.content || '';
-    const isReverted = 
-      lastSavedRef.current !== currentCachedContent && 
+    const currentCachedContent = cachedContent.content || "";
+    const isReverted =
+      lastSavedRef.current !== currentCachedContent &&
       !cachedContent.isDirty &&
       lastLoadedPageRef.current === activePageId; // Same page
-    
+
     if (isReverted) {
       // Only update if content actually changed (not empty to empty)
       if (currentCachedContent !== lastSavedRef.current) {
@@ -205,33 +210,39 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
   }, [activePageId, cachedContent]);
 
   // Handle content change
-  const handleContentChange = useCallback((markdown: string) => {
-    setEditorContent(markdown);
-    if (activePageId) {
-      setIsSaving(true);
-      debouncedSave(activePageId, markdown);
-    }
-  }, [activePageId, debouncedSave]);
+  const handleContentChange = useCallback(
+    (markdown: string) => {
+      setEditorContent(markdown);
+      if (activePageId) {
+        setIsSaving(true);
+        debouncedSave(activePageId, markdown);
+      }
+    },
+    [activePageId, debouncedSave],
+  );
 
   // Handle commit
-  const handleCommit = useCallback(async (commitMessage: string) => {
-    const token = localStorage.getItem('pustak_access_token');
-    if (!token) {
-      throw new Error('No auth token available');
-    }
+  const handleCommit = useCallback(
+    async (commitMessage: string) => {
+      const token = localStorage.getItem("DocIt_access_token");
+      if (!token) {
+        throw new Error("No auth token available");
+      }
 
-    setIsCommitting(true);
-    try {
-      await syncWorkspace(orgId, repoId, token, commitMessage);
-      setIsCommitModalOpen(false);
-      // Show success notification
-    } catch (error) {
-      console.error('[DocumentEditor] Commit failed:', error);
-      throw error;
-    } finally {
-      setIsCommitting(false);
-    }
-  }, [orgId, repoId, syncWorkspace]);
+      setIsCommitting(true);
+      try {
+        await syncWorkspace(orgId, repoId, token, commitMessage);
+        setIsCommitModalOpen(false);
+        // Show success notification
+      } catch (error) {
+        console.error("[DocumentEditor] Commit failed:", error);
+        throw error;
+      } finally {
+        setIsCommitting(false);
+      }
+    },
+    [orgId, repoId, syncWorkspace],
+  );
 
   if (!activePage) {
     return (
@@ -250,7 +261,8 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
             Welcome to Your Workspace
           </h2>
           <p className="text-lg text-slate-400 mb-8 leading-relaxed">
-            Select a document from the sidebar to start editing, or create a new one to begin documenting your project.
+            Select a document from the sidebar to start editing, or create a new
+            one to begin documenting your project.
           </p>
 
           {/* Quick Tips */}
@@ -259,24 +271,36 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
               <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
                 <Sparkles className="w-5 h-5 text-blue-400" />
               </div>
-              <h3 className="text-sm font-semibold text-white mb-2">Rich Editor</h3>
-              <p className="text-xs text-slate-400">Write with Markdown or use the visual editor</p>
+              <h3 className="text-sm font-semibold text-white mb-2">
+                Rich Editor
+              </h3>
+              <p className="text-xs text-slate-400">
+                Write with Markdown or use the visual editor
+              </p>
             </div>
 
             <div className="group p-6 rounded-xl bg-slate-800/30 border border-slate-700/50 hover:border-emerald-500/50 transition-all">
               <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-emerald-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400" />
               </div>
-              <h3 className="text-sm font-semibold text-white mb-2">Auto-Save</h3>
-              <p className="text-xs text-slate-400">Your changes are saved automatically</p>
+              <h3 className="text-sm font-semibold text-white mb-2">
+                Auto-Save
+              </h3>
+              <p className="text-xs text-slate-400">
+                Your changes are saved automatically
+              </p>
             </div>
 
             <div className="group p-6 rounded-xl bg-slate-800/30 border border-slate-700/50 hover:border-purple-500/50 transition-all">
               <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-purple-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
                 <ArrowRight className="w-5 h-5 text-purple-400" />
               </div>
-              <h3 className="text-sm font-semibold text-white mb-2">Quick Publish</h3>
-              <p className="text-xs text-slate-400">Commit and publish with one click</p>
+              <h3 className="text-sm font-semibold text-white mb-2">
+                Quick Publish
+              </h3>
+              <p className="text-xs text-slate-400">
+                Commit and publish with one click
+              </p>
             </div>
           </div>
         </div>
@@ -321,4 +345,3 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
     </div>
   );
 }
-

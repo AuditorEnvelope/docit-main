@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Globe, Loader2, CheckCircle, AlertCircle, ExternalLink } from "lucide-react";
+import {
+  Globe,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+  ExternalLink,
+} from "lucide-react";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
@@ -40,7 +46,7 @@ export function PublishToLiveButton({
     : `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
 
   const handlePublish = async () => {
-    const token = localStorage.getItem("pustak_access_token");
+    const token = localStorage.getItem("DocIt_access_token");
     if (!token) {
       setStatus({
         type: "error",
@@ -110,22 +116,23 @@ export function PublishToLiveButton({
       <button
         onClick={() => setShowConfirm(true)}
         disabled={publishing || disabled}
-        className={`${fullWidth ? "w-full" : ""} inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium transition-all bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 hover:border-yellow-500/50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer`}
+        className={`${fullWidth ? "w-full" : ""} group relative inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold transition-all overflow-hidden bg-amber-500/15 text-amber-300 border border-amber-500/25 hover:bg-amber-500/25 hover:border-amber-500/40 hover:shadow-lg hover:shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer`}
       >
+        <div className="absolute inset-0 bg-gradient-to-r from-amber-400/0 via-amber-400/10 to-amber-400/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
         {publishing ? (
           <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Publishing...
+            <Loader2 className="h-3.5 w-3.5 animate-spin relative z-10" />
+            <span className="relative z-10">Publishing...</span>
           </>
         ) : hasPublished ? (
           <>
-            <Globe className="h-4 w-4" />
-            Republish Live
+            <Globe className="h-3.5 w-3.5 relative z-10" />
+            <span className="relative z-10">Republish Live</span>
           </>
         ) : (
           <>
-            <Globe className="h-4 w-4" />
-            Publish to Live
+            <Globe className="h-3.5 w-3.5 relative z-10" />
+            <span className="relative z-10">Publish to Live</span>
           </>
         )}
       </button>
