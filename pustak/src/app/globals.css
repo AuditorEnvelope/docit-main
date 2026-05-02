@@ -137,7 +137,7 @@ html {
 /* Slash suggestion menu - BlockNote's actual class */
 .bn-mantine .bn-suggestion-menu,
 .bn-suggestion-menu {
-  background-color: rgb(15, 23, 42) !important; /* slate-900 - Pustak theme */
+  background-color: rgb(15, 23, 42) !important; /* slate-900 - DocIt theme */
   background: rgb(15, 23, 42) !important;
   border: 1px solid rgb(51, 65, 85) !important; /* slate-700 */
   border-radius: 0.5rem !important;
@@ -151,7 +151,7 @@ html {
 .mantine-Menu-dropdown,
 div[class*="mantine-Menu-dropdown"],
 [class*="Menu-dropdown"] {
-  background-color: rgb(15, 23, 42) !important; /* slate-900 - Pustak theme */
+  background-color: rgb(15, 23, 42) !important; /* slate-900 - DocIt theme */
   background: rgb(15, 23, 42) !important;
   border: 1px solid rgb(51, 65, 85) !important; /* slate-700 */
   border-radius: 0.5rem !important;

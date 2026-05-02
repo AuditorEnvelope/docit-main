@@ -6,8 +6,8 @@ from datetime import datetime
 
 # Configuration
 REPO_OWNER = "jai-mahakal-poc"
-REPO_NAME = "pustak-docbook-jai-mahakal-poc"
-PRIVATE_KEY_PATH = "pustak-publisher-ai.private-key.pem"
+REPO_NAME = "docit-docbook-jai-mahakal-poc"
+PRIVATE_KEY_PATH = "docit-publisher-ai.private-key.pem"
 APP_ID = "2229202"  # Your writer app ID
 INSTALLATION_ID = "93180288"  # Installation ID for jai-mahakal-poc
 

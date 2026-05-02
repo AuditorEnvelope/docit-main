@@ -4,7 +4,7 @@ from pydantic import AnyHttpUrl, field_validator, ConfigDict
 
 class Settings(BaseSettings):
     # Application
-    PROJECT_NAME: str = "Pustak AI"
+    PROJECT_NAME: str = "DocIt AI"
     API_V1_STR: str = "/api/v1"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"  # development|staging|production

@@ -22,12 +22,12 @@ async def install_reader_app(redirect_uri: str = None):
         
         # GitHub App installation URL
         # After user installs, GitHub redirects to: redirect_uri?installation_id=XXX&setup_action=install
-        github_install_url = f"https://github.com/apps/pustak-analyser-ai/installations/new"
+        github_install_url = f"https://github.com/apps/docit-analyser-ai/installations/new"
         
         return {
             "status": "redirect",
             "url": github_install_url,
-            "app_name": "Pustak Analyser AI",
+            "app_name": "DocIt Analyser AI",
             "app_id": reader_app_id,
             "message": "Redirecting to GitHub App installation page"
         }
@@ -48,12 +48,12 @@ async def install_writer_app(redirect_uri: str = None):
         
         # GitHub App installation URL
         # After user installs, GitHub redirects to: redirect_uri?installation_id=XXX&setup_action=install
-        github_install_url = f"https://github.com/apps/pustak-publisher-ai/installations/new"
+        github_install_url = f"https://github.com/apps/docit-publisher-ai/installations/new"
         
         return {
             "status": "redirect",
             "url": github_install_url,
-            "app_name": "Pustak Publisher AI",
+            "app_name": "DocIt Publisher AI",
             "app_id": writer_app_id,
             "message": "Redirecting to GitHub App installation page"
         }

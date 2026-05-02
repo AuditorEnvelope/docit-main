@@ -27,7 +27,7 @@ class GitHubDualAppHelper:
         self.reader_private_key = self._load_private_key_simple(
             env_key_var="READER_PRIVATE_KEY",
             path_env_var="READER_PRIVATE_KEY_PATH",
-            default_filename="pustak-reader.private-key.pem",
+            default_filename="docit-reader.private-key.pem",
         )
         
         # Writer App Config
@@ -35,7 +35,7 @@ class GitHubDualAppHelper:
         self.writer_private_key = self._load_private_key_simple(
             env_key_var="WRITER_PRIVATE_KEY",
             path_env_var="WRITER_PRIVATE_KEY_PATH",
-            default_filename="pustak-publisher-ai.private-key.pem",
+            default_filename="docit-publisher-ai.private-key.pem",
         )
         
         # Fallback to old single app (for backward compatibility)
@@ -43,7 +43,7 @@ class GitHubDualAppHelper:
         self.github_private_key = self._load_private_key_simple(
             env_key_var="GITHUB_PRIVATE_KEY",
             path_env_var="GITHUB_PRIVATE_KEY_PATH",
-            default_filename="pustak-github-app.private-key.pem",
+            default_filename="docit-github-app.private-key.pem",
         )
         
         # Determine which mode we're in
@@ -168,7 +168,7 @@ class GitHubDualAppHelper:
                     'Authorization': f'Bearer {jwt_token}',
                     'Accept': 'application/vnd.github+json',
                     'X-GitHub-Api-Version': '2022-11-28',  # Added!
-                    'User-Agent': 'pustak-docai-app'
+                    'User-Agent': 'docit-docai-app'
                 }
                 
                 url = f'https://api.github.com/app/installations/{installation_id}/access_tokens'
@@ -217,7 +217,7 @@ class GitHubDualAppHelper:
                     'Authorization': f'Bearer {jwt_token}',
                     'Accept': 'application/vnd.github+json',
                     'X-GitHub-Api-Version': '2022-11-28',  # Added!
-                    'User-Agent': 'pustak-docai-app'
+                    'User-Agent': 'docit-docai-app'
                 }
                 
                 url = f'https://api.github.com/app/installations/{installation_id}/access_tokens'

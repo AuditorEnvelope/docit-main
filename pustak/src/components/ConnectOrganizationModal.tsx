@@ -80,14 +80,11 @@ export default function ConnectOrganizationModal({
     async (orgId: string) => {
       setCheckingApp(true);
       try {
-        const response = await fetch(
-          `${backendUrl}/org/${orgId}/verify-apps`,
-          {
-            headers: {
-              Authorization: `Bearer ${userToken}`,
-            },
-          }
-        );
+        const response = await fetch(`${backendUrl}/org/${orgId}/verify-apps`, {
+          headers: {
+            Authorization: `Bearer ${userToken}`,
+          },
+        });
 
         if (response.ok) {
           const data = await response.json();
@@ -119,7 +116,7 @@ export default function ConnectOrganizationModal({
         setCheckingApp(false);
       }
     },
-    [backendUrl, userToken]
+    [backendUrl, userToken],
   );
 
   const handleConnect = async () => {
@@ -293,7 +290,7 @@ export default function ConnectOrganizationModal({
                           ✓ App Installed
                         </p>
                         <p className="text-sm text-green-200/80 mt-1">
-                          Pustak Analyser AI is installed in this organization.
+                          DocIt Analyser AI is installed in this organization.
                           You can now proceed to connect.
                         </p>
                       </div>
@@ -310,22 +307,23 @@ export default function ConnectOrganizationModal({
                             App Not Installed
                           </p>
                           <p className="text-sm text-amber-200/80 mt-1">
-                            Install the <strong>Pustak Analyser AI</strong> GitHub App in{" "}
-                            <strong>{selectedOrg}</strong> to enable automatic
-                            webhook registration for repository reads.
+                            Install the <strong>DocIt Analyser AI</strong>{" "}
+                            GitHub App in <strong>{selectedOrg}</strong> to
+                            enable automatic webhook registration for repository
+                            reads.
                           </p>
                         </div>
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <a
-                          href="https://github.com/apps/pustak-analyser-ai"
+                          href="https://github.com/apps/DocIt-analyser-ai"
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setPollingAppInstall(true)}
                           className="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition-colors"
                         >
                           <Download size={16} />
-                          Install Pustak Analyser AI
+                          Install DocIt Analyser AI
                           <ExternalLink size={14} />
                         </a>
                         <button
@@ -339,7 +337,7 @@ export default function ConnectOrganizationModal({
                         >
                           <Loader2
                             size={14}
-                            className={`$${'{'}pollingAppInstall ? "animate-spin" : ""${'}'}`}
+                            className={`$${"{"}pollingAppInstall ? "animate-spin" : ""${"}"}`}
                           />
                           Refresh status
                         </button>

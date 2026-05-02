@@ -62,7 +62,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
       lastSavedRef.current = content;
       setIsSaving(false);
     }, 500),
-    [updateContent]
+    [updateContent],
   );
 
   // Load content when active page changes OR when cache is updated (for revert)
@@ -109,7 +109,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
         }
 
         try {
-          const token = localStorage.getItem("pustak_access_token");
+          const token = localStorage.getItem("DocIt_access_token");
           if (!token) {
             console.error("[DocumentEditor] ❌ No auth token");
             setEditorContent("");
@@ -123,7 +123,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
             ? BACKEND_URL
             : `${BACKEND_URL}/api/v1`;
           const url = `${baseUrl}/workspace/${orgId}/${repoId}/page?path=${encodeURIComponent(
-            activePage.path
+            activePage.path,
           )}`;
 
           console.log("[DocumentEditor] 🔍 Fetching content:", {
@@ -218,13 +218,13 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
         debouncedSave(activePageId, markdown);
       }
     },
-    [activePageId, debouncedSave]
+    [activePageId, debouncedSave],
   );
 
   // Handle commit
   const handleCommit = useCallback(
     async (commitMessage: string) => {
-      const token = localStorage.getItem("pustak_access_token");
+      const token = localStorage.getItem("DocIt_access_token");
       if (!token) {
         throw new Error("No auth token available");
       }
@@ -241,7 +241,7 @@ export function DocumentEditor({ orgId, repoId }: DocumentEditorProps) {
         setIsCommitting(false);
       }
     },
-    [orgId, repoId, syncWorkspace]
+    [orgId, repoId, syncWorkspace],
   );
 
   if (!activePage) {

@@ -282,7 +282,7 @@ class AuthService:
                         headers={
                             "Authorization": f"Bearer {github_token}",
                             "Accept": "application/vnd.github.v3+json",
-                            "User-Agent": "Pustak-AI"
+                            "User-Agent": "DocIt-AI"
                         },
                         params={
                             "per_page": 100,
@@ -351,7 +351,7 @@ class AuthService:
                     headers={
                         "Authorization": f"Bearer {github_token}",
                         "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "Pustak-AI"
+                        "User-Agent": "DocIt-AI"
                     },
                     timeout=aiohttp.ClientTimeout(total=5)
                 ) as response:
@@ -387,7 +387,7 @@ class AuthService:
                     headers={
                         "Authorization": f"Bearer {github_token}",
                         "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "Pustak-AI"
+                        "User-Agent": "DocIt-AI"
                     },
                     timeout=aiohttp.ClientTimeout(total=5)
                 ) as response:

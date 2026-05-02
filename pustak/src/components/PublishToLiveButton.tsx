@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Globe, Loader2, CheckCircle, AlertCircle, ExternalLink } from "lucide-react";
+import {
+  Globe,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+  ExternalLink,
+} from "lucide-react";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
@@ -40,7 +46,7 @@ export function PublishToLiveButton({
     : `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
 
   const handlePublish = async () => {
-    const token = localStorage.getItem("pustak_access_token");
+    const token = localStorage.getItem("DocIt_access_token");
     if (!token) {
       setStatus({
         type: "error",

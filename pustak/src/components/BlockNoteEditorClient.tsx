@@ -103,7 +103,7 @@ export default function BlockNoteEditorClient({
     <div className={`blocknote-editor ${className}`}>
       <BlockNoteView editor={editor} theme="dark" editable={editable} />
       <style jsx global>{`
-        /* BlockNote CSS Variables - Match Pustak Theme */
+        /* BlockNote CSS Variables - Match DocIt Theme */
         .blocknote-editor {
           --bn-colors-menu-background: rgb(
             15,

@@ -38,18 +38,18 @@ export default function RepositorySettingsPage({ params }: SettingsPageProps) {
         const resolvedParams = await params;
         const slug = resolvedParams.slug;
 
-        console.log('🔍 Settings page received slug:', slug);
-        
+        console.log("🔍 Settings page received slug:", slug);
+
         // Extract repo name from slug
         const repoPath = slug.join("/");
-        console.log('🔍 Constructed repo path:', repoPath);
+        console.log("🔍 Constructed repo path:", repoPath);
 
         if (!isMounted) return;
 
         setRepoName(repoPath);
 
         // Get user token from localStorage
-        const token = localStorage.getItem("pustak_access_token");
+        const token = localStorage.getItem("DocIt_access_token");
         if (token) {
           setUserToken(token);
         }

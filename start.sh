@@ -9,7 +9,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${YELLOW}🚀 Starting Pustak AI Development Environment...${NC}"
+echo -e "${YELLOW}🚀 Starting DocIt AI Development Environment...${NC}"
 echo ""
 
 # Set Python path to include the project root
@@ -88,7 +88,7 @@ set +a
 echo -e "${GREEN}✓${NC} Environment variables loaded"
 
 echo ""
-echo -e "${GREEN}✅ Starting Pustak AI server...${NC}"
+echo -e "${GREEN}✅ Starting DocIt AI server...${NC}"
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${YELLOW}📚 API Documentation: ${GREEN}http://localhost:8000/docs${NC}"
 echo -e "${YELLOW}📚 ReDoc:             ${GREEN}http://localhost:8000/redoc${NC}"

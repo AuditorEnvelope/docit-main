@@ -28,7 +28,7 @@ export interface GitHubFile {
 // Get GitHub token from environment
 function getGitHubToken(): string | null {
   // Only available on server-side
-  if (typeof process !== 'undefined' && process.env) {
+  if (typeof process !== "undefined" && process.env) {
     return process.env.GITHUB_TOKEN || null;
   }
   return null;
@@ -64,15 +64,15 @@ export async function fetchAllRepositoriesFromGitHub(): Promise<GitHubRepo[]> {
         headers: {
           Authorization: `token ${token}`,
           Accept: "application/vnd.github.v3+json",
-          "User-Agent": "Pustak-Documentation-Platform",
+          "User-Agent": "DocIt-Documentation-Platform",
         },
         next: { revalidate: 30 }, // Cache for 30 seconds (faster updates)
-      }
+      },
     );
 
     if (!response.ok) {
       throw new Error(
-        `GitHub API error: ${response.status} ${response.statusText}`
+        `GitHub API error: ${response.status} ${response.statusText}`,
       );
     }
 
@@ -98,13 +98,13 @@ export async function fetchAllRepositoriesFromGitHub(): Promise<GitHubRepo[]> {
 // Fetch file content from GitHub via backend
 export async function fetchFileFromGitHub(
   repo: string,
-  filePath: string
+  filePath: string,
 ): Promise<string | null> {
   try {
     console.log("[fetchFileFromGitHub] Called with:", { repo, filePath });
-    const isServer = typeof window === 'undefined';
+    const isServer = typeof window === "undefined";
     console.log("[fetchFileFromGitHub] Is server-side:", isServer);
-    
+
     if (isServer) {
       // Server-side: use env token
       console.log("[fetchFileFromGitHub] Using server-side fetch");
@@ -115,41 +115,47 @@ export async function fetchFileFromGitHub(
         return null;
       }
       const org = getGitHubOrg();
-      const repoPath = repo.includes('/') ? repo : `${org}/${repo}`;
+      const repoPath = repo.includes("/") ? repo : `${org}/${repo}`;
       console.log("[fetchFileFromGitHub] Repo path:", repoPath);
       const url = `https://api.github.com/repos/${repoPath}/contents/${filePath}`;
       console.log("[fetchFileFromGitHub] GitHub API URL:", url);
-      const response = await fetch(
-        url,
-        {
-          headers: {
-            Authorization: `token ${token}`,
-            Accept: "application/vnd.github.v3+json",
-            "User-Agent": "Pustak-Documentation-Platform",
-          },
-          next: { revalidate: 10 },
-        }
-      );
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: "application/vnd.github.v3+json",
+          "User-Agent": "DocIt-Documentation-Platform",
+        },
+        next: { revalidate: 10 },
+      });
       console.log("[fetchFileFromGitHub] Response status:", response.status);
       if (!response.ok) {
         console.log("[fetchFileFromGitHub] Response not OK, returning null");
         return null;
       }
       const fileData = await response.json();
-      console.log("[fetchFileFromGitHub] File data received, encoding:", fileData.encoding);
+      console.log(
+        "[fetchFileFromGitHub] File data received, encoding:",
+        fileData.encoding,
+      );
       if (fileData.encoding === "base64" && fileData.content) {
-        const base64Content = fileData.content.replace(/\n/g, '');
+        const base64Content = fileData.content.replace(/\n/g, "");
         const decoded = Buffer.from(base64Content, "base64").toString("utf-8");
-        console.log("[fetchFileFromGitHub] Decoded content length:", decoded.length);
+        console.log(
+          "[fetchFileFromGitHub] Decoded content length:",
+          decoded.length,
+        );
         return decoded;
       }
-      console.log("[fetchFileFromGitHub] Returning raw content, length:", fileData.content?.length || 0);
+      console.log(
+        "[fetchFileFromGitHub] Returning raw content, length:",
+        fileData.content?.length || 0,
+      );
       return fileData.content || null;
     }
 
     // Client-side: use backend endpoint
     console.log("[fetchFileFromGitHub] Using client-side fetch");
-    const userToken = localStorage.getItem('pustak_access_token');
+    const userToken = localStorage.getItem("DocIt_access_token");
     console.log("[fetchFileFromGitHub] User token available:", !!userToken);
     if (!userToken) {
       console.log("[fetchFileFromGitHub] No user token, returning null");
@@ -158,14 +164,11 @@ export async function fetchFileFromGitHub(
 
     const url = `/api/fetch-doc?repo=${encodeURIComponent(repo)}&filePath=${encodeURIComponent(filePath)}`;
     console.log("[fetchFileFromGitHub] API URL:", url);
-    const response = await fetch(
-      url,
-      {
-        headers: {
-          'Authorization': `Bearer ${userToken}`,
-        },
-      }
-    );
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${userToken}`,
+      },
+    });
 
     console.log("[fetchFileFromGitHub] API response status:", response.status);
     if (!response.ok) {
@@ -174,7 +177,10 @@ export async function fetchFileFromGitHub(
     }
 
     const data = await response.json();
-    console.log("[fetchFileFromGitHub] API data received, content length:", data.content?.length || 0);
+    console.log(
+      "[fetchFileFromGitHub] API data received, content length:",
+      data.content?.length || 0,
+    );
     return data.content || null;
   } catch (error) {
     console.error("[fetchFileFromGitHub] Error:", error);
@@ -185,7 +191,7 @@ export async function fetchFileFromGitHub(
 // List files in a directory
 export async function listDirectoryContents(
   repo: string,
-  path: string
+  path: string,
 ): Promise<string[]> {
   try {
     const token = getGitHubToken();
@@ -196,17 +202,17 @@ export async function listDirectoryContents(
     }
 
     const org = getGitHubOrg();
-    const repoPath = repo.includes('/') ? repo : `${org}/${repo}`;
+    const repoPath = repo.includes("/") ? repo : `${org}/${repo}`;
     const response = await fetch(
       `https://api.github.com/repos/${repoPath}/contents/${path}`,
       {
         headers: {
           Authorization: `token ${token}`,
           Accept: "application/vnd.github.v3+json",
-          "User-Agent": "Pustak-Documentation-Platform",
+          "User-Agent": "DocIt-Documentation-Platform",
         },
         next: { revalidate: 10 }, // Cache for 10 seconds (faster updates)
-      }
+      },
     );
 
     if (!response.ok) {
@@ -215,11 +221,13 @@ export async function listDirectoryContents(
         return [];
       }
       if (response.status === 401 || response.status === 403) {
-        console.error(`Auth error (${response.status}): Token may not have access to ${repoPath}`);
+        console.error(
+          `Auth error (${response.status}): Token may not have access to ${repoPath}`,
+        );
         return [];
       }
       throw new Error(
-        `GitHub API error: ${response.status} ${response.statusText}`
+        `GitHub API error: ${response.status} ${response.statusText}`,
       );
     }
 
@@ -250,7 +258,7 @@ export async function hasDocsFolder(repo: string): Promise<boolean> {
     }
 
     const org = getGitHubOrg();
-    const repoPath = repo.includes('/') ? repo : `${org}/${repo}`;
+    const repoPath = repo.includes("/") ? repo : `${org}/${repo}`;
 
     const response = await fetch(
       `https://api.github.com/repos/${repoPath}/contents/docs`,
@@ -258,10 +266,10 @@ export async function hasDocsFolder(repo: string): Promise<boolean> {
         headers: {
           Authorization: `token ${token}`,
           Accept: "application/vnd.github.v3+json",
-          "User-Agent": "Pustak-Documentation-Platform",
+          "User-Agent": "DocIt-Documentation-Platform",
         },
         next: { revalidate: 30 }, // Cache for 30 seconds (faster updates)
-      }
+      },
     );
 
     return response.ok;
@@ -285,7 +293,7 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
 }> {
   try {
     const markdownFiles = await listDirectoryContents(repo, "docs");
-    
+
     const docs: {
       readme?: string;
       summary?: string;
@@ -305,11 +313,11 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
     // Fetch each markdown file from docs folder
     for (const fileName of markdownFiles) {
       const content = await fetchFileFromGitHub(repo, `docs/${fileName}`);
-      
+
       if (!content) continue;
 
       const lowerFileName = fileName.toLowerCase();
-      
+
       if (lowerFileName === "readme.md") {
         docs.readme = content;
       } else if (lowerFileName === "summary.md") {
@@ -324,9 +332,11 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
         docs.workflow = content;
       } else if (fileName.endsWith(".md")) {
         // Skip DocAI run logs and internal files (only if filename indicates it's a log)
-        if (lowerFileName.includes("docai_run_log") || 
-            lowerFileName.includes("run_log") ||
-            lowerFileName === "doc_ai_run_log.md") {
+        if (
+          lowerFileName.includes("docai_run_log") ||
+          lowerFileName.includes("run_log") ||
+          lowerFileName === "doc_ai_run_log.md"
+        ) {
           continue; // Skip DocAI internal logs
         }
         // All other markdown files go to changes
@@ -337,19 +347,24 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
     // Also fetch from docs/changes/ subdirectory
     const changesFiles = await listDirectoryContents(repo, "docs/changes");
     for (const fileName of changesFiles) {
-      const content = await fetchFileFromGitHub(repo, `docs/changes/${fileName}`);
-      
+      const content = await fetchFileFromGitHub(
+        repo,
+        `docs/changes/${fileName}`,
+      );
+
       if (!content) continue;
 
       const lowerFileName = fileName.toLowerCase();
-      
+
       // Skip DocAI run logs
-      if (lowerFileName.includes("docai_run_log") || 
-          lowerFileName.includes("run_log") ||
-          lowerFileName === "doc_ai_run_log.md") {
+      if (
+        lowerFileName.includes("docai_run_log") ||
+        lowerFileName.includes("run_log") ||
+        lowerFileName === "doc_ai_run_log.md"
+      ) {
         continue;
       }
-      
+
       // Add to changes array
       docs.changes.push({ content, fileName: `changes/${fileName}` });
     }
@@ -372,7 +387,10 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
 
     // Fetch architecture from docs/architecture/current.md
     if (!docs.architecture) {
-      const archCurrent = await fetchFileFromGitHub(repo, "docs/architecture/current.md");
+      const archCurrent = await fetchFileFromGitHub(
+        repo,
+        "docs/architecture/current.md",
+      );
       if (archCurrent) {
         docs.architecture = archCurrent;
       }
@@ -380,7 +398,10 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
 
     // Fetch workflow from docs/workflow/current.md
     if (!docs.workflow) {
-      const workflowCurrent = await fetchFileFromGitHub(repo, "docs/workflow/current.md");
+      const workflowCurrent = await fetchFileFromGitHub(
+        repo,
+        "docs/workflow/current.md",
+      );
       if (workflowCurrent) {
         docs.workflow = workflowCurrent;
       }
@@ -393,15 +414,15 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
       if (match) {
         docs.architectureVersions.push({
           version: `v${match[1]}`,
-          fileName: `architecture/${fileName}`
+          fileName: `architecture/${fileName}`,
         });
       }
     }
     // Sort versions in descending order (v3.3, v3.2, v3.1, v3, v2, v1)
     docs.architectureVersions.sort((a, b) => {
-      const aVer = a.version.substring(1).split('.').map(Number);
-      const bVer = b.version.substring(1).split('.').map(Number);
-      
+      const aVer = a.version.substring(1).split(".").map(Number);
+      const bVer = b.version.substring(1).split(".").map(Number);
+
       for (let i = 0; i < Math.max(aVer.length, bVer.length); i++) {
         const aNum = aVer[i] || 0;
         const bNum = bVer[i] || 0;
@@ -417,15 +438,15 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
       if (match) {
         docs.workflowVersions.push({
           version: `v${match[1]}`,
-          fileName: `workflow/${fileName}`
+          fileName: `workflow/${fileName}`,
         });
       }
     }
     // Sort versions in descending order (v3.3, v3.2, v3.1, v3, v2, v1)
     docs.workflowVersions.sort((a, b) => {
-      const aVer = a.version.substring(1).split('.').map(Number);
-      const bVer = b.version.substring(1).split('.').map(Number);
-      
+      const aVer = a.version.substring(1).split(".").map(Number);
+      const bVer = b.version.substring(1).split(".").map(Number);
+
       for (let i = 0; i < Math.max(aVer.length, bVer.length); i++) {
         const aNum = aVer[i] || 0;
         const bNum = bVer[i] || 0;
@@ -437,10 +458,10 @@ export async function fetchDocsFromRepo(repo: string): Promise<{
     return docs;
   } catch (error) {
     console.error(`Failed to fetch docs from ${repo}:`, error);
-    return { 
+    return {
       architectureVersions: [],
       workflowVersions: [],
-      changes: [] 
+      changes: [],
     };
   }
 }
@@ -465,7 +486,7 @@ export interface DocStructureStatus {
 
 export async function checkDocStructure(
   repo: string,
-  userToken?: string
+  userToken?: string,
 ): Promise<DocStructureStatus> {
   try {
     const token = userToken || getGitHubToken();
@@ -483,46 +504,83 @@ export async function checkDocStructure(
       };
     }
 
-    const repoPath = repo.includes('/') ? repo : `${getGitHubOrg()}/${repo}`;
+    const repoPath = repo.includes("/") ? repo : `${getGitHubOrg()}/${repo}`;
     const baseUrl = `https://api.github.com/repos/${repoPath}`;
 
     // Check each file/folder
     const checks = await Promise.all([
       // Check docs folder
       fetch(`${baseUrl}/contents/docs`, {
-        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
-      }).then(r => r.ok),
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: "application/vnd.github.v3+json",
+        },
+      }).then((r) => r.ok),
       // Check README
       fetch(`${baseUrl}/contents/README.md`, {
-        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
-      }).then(r => r.ok),
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: "application/vnd.github.v3+json",
+        },
+      }).then((r) => r.ok),
       // Check CHANGELOG
       fetch(`${baseUrl}/contents/CHANGELOG.md`, {
-        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
-      }).then(r => r.ok),
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: "application/vnd.github.v3+json",
+        },
+      }).then((r) => r.ok),
       // Check docs/SUMMARY.md
       fetch(`${baseUrl}/contents/docs/SUMMARY.md`, {
-        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
-      }).then(r => r.ok),
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: "application/vnd.github.v3+json",
+        },
+      }).then((r) => r.ok),
       // Check docs/ARCHITECTURE.md
       fetch(`${baseUrl}/contents/docs/ARCHITECTURE.md`, {
-        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
-      }).then(r => r.ok),
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: "application/vnd.github.v3+json",
+        },
+      }).then((r) => r.ok),
       // Check docs/WORKFLOW.md
       fetch(`${baseUrl}/contents/docs/WORKFLOW.md`, {
-        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
-      }).then(r => r.ok),
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: "application/vnd.github.v3+json",
+        },
+      }).then((r) => r.ok),
       // Check docs/API.md
       fetch(`${baseUrl}/contents/docs/API.md`, {
-        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
-      }).then(r => r.ok),
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: "application/vnd.github.v3+json",
+        },
+      }).then((r) => r.ok),
     ]);
 
-    const [hasDocsFolder, hasReadme, hasChangelog, hasSummary, hasArchitecture, hasWorkflow, hasApi] = checks;
+    const [
+      hasDocsFolder,
+      hasReadme,
+      hasChangelog,
+      hasSummary,
+      hasArchitecture,
+      hasWorkflow,
+      hasApi,
+    ] = checks;
 
     // Get architecture versions
-    const archVersions = await getVersionsFromFolder(repo, 'docs/architecture', token);
-    const workflowVersions = await getVersionsFromFolder(repo, 'docs/workflow', token);
+    const archVersions = await getVersionsFromFolder(
+      repo,
+      "docs/architecture",
+      token,
+    );
+    const workflowVersions = await getVersionsFromFolder(
+      repo,
+      "docs/workflow",
+      token,
+    );
 
     return {
       hasDocsFolder,
@@ -555,30 +613,35 @@ export async function checkDocStructure(
 async function getVersionsFromFolder(
   repo: string,
   folderPath: string,
-  token: string
+  token: string,
 ): Promise<string[]> {
   try {
-    const repoPath = repo.includes('/') ? repo : `${getGitHubOrg()}/${repo}`;
+    const repoPath = repo.includes("/") ? repo : `${getGitHubOrg()}/${repo}`;
     const response = await fetch(
       `https://api.github.com/repos/${repoPath}/contents/${folderPath}`,
       {
         headers: {
           Authorization: `token ${token}`,
-          Accept: 'application/vnd.github.v3+json',
+          Accept: "application/vnd.github.v3+json",
         },
-      }
+      },
     );
 
     if (!response.ok) return [];
 
     const files = await response.json();
     return files
-      .filter((f: any) => f.type === 'file' && f.name.endsWith('.md') && f.name !== 'current.md')
-      .map((f: any) => f.name.replace('.md', ''))
+      .filter(
+        (f: any) =>
+          f.type === "file" &&
+          f.name.endsWith(".md") &&
+          f.name !== "current.md",
+      )
+      .map((f: any) => f.name.replace(".md", ""))
       .sort((a: string, b: string) => {
         // Sort versions numerically
-        const aParts = a.split('.').map(Number);
-        const bParts = b.split('.').map(Number);
+        const aParts = a.split(".").map(Number);
+        const bParts = b.split(".").map(Number);
         for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
           const aNum = aParts[i] || 0;
           const bNum = bParts[i] || 0;

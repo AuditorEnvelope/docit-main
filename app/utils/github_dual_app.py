@@ -16,14 +16,14 @@ class GitHubDualAppHelper:
         self.reader_private_key = self._load_private_key(
             env_key_var="READER_PRIVATE_KEY",
             path_env_var="READER_PRIVATE_KEY_PATH",
-            default_filename="pustak-reader.private-key.pem"
+            default_filename="docit-reader.private-key.pem"
         )
         # Also check GITHUB_READER_PRIVATE_KEY if READER_PRIVATE_KEY not found
         if not self.reader_private_key:
             self.reader_private_key = self._load_private_key(
                 env_key_var="GITHUB_READER_PRIVATE_KEY",
                 path_env_var="GITHUB_READER_PRIVATE_KEY_PATH",
-            default_filename="pustak-reader.private-key.pem"
+            default_filename="docit-reader.private-key.pem"
         )
         
         # Writer App Config - Check both WRITER_APP_ID and GITHUB_WRITER_APP_ID
@@ -31,14 +31,14 @@ class GitHubDualAppHelper:
         self.writer_private_key = self._load_private_key(
             env_key_var="WRITER_PRIVATE_KEY",
             path_env_var="WRITER_PRIVATE_KEY_PATH",
-            default_filename="pustak-publisher-ai.private-key.pem"
+            default_filename="docit-publisher-ai.private-key.pem"
         )
         # Also check GITHUB_WRITER_PRIVATE_KEY if WRITER_PRIVATE_KEY not found
         if not self.writer_private_key:
             self.writer_private_key = self._load_private_key(
                 env_key_var="GITHUB_WRITER_PRIVATE_KEY",
                 path_env_var="GITHUB_WRITER_PRIVATE_KEY_PATH",
-            default_filename="pustak-publisher-ai.private-key.pem"
+            default_filename="docit-publisher-ai.private-key.pem"
         )
         
         # Fallback to old single app (for backward compatibility)
@@ -46,7 +46,7 @@ class GitHubDualAppHelper:
         self.github_private_key = self._load_private_key(
             env_key_var="GITHUB_PRIVATE_KEY",
             path_env_var="GITHUB_PRIVATE_KEY_PATH",
-            default_filename="pustak-github-app.private-key.pem"
+            default_filename="docit-github-app.private-key.pem"
         )
         
         # Determine which mode we're in

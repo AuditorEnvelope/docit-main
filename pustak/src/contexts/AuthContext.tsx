@@ -30,9 +30,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Storage keys
-const ACCESS_TOKEN_KEY = "pustak_access_token";
-const REFRESH_TOKEN_KEY = "pustak_refresh_token";
-const USER_KEY = "pustak_user";
+const ACCESS_TOKEN_KEY = "DocIt_access_token";
+const REFRESH_TOKEN_KEY = "DocIt_refresh_token";
+const USER_KEY = "DocIt_user";
+const LEGACY_ACCESS_TOKEN_KEY = "pustak_access_token";
+const LEGACY_REFRESH_TOKEN_KEY = "pustak_refresh_token";
+const LEGACY_USER_KEY = "pustak_user";
 
 // Backend URL
 const BACKEND_URL =
@@ -47,10 +50,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
-        const storedUser = localStorage.getItem(USER_KEY);
-        
-        console.log('[AuthContext] Initializing auth...', { hasToken: !!accessToken, hasUser: !!storedUser });
+        const accessToken =
+          localStorage.getItem(ACCESS_TOKEN_KEY) ||
+          localStorage.getItem(LEGACY_ACCESS_TOKEN_KEY);
+        const storedUser =
+          localStorage.getItem(USER_KEY) || localStorage.getItem(LEGACY_USER_KEY);
+
+        console.log("[AuthContext] Initializing auth...", {
+          hasToken: !!accessToken,
+          hasUser: !!storedUser,
+        });
 
         if (accessToken && storedUser) {
           // Verify token is still valid
@@ -59,8 +68,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               Authorization: `Bearer ${accessToken}`,
             },
           });
-          
-          console.log('[AuthContext] Token verification response:', response.status);
+
+          console.log(
+            "[AuthContext] Token verification response:",
+            response.status,
+          );
 
           if (response.ok) {
             const userData = await response.json();
@@ -69,23 +81,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               is_onboarding_complete: userData?.is_onboarding_complete ?? false,
             };
             localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser));
+            // Keep legacy key synced during migration window.
+            localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
             setUser(normalizedUser);
             setToken(accessToken);
-            console.log('[AuthContext] Auth initialized successfully');
+            console.log("[AuthContext] Auth initialized successfully");
           } else {
             // Token invalid, clear storage
-            console.warn('[AuthContext] Token invalid, clearing auth');
+            console.warn("[AuthContext] Token invalid, clearing auth");
             clearAuth();
           }
         } else {
-          console.warn('[AuthContext] No stored credentials found');
+          console.warn("[AuthContext] No stored credentials found");
         }
       } catch (error) {
         console.error("Auth initialization error:", error);
         clearAuth();
       } finally {
         setLoading(false);
-        console.log('[AuthContext] Auth init complete');
+        console.log("[AuthContext] Auth init complete");
       }
     };
 
@@ -96,11 +110,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Store tokens and user data
     localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
     localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+    // Keep legacy keys synced so old code paths continue to work.
+    localStorage.setItem(LEGACY_ACCESS_TOKEN_KEY, accessToken);
+    localStorage.setItem(LEGACY_REFRESH_TOKEN_KEY, refreshToken);
     const normalizedUser: User = {
       ...userData,
       is_onboarding_complete: userData?.is_onboarding_complete ?? false,
     };
     localStorage.setItem(USER_KEY, JSON.stringify(normalizedUser));
+    localStorage.setItem(LEGACY_USER_KEY, JSON.stringify(normalizedUser));
     setUser(normalizedUser);
     setToken(accessToken);
   };
@@ -117,6 +135,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_USER_KEY);
   };
 
   const markOnboardingComplete = () => {
@@ -153,11 +174,17 @@ export function useAuth() {
 // Helper to get access token
 export function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  return (
+    localStorage.getItem(ACCESS_TOKEN_KEY) ||
+    localStorage.getItem(LEGACY_ACCESS_TOKEN_KEY)
+  );
 }
 
 // Helper to get refresh token
 export function getRefreshToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  return (
+    localStorage.getItem(REFRESH_TOKEN_KEY) ||
+    localStorage.getItem(LEGACY_REFRESH_TOKEN_KEY)
+  );
 }

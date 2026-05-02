@@ -47,7 +47,11 @@ export function Layout({ children }: LayoutProps) {
   const [mounted, setMounted] = useState(false);
 
   const sidebarHiddenExact = new Set(["/", "/settings", "/pricing", "/login"]);
-  const sidebarHiddenPrefixes = ["/pending-reviews", "/repo/settings", "/auth/"];
+  const sidebarHiddenPrefixes = [
+    "/pending-reviews",
+    "/repo/settings",
+    "/auth/",
+  ];
   const currentPath = pathname ?? "";
   const isAuthRoute = currentPath.startsWith("/auth/");
   const hideNavigation =
@@ -116,7 +120,9 @@ export function Layout({ children }: LayoutProps) {
                       }
                     }}
                     className="hidden lg:inline-flex items-center justify-center rounded-md border border-transparent bg-gray-100/60 px-2 py-1 text-gray-600 transition hover:bg-gray-200/70 dark:bg-gray-800/60 dark:text-gray-300 dark:hover:bg-gray-700/60"
-                    aria-label={sidebarPinned ? "Collapse sidebar" : "Expand sidebar"}
+                    aria-label={
+                      sidebarPinned ? "Collapse sidebar" : "Expand sidebar"
+                    }
                   >
                     {sidebarPinned ? (
                       <PanelLeftClose className="h-4 w-4" />
@@ -130,7 +136,7 @@ export function Layout({ children }: LayoutProps) {
               <div className="flex items-center space-x-2">
                 <BookOpen className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                 <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                  Pustak
+                  DocIt
                 </h1>
                 <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full">
                   Beta
@@ -155,7 +161,9 @@ export function Layout({ children }: LayoutProps) {
 
                   {/* Theme toggle */}
                   <button
-                    onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                    onClick={() =>
+                      setTheme(theme === "dark" ? "light" : "dark")
+                    }
                     className="p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                   >
                     {theme === "dark" ? (
@@ -175,12 +183,14 @@ export function Layout({ children }: LayoutProps) {
                         {user.avatar_url ? (
                           <img
                             src={user.avatar_url}
-                            alt={user.name || user.username || 'User'}
+                            alt={user.name || user.username || "User"}
                             className="w-8 h-8 rounded-full border-2 border-blue-500"
                           />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-bold">
-                            {(user.name || user.username || 'U')[0].toUpperCase()}
+                            {(user.name ||
+                              user.username ||
+                              "U")[0].toUpperCase()}
                           </div>
                         )}
                       </button>
@@ -202,13 +212,20 @@ export function Layout({ children }: LayoutProps) {
                                 {user.email || `@${user.username}`}
                               </p>
                               <div className="mt-2">
-                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
-                                  user.plan === 'free' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300' :
-                                  user.plan === 'pro' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
-                                  user.plan === 'team' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
-                                  'bg-gradient-to-r from-yellow-400 to-orange-500 text-white'
-                                }`}>
-                                  {user.plan !== 'free' && <Crown className="w-3 h-3" />}
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
+                                    user.plan === "free"
+                                      ? "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                                      : user.plan === "pro"
+                                        ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                                        : user.plan === "team"
+                                          ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
+                                          : "bg-gradient-to-r from-yellow-400 to-orange-500 text-white"
+                                  }`}
+                                >
+                                  {user.plan !== "free" && (
+                                    <Crown className="w-3 h-3" />
+                                  )}
                                   {user.plan.toUpperCase()}
                                 </span>
                               </div>
@@ -219,7 +236,7 @@ export function Layout({ children }: LayoutProps) {
                               <button
                                 onClick={() => {
                                   setUserMenuOpen(false);
-                                  router.push('/dashboard');
+                                  router.push("/dashboard");
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                               >
@@ -229,7 +246,7 @@ export function Layout({ children }: LayoutProps) {
                               <button
                                 onClick={() => {
                                   setUserMenuOpen(false);
-                                  router.push('/pricing');
+                                  router.push("/pricing");
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                               >
@@ -239,7 +256,7 @@ export function Layout({ children }: LayoutProps) {
                               <button
                                 onClick={() => {
                                   setUserMenuOpen(false);
-                                  router.push('/settings');
+                                  router.push("/settings");
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                               >
@@ -267,7 +284,7 @@ export function Layout({ children }: LayoutProps) {
                     </div>
                   ) : (
                     <button
-                      onClick={() => router.push('/login')}
+                      onClick={() => router.push("/login")}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
                     >
                       Login

@@ -47,12 +47,13 @@ export function HomePageClient() {
       icon: Sparkles,
       title: "AI doc orchestration",
       description:
-        "Let Pustak draft architecture, workflow, and changelog docs in minutes.",
+        "Let DocIt draft architecture, workflow, and changelog docs in minutes.",
     },
     {
       icon: Globe2,
       title: "Multi-org aware",
-      description: "Seamlessly route staging updates across every org you manage.",
+      description:
+        "Seamlessly route staging updates across every org you manage.",
     },
     {
       icon: ShieldCheck,
@@ -116,7 +117,7 @@ export function HomePageClient() {
   useEffect(() => {
     async function loadStats() {
       try {
-        const userToken = localStorage.getItem("pustak_access_token");
+        const userToken = localStorage.getItem("DocIt_access_token");
 
         if (!userToken) {
           setLoading(false);
@@ -204,13 +205,15 @@ export function HomePageClient() {
           <div className="relative mx-auto flex max-w-6xl flex-col gap-16 px-6">
             <div className="text-center">
               <div className="mx-auto flex w-fit items-center gap-3 rounded-full border border-blue-500/40 bg-blue-500/10 px-5 py-2 text-sm font-semibold uppercase tracking-[0.28em] text-blue-200">
-                <BookOpen className="h-5 w-5" /> Pustak
+                <BookOpen className="h-5 w-5" /> DocIt
               </div>
               <h1 className="mt-6 text-4xl font-semibold leading-snug sm:text-5xl">
                 Ship documentation with the same velocity as your code.
               </h1>
               <p className="mt-4 text-base text-slate-300 sm:text-lg">
-                Pustak turns GitHub activity into beautiful docbooks—architecture, workflows, and changelogs stay review-ready without manual toil.
+                DocIt turns GitHub activity into beautiful
+                docbooks—architecture, workflows, and changelogs stay
+                review-ready without manual toil.
               </p>
 
               <div className="mt-10 grid gap-4 sm:grid-cols-3">
@@ -247,14 +250,14 @@ export function HomePageClient() {
                 <button
                   type="button"
                   onClick={() => {
-                    const token = localStorage.getItem("pustak_access_token");
+                    const token = localStorage.getItem("DocIt_access_token");
                     router.push(token ? "/dashboard" : "/login");
                   }}
                   style={ctaGradientStyle}
                   className="cta-gradient inline-flex w-full cursor-pointer items-center justify-center gap-3 rounded-full border border-slate-700/70 bg-slate-900/70 px-6 py-3 text-sm font-semibold text-slate-200 shadow-[0_18px_45px_-28px_rgba(59,130,246,0.55)] transition hover:border-blue-400/60 hover:text-white hover:shadow-[0_24px_60px_-32px_rgba(59,130,246,0.65)]"
                 >
                   <Sparkles className="h-4 w-4" />
-                  <span className="relative z-10">Get started with Pustak</span>
+                  <span className="relative z-10">Get started with DocIt</span>
                   <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
@@ -267,13 +270,14 @@ export function HomePageClient() {
           <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6">
             <div className="flex flex-col gap-4 text-center">
               <span className="text-xs uppercase tracking-[0.32em] text-slate-500">
-                Why teams choose Pustak
+                Why teams choose DocIt
               </span>
               <h2 className="text-3xl font-semibold text-slate-100 sm:text-4xl">
                 Everything you expect from modern documentation
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
-                Automate docbook pipelines from webhook to review. Purpose-built for product squads that ship continuously.
+                Automate docbook pipelines from webhook to review. Purpose-built
+                for product squads that ship continuously.
               </p>
             </div>
 
@@ -319,7 +323,9 @@ export function HomePageClient() {
                   Your docbook co-pilot
                 </h2>
                 <p className="text-sm text-slate-400 sm:text-base">
-                  Pustak (पुस्तक) connects to your GitHub workflow, drafts documentation automatically, and keeps every stakeholder in sync.
+                  DocIt (पुस्तक) connects to your GitHub workflow, drafts
+                  documentation automatically, and keeps every stakeholder in
+                  sync.
                 </p>
               </div>
 

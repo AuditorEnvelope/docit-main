@@ -36,7 +36,7 @@ async def _get_user_orgs(github_token: str) -> List[Dict[str, Any]]:
     headers = {
         "Authorization": f"Bearer {github_token}",
         "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     try:
@@ -61,7 +61,7 @@ async def _get_org_installations(org_id: str, github_token: str) -> List[Dict[st
     headers = {
         "Authorization": f"token {github_token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     url = f"https://api.github.com/orgs/{org_id}/installations"
@@ -143,7 +143,7 @@ async def _list_installation_repos(installation_token: str) -> List[Dict[str, An
     headers = {
         "Authorization": f"token {installation_token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     repos: List[Dict[str, Any]] = []

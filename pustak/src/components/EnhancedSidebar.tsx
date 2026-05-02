@@ -44,7 +44,7 @@ interface DocbookRepo {
 export function EnhancedSidebar({ onClose }: SidebarProps) {
   const [docbooks, setDocbooks] = useState<DocbookRepo[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const [loading, setLoading] = useState(true);
   const pathname = usePathname();
@@ -61,7 +61,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
   useEffect(() => {
     const loadDocbooks = async () => {
       try {
-        const userToken = localStorage.getItem("pustak_access_token");
+        const userToken = localStorage.getItem("DocIt_access_token");
 
         if (!userToken) {
           console.log("No user token available");
@@ -85,7 +85,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
 
         const cleanDocbookFolders = (
           items: DocbookFile[] | undefined,
-          docbookName: string
+          docbookName: string,
         ): DocbookFile[] => {
           if (!items || !Array.isArray(items)) return [];
           return items
@@ -96,14 +96,14 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                     ...item,
                     files: cleanDocbookFolders(item.files, docbookName),
                   }
-                : item
+                : item,
             );
         };
 
         // For each org, check if docbook repo exists and load its structure
         for (const org of orgsData.organizations || []) {
           const orgLogin = org.login;
-          const docbookName = `pustak-docbook-${orgLogin}`;
+          const docbookName = `DocIt-docbook-${orgLogin}`;
 
           try {
             // Check if docbook repo exists and get staging branch structure
@@ -113,14 +113,14 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                 headers: {
                   Authorization: `Bearer ${userToken}`,
                 },
-              }
+              },
             );
 
             if (structureResponse.ok) {
               const structure = await structureResponse.json();
               const cleanedFolders = cleanDocbookFolders(
                 structure.folders,
-                docbookName
+                docbookName,
               );
               docbookRepos.push({
                 orgId: orgLogin,
@@ -220,7 +220,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
   const renderFileTree = (
     items: DocbookFile[],
     basePath: string[] = [],
-    docbook: DocbookRepo
+    docbook: DocbookRepo,
   ): JSX.Element => {
     return (
       <div className="space-y-1">
@@ -257,7 +257,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                 }`}
               >
                 <FileText className="h-3 w-3 text-blue-300/80 flex-shrink-0" />
-                <span className="truncate overflow-hidden text-ellipsis">{item.name}</span>
+                <span className="truncate overflow-hidden text-ellipsis">
+                  {item.name}
+                </span>
               </Link>
             );
           }
@@ -312,7 +314,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
             <div className="flex items-center space-x-2">
               <BookOpen className="h-6 w-6 text-blue-400" />
               <div>
-                <h2 className="text-lg font-semibold text-white">Pustak</h2>
+                <h2 className="text-lg font-semibold text-white">DocIt</h2>
                 <p className="text-xs text-slate-400">Documentation Platform</p>
               </div>
             </div>
@@ -338,7 +340,9 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
             Orchestrate delightful docs in minutes
           </div>
           <p className="text-[9px] leading-relaxed text-slate-400">
-            Pustak automates docbook staging so every product team ships architecture, workflow, and changelog updates with the same polish as their code.
+            DocIt automates docbook staging so every product team ships
+            architecture, workflow, and changelog updates with the same polish
+            as their code.
           </p>
           <div className="grid gap-1.5 text-[9px] text-slate-300 sm:grid-cols-3">
             <div className="flex items-center gap-1.5 rounded-xl border border-slate-800/80 bg-slate-900/70 px-2 py-1.5 transition duration-300 hover:border-blue-500/50 hover:bg-slate-900/90">
@@ -381,7 +385,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                 Workspace
               </p>
               <h2 className="text-xs font-semibold text-white">
-                Pustak Docs Hub
+                DocIt Docs Hub
               </h2>
             </div>
           </div>
@@ -490,7 +494,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
                         <p className="mt-2 text-xs text-amber-200/80">
                           Create{" "}
                           <code className="rounded bg-amber-500/20 px-2">
-                            pustak-docbook-{docbook.orgId}
+                            DocIt-docbook-{docbook.orgId}
                           </code>{" "}
                           and link it from Settings to start publishing
                           documentation.
@@ -541,7 +545,7 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
       {/* Footer */}
       <div className="border-t border-slate-800/70 px-3 py-2.5 text-[8px] text-slate-500">
         <div className="flex items-center justify-between">
-          <span>Powered by Pustak v1.0.0</span>
+          <span>Powered by DocIt v1.0.0</span>
           <button
             onClick={() => router.refresh()}
             className="rounded-full border border-slate-700/70 px-3 py-1 text-[10px] uppercase tracking-[0.35em] text-slate-400 transition hover:border-slate-500/70 hover:text-white"

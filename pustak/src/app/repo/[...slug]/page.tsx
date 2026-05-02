@@ -64,7 +64,9 @@ const normalizeDocType = (value: string): string => {
   return lower;
 };
 
-const extractDocInfo = (pathSegments: string[]): {
+const extractDocInfo = (
+  pathSegments: string[],
+): {
   filePath: string;
   docType: string;
   version: string | null;
@@ -182,16 +184,22 @@ export default function RepoPage({ params }: RepoPageProps) {
 
         const filePath = docInfo.filePath;
 
-        const userToken = localStorage.getItem('pustak_access_token');
+        const userToken =
+          localStorage.getItem("DocIt_access_token") ??
+          localStorage.getItem("pustak_access_token");
         const response = await fetch(
           `/api/fetch-doc?repo=${encodeURIComponent(parsedRepoName)}&filePath=${encodeURIComponent(filePath)}`,
           {
-            headers: userToken ? { 'Authorization': `Bearer ${userToken}` } : {},
-          }
+            headers: userToken ? { Authorization: `Bearer ${userToken}` } : {},
+          },
         );
         if (!response.ok) {
           if (!isMounted) return;
-          setError(response.status === 401 ? 'Not authenticated' : 'Failed to fetch documentation');
+          setError(
+            response.status === 401
+              ? "Not authenticated"
+              : "Failed to fetch documentation",
+          );
           setLoading(false);
           return;
         }
@@ -211,12 +219,12 @@ export default function RepoPage({ params }: RepoPageProps) {
         if (isMounted && token && parsedRepoName) {
           try {
             const branchResponse = await fetch(
-              `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}/api/v1/repositories/${encodeURIComponent(parsedRepoName)}/tracked-branch`,
+              `${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"}/api/v1/repositories/${encodeURIComponent(parsedRepoName)}/tracked-branch`,
               {
                 headers: {
-                  'Authorization': `Bearer ${token}`,
+                  Authorization: `Bearer ${token}`,
                 },
-              }
+              },
             );
             if (branchResponse.ok) {
               const branchData = await branchResponse.json();
@@ -230,7 +238,9 @@ export default function RepoPage({ params }: RepoPageProps) {
         }
       } catch (err) {
         if (!isMounted) return;
-        setError(err instanceof Error ? err.message : "Failed to load documentation");
+        setError(
+          err instanceof Error ? err.message : "Failed to load documentation",
+        );
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -246,7 +256,9 @@ export default function RepoPage({ params }: RepoPageProps) {
   }, [token]);
 
   const githubUrl = `https://github.com/${repoName}`;
-  const personaLabel = persona ? `${persona.charAt(0).toUpperCase()}${persona.slice(1)}` : "";
+  const personaLabel = persona
+    ? `${persona.charAt(0).toUpperCase()}${persona.slice(1)}`
+    : "";
   const lastUpdated = new Date();
 
   const getDocIcon = useCallback((type: string) => {
@@ -317,7 +329,7 @@ export default function RepoPage({ params }: RepoPageProps) {
         `/api/fetch-doc?repo=${encodeURIComponent(repoName)}&filePath=${encodeURIComponent(sourcePath)}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (reloadResponse.ok) {
@@ -340,7 +352,9 @@ export default function RepoPage({ params }: RepoPageProps) {
       <Layout>
         <div className="flex-1 p-8">
           <div className="max-w-6xl mx-auto">
-            <p className="text-gray-600 dark:text-gray-400">Loading documentation...</p>
+            <p className="text-gray-600 dark:text-gray-400">
+              Loading documentation...
+            </p>
           </div>
         </div>
       </Layout>
@@ -353,10 +367,13 @@ export default function RepoPage({ params }: RepoPageProps) {
         <div className="max-w-4xl mx-auto p-8">
           <div className="text-center">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-4">
-              {version ? `${docType.toUpperCase()} ${version} Not Found` : "Documentation Not Available"}
+              {version
+                ? `${docType.toUpperCase()} ${version} Not Found`
+                : "Documentation Not Available"}
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
-              {error || "The documentation for this repository is not available."}
+              {error ||
+                "The documentation for this repository is not available."}
             </p>
             <Link
               href="/"
@@ -371,9 +388,11 @@ export default function RepoPage({ params }: RepoPageProps) {
     );
   }
 
-  const fileName = sourcePath || (version
-    ? `docs/${docType}/${version}-${docType}.md`
-    : `docs/${docType}.md`);
+  const fileName =
+    sourcePath ||
+    (version
+      ? `docs/${docType}/${version}-${docType}.md`
+      : `docs/${docType}.md`);
 
   return (
     <Layout>
@@ -399,9 +418,7 @@ export default function RepoPage({ params }: RepoPageProps) {
                 {/* Icon */}
                 <div className="flex-shrink-0">
                   <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 ring-1 ring-blue-500/30">
-                    <span className="text-blue-300">
-                      {getDocIcon(docType)}
-                    </span>
+                    <span className="text-blue-300">{getDocIcon(docType)}</span>
                   </div>
                 </div>
 
@@ -505,7 +522,7 @@ export default function RepoPage({ params }: RepoPageProps) {
 
                     {orgName && sourceRepo && persona && (
                       <a
-                        href={`https://docbook.site/render-docs/${orgName}/${sourceRepo}/internal/${sourcePath.replace('.md', '').split('/').pop() || 'introduction'}`}
+                        href={`https://docbook.site/render-docs/${orgName}/${sourceRepo}/internal/${sourcePath.replace(".md", "").split("/").pop() || "introduction"}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-300 backdrop-blur-sm transition-all hover:border-amber-500/50 hover:bg-amber-500/20"
@@ -540,8 +557,12 @@ export default function RepoPage({ params }: RepoPageProps) {
                       <Edit className="w-5 h-5 text-blue-400" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-semibold text-white">Editing Mode</h3>
-                      <p className="text-xs text-slate-400">Changes are not saved until committed</p>
+                      <h3 className="text-sm font-semibold text-white">
+                        Editing Mode
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Changes are not saved until committed
+                      </p>
                     </div>
                   </div>
                 </div>
