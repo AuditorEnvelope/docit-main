@@ -64,7 +64,7 @@ export default async function RootLayout({
   const hostHeader = headersList.get("host")?.toLowerCase() || "";
   const normalizedHost = hostHeader.replace(/:\d+$/, "");
   const docbookSuffix = (
-    process.env.NEXT_PUBLIC_DOCBOOK_DOMAIN || "docbook.site"
+    process.env.NEXT_PUBLIC_DOCBOOK_DOMAIN || "docbook.site" || "docit.in"
   )
     .toLowerCase()
     .replace(/^\.+/, "");

@@ -1054,7 +1054,9 @@ async def publish_docs_live(
         db.add(publish_event)
         
         # Update docbook repo with live info
-        live_url = f"https://{request.org_id}.docbook.site/{request.repo_id}"
+        # live_url = f"https://{request.org_id}.docbook.site/{request.repo_id}"
+        live_url = f"https://{request.org_id}.docit.in/{request.repo_id}"
+
         docbook_repo.last_published_at = publish_event.completed_at
         docbook_repo.last_published_commit = main_commit
         docbook_repo.live_url = live_url

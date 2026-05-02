@@ -177,7 +177,8 @@ export default function RepoPage({ params }: RepoPageProps) {
         setSourceRepo(repoFolder);
         setPersona(personaSegment);
         if (orgSegment && repoFolder) {
-          setPublicUrl(`https://${orgSegment}.docbook.site/${repoFolder}`);
+          // setPublicUrl(`https://${orgSegment}.docbook.site/${repoFolder}`);
+          setPublicUrl(`https://${orgSegment}.docit.in/${repoFolder}`);
         } else {
           setPublicUrl("");
         }

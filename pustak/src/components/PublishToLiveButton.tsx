@@ -152,8 +152,10 @@ export function PublishToLiveButton({
             </h3>
             <p className="text-slate-300 text-sm mb-4">
               {hasPublished
-                ? `This will update the live documentation at https://${orgId}.docbook.site/${repoId} with the latest approved changes from the main branch.`
-                : `This will make your documentation publicly accessible at https://${orgId}.docbook.site/${repoId}. Make sure all pending reviews are approved.`}
+                // ? `This will update the live documentation at https://${orgId}.docbook.site/${repoId} with the latest approved changes from the main branch.`
+                ? `This will update the live documentation at https://${orgId}.docit.in/${repoId} with the latest approved changes from the main branch.`
+                // : `This will make your documentation publicly accessible at https://${orgId}.docbook.site/${repoId}. Make sure all pending reviews are approved.`}
+                : `This will make your documentation publicly accessible at https://${orgId}.docit.in/${repoId}. Make sure all pending reviews are approved.`}
             </p>
 
             <div className="bg-blue-900/30 border border-blue-700/50 rounded-lg p-3 mb-4">
