@@ -3,6 +3,7 @@
 import { Layout } from "@/components/Layout";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { startGitHubOAuth } from "@/lib/githubOAuth";
 import {
   ArrowRight,
   BookOpen,
@@ -22,12 +23,21 @@ import {
 export function HomePageClient() {
   const router = useRouter();
 
-  const goApp = () => {
+  const goApp = async () => {
     const token =
       typeof window !== "undefined"
         ? localStorage.getItem("DocIt_access_token")
         : null;
-    router.push(token ? "/dashboard" : "/login");
+    if (token) {
+      router.push("/dashboard");
+      return;
+    }
+    try {
+      await startGitHubOAuth();
+    } catch (e) {
+      console.error(e);
+      alert("Failed to start GitHub sign-in. Please try again.");
+    }
   };
 
   const features = [

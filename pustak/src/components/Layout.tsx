@@ -23,6 +23,7 @@ import {
   Crown,
   PanelLeftClose,
   PanelLeftOpen,
+  Loader2,
 } from "lucide-react";
 import { EnhancedSidebar as EnhancedSidebarComponent } from "./EnhancedSidebar";
 
@@ -30,6 +31,7 @@ import { EnhancedSidebar as EnhancedSidebarComponent } from "./EnhancedSidebar";
 const EnhancedSidebar = memo(EnhancedSidebarComponent);
 import { GlobalSearch } from "./GlobalSearch";
 import { useAuth } from "@/contexts/AuthContext";
+import { startGitHubOAuth } from "@/lib/githubOAuth";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -45,6 +47,7 @@ export function Layout({ children }: LayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const [githubAuthLoading, setGithubAuthLoading] = useState(false);
 
   const sidebarHiddenExact = new Set(["/", "/settings", "/pricing", "/login"]);
   const sidebarHiddenPrefixes = [
@@ -67,11 +70,12 @@ export function Layout({ children }: LayoutProps) {
   }
 
   const isLanding = currentPath === "/" || currentPath === "";
+  const isLandingShell = isLanding || isAuthRoute;
 
   return (
     <div
       className={
-        isLanding
+        isLandingShell
           ? "min-h-screen bg-[#030712] text-slate-100 transition-colors"
           : "min-h-screen bg-white dark:bg-gray-900 transition-colors"
       }
@@ -108,7 +112,7 @@ export function Layout({ children }: LayoutProps) {
         {/* Header */}
         <header
           className={
-            isLanding
+            isLandingShell
               ? "sticky top-0 z-30 border-b border-cyan-500/10 bg-[#030712]/85 backdrop-blur-xl"
               : "sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700"
           }
@@ -151,12 +155,12 @@ export function Layout({ children }: LayoutProps) {
                 type="button"
                 onClick={() => router.push("/")}
                 className={
-                  isLanding
+                  isLandingShell
                     ? "flex items-center gap-2 rounded-lg outline-none ring-offset-2 ring-offset-[#030712] focus-visible:ring-2 focus-visible:ring-cyan-400/50"
                     : "flex items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
                 }
               >
-                {isLanding ? (
+                {isLandingShell ? (
                   <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -359,14 +363,34 @@ export function Layout({ children }: LayoutProps) {
                     </div>
                   ) : (
                     <button
-                      onClick={() => router.push("/login")}
+                      type="button"
+                      disabled={githubAuthLoading}
+                      onClick={async () => {
+                        setGithubAuthLoading(true);
+                        try {
+                          await startGitHubOAuth();
+                        } catch (e) {
+                          console.error(e);
+                          setGithubAuthLoading(false);
+                          alert("Failed to start GitHub sign-in. Please try again.");
+                        }
+                      }}
                       className={
                         isLanding
-                          ? "cursor-pointer rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:bg-cyan-400/10"
-                          : "px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
+                          ? "inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          : "inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                       }
                     >
-                      {isLanding ? "Sign in" : "Login"}
+                      {githubAuthLoading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="hidden sm:inline">Connecting…</span>
+                        </>
+                      ) : isLanding ? (
+                        "Sign in"
+                      ) : (
+                        "Login"
+                      )}
                     </button>
                   )}
                 </>

@@ -31,14 +31,17 @@ export function OnboardingSplash({
 
   return (
     <>
-      <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-slate-950 px-6 text-slate-200">
+      <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#030712] px-6 text-slate-200">
         <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(17,28,63,0.55),_rgba(4,7,15,0.96))]"
+          className="pointer-events-none absolute inset-0 landing-grid-bg opacity-[0.35]"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute left-1/2 top-[-20%] h-[480px] w-[min(100vw,880px)] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(34,211,238,0.12)_0%,rgba(59,130,246,0.06)_40%,transparent_65%)]"
           aria-hidden
         />
         <div className="aurora aurora-one" aria-hidden />
         <div className="aurora aurora-two" aria-hidden />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(56,189,248,0.15),transparent_55%),radial-gradient(circle_at_80%_80%,rgba(168,85,247,0.15),transparent_45%)]" aria-hidden />
 
         <div className="card-shell">
           <div className="book-orbit">
@@ -48,12 +51,12 @@ export function OnboardingSplash({
               <span className="book-page base offset" />
               <span className="book-page flip" />
               <span className="book-cover">
-                <BookOpen className="h-14 w-14 text-indigo-100" />
+                <BookOpen className="h-14 w-14 text-cyan-50" />
               </span>
             </div>
             <div className="scan-lens">
               <span className="scan-highlight" />
-              <Search className="h-7 w-7 text-blue-100" />
+              <Search className="h-7 w-7 text-cyan-100" />
             </div>
           </div>
 
@@ -97,9 +100,11 @@ export function OnboardingSplash({
           gap: 36px;
           border-radius: 28px;
           padding: 48px 44px;
-          background: linear-gradient(170deg, rgba(7, 12, 28, 0.94) 0%, rgba(19, 17, 42, 0.95) 55%, rgba(3, 6, 15, 0.92) 100%);
-          border: 1px solid rgba(76, 29, 149, 0.28);
-          box-shadow: 0 44px 120px -70px rgba(59, 59, 185, 0.8), inset 0 0 45px -28px rgba(37, 99, 235, 0.28);
+          background: linear-gradient(165deg, rgba(15, 23, 42, 0.55) 0%, rgba(3, 7, 18, 0.88) 50%, rgba(2, 8, 23, 0.92) 100%);
+          border: 1px solid rgba(34, 211, 238, 0.2);
+          box-shadow:
+            0 40px 100px -50px rgba(34, 211, 238, 0.18),
+            inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
           backdrop-filter: blur(18px);
           animation: cardAppear 0.85s cubic-bezier(0.16, 1, 0.3, 1);
         }
@@ -119,8 +124,8 @@ export function OnboardingSplash({
           width: 150px;
           height: 110px;
           border-radius: 32px;
-          background: linear-gradient(140deg, rgba(99, 102, 241, 0.45), rgba(30, 64, 175, 0.3));
-          box-shadow: 0 35px 75px -45px rgba(99, 102, 241, 0.7);
+          background: linear-gradient(140deg, rgba(34, 211, 238, 0.35), rgba(59, 130, 246, 0.22));
+          box-shadow: 0 32px 70px -40px rgba(34, 211, 238, 0.45);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -162,7 +167,7 @@ export function OnboardingSplash({
 
         .book-page.flip {
           background: linear-gradient(135deg, rgba(241, 245, 249, 0.8), rgba(148, 163, 184, 0.25));
-          box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.35), 0 18px 36px -24px rgba(99, 102, 241, 0.75);
+          box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.35), 0 18px 36px -24px rgba(34, 211, 238, 0.45);
           transform-origin: left center;
           animation: bookLeaf 3.2s cubic-bezier(0.46, 0.03, 0.52, 0.96) infinite;
         }
@@ -187,7 +192,7 @@ export function OnboardingSplash({
           width: 100%;
           height: 100%;
           backdrop-filter: blur(16px);
-          background: linear-gradient(150deg, rgba(79, 70, 229, 0.4), rgba(99, 102, 241, 0.55));
+          background: linear-gradient(150deg, rgba(6, 182, 212, 0.35), rgba(59, 130, 246, 0.4));
         }
 
         .scan-lens {
@@ -196,13 +201,13 @@ export function OnboardingSplash({
           width: 74px;
           height: 74px;
           border-radius: 999px;
-          border: 1px solid rgba(129, 140, 248, 0.45);
+          border: 1px solid rgba(34, 211, 238, 0.4);
           display: flex;
           align-items: center;
           justify-content: center;
-          background: radial-gradient(circle at 35% 35%, rgba(79, 70, 229, 0.33), rgba(15, 23, 42, 0.92));
+          background: radial-gradient(circle at 35% 35%, rgba(34, 211, 238, 0.22), rgba(15, 23, 42, 0.94));
           animation: orbit 7.2s linear infinite;
-          box-shadow: 0 26px 45px -30px rgba(59, 130, 246, 0.65);
+          box-shadow: 0 24px 44px -28px rgba(34, 211, 238, 0.4);
           overflow: hidden;
         }
 
@@ -211,7 +216,7 @@ export function OnboardingSplash({
           position: absolute;
           inset: 8px;
           border-radius: inherit;
-          background: radial-gradient(circle at 35% 35%, rgba(165, 180, 252, 0.25), rgba(30, 64, 175, 0.08));
+          background: radial-gradient(circle at 35% 35%, rgba(165, 243, 252, 0.2), rgba(14, 116, 144, 0.12));
           opacity: 0.85;
         }
 
@@ -239,7 +244,7 @@ export function OnboardingSplash({
           inset: 0;
           width: 35%;
           border-radius: inherit;
-          background: linear-gradient(90deg, rgba(59, 130, 246, 0.05), rgba(129, 140, 248, 0.55), rgba(45, 212, 191, 0.35));
+          background: linear-gradient(90deg, rgba(34, 211, 238, 0.15), rgba(56, 189, 248, 0.55), rgba(34, 211, 238, 0.35));
           animation: progressSweep 2.4s ease-in-out infinite;
         }
 
@@ -254,8 +259,8 @@ export function OnboardingSplash({
         }
 
         .indicator-active {
-          background: linear-gradient(90deg, rgba(147, 197, 253, 0.35), rgba(165, 180, 252, 0.9));
-          box-shadow: 0 0 18px rgba(99, 102, 241, 0.5);
+          background: linear-gradient(90deg, rgba(34, 211, 238, 0.45), rgba(56, 189, 248, 0.85));
+          box-shadow: 0 0 16px rgba(34, 211, 238, 0.35);
         }
 
         .message-fade {
@@ -275,10 +280,16 @@ export function OnboardingSplash({
           height: 70vw;
           max-height: 900px;
           filter: blur(120px);
-          background: conic-gradient(from 180deg at 50% 50%, rgba(37, 99, 235, 0.16), rgba(109, 40, 217, 0.16), rgba(22, 163, 74, 0.08), rgba(37, 99, 235, 0.16));
+          background: conic-gradient(
+            from 200deg at 50% 50%,
+            rgba(34, 211, 238, 0.12),
+            rgba(59, 130, 246, 0.1),
+            rgba(14, 165, 233, 0.08),
+            rgba(34, 211, 238, 0.12)
+          );
           pointer-events: none;
           animation: auroraDrift 18s ease-in-out infinite;
-          opacity: 0.45;
+          opacity: 0.4;
         }
 
         .aurora-one {
@@ -324,7 +335,7 @@ export function OnboardingSplash({
           }
           40% {
             transform: rotateY(-150deg) translateZ(0);
-            box-shadow: 0 20px 30px -26px rgba(59, 130, 246, 0.8);
+            box-shadow: 0 20px 30px -26px rgba(34, 211, 238, 0.45);
           }
           68% {
             transform: rotateY(-180deg) translateZ(0);

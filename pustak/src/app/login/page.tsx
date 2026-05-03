@@ -13,9 +13,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+import { startGitHubOAuth } from "@/lib/githubOAuth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -72,20 +70,7 @@ export default function LoginPage() {
     setIsLoggingIn(true);
 
     try {
-      // Get OAuth URL from backend
-      const redirectUri = `${window.location.origin}/auth/callback`;
-      const response = await fetch(
-        `${BACKEND_URL}/auth/github?redirect_uri=${encodeURIComponent(redirectUri)}`,
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to get OAuth URL");
-      }
-
-      const data = await response.json();
-
-      // Redirect to GitHub OAuth
-      window.location.href = data.url;
+      await startGitHubOAuth();
     } catch (error) {
       console.error("Login error:", error);
       setIsLoggingIn(false);
