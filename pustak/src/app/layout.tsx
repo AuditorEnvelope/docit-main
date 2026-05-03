@@ -75,7 +75,7 @@ export default async function RootLayout({
   );
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="scroll-smooth" suppressHydrationWarning>
       <body className={inter.className}>
         <Providers isDocbookHost={isDocbookHost}>{children}</Providers>
       </body>

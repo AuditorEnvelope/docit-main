@@ -3,6 +3,14 @@
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
+/** Backend origin including `/api/v1` when the env omits it (matches FastAPI mount). */
+export function getBackendApiV1Base(): string {
+  const normalized = BACKEND_URL.replace(/\/$/, "");
+  return /\/api(\/v\d+)?$/i.test(normalized)
+    ? normalized
+    : `${normalized}/api/v1`;
+}
+
 export interface RepoData {
   name: string;
   fullName: string;

@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { startGitHubOAuth } from "@/lib/githubOAuth";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
@@ -33,7 +34,7 @@ function AuthCallbackContent() {
       description:
         "We're securing your GitHub connection and setting up your session.",
       icon: Loader2,
-      accent: "from-blue-500/30",
+      accent: "from-cyan-500/30",
       badge: "Connecting to GitHub",
     },
     success: {
@@ -123,35 +124,36 @@ function AuthCallbackContent() {
 
   const currentContent = statusContent[status];
 
+  const iconClass =
+    status === "loading"
+      ? "h-7 w-7 animate-spin text-cyan-300"
+      : status === "success"
+        ? "h-7 w-7 text-emerald-300"
+        : "h-7 w-7 text-rose-300";
+
   return (
     <Layout>
-      <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
-        <div className="absolute inset-0">
-          <div
-            className="absolute left-[-10%] top-[15%] h-[360px] w-[360px] rounded-full bg-blue-600/35 blur-[160px]"
-            aria-hidden
-          />
-          <div
-            className="absolute right-[-5%] top-[35%] h-[320px] w-[320px] rounded-full bg-purple-500/30 blur-[160px]"
-            aria-hidden
-          />
-          <div
-            className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-blue-500/10 via-transparent to-transparent"
-            aria-hidden
-          />
-          <div
-            className="absolute inset-x-0 bottom-[-35%] h-[420px] bg-gradient-to-t from-slate-950 via-slate-900/40 to-transparent"
-            aria-hidden
-          />
-        </div>
+      <div className="relative min-h-screen overflow-hidden bg-[#030712] text-slate-100">
+        <div
+          className="pointer-events-none absolute inset-0 landing-grid-bg opacity-[0.35]"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute left-1/2 top-[-20%] h-[480px] w-[min(100vw,880px)] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(34,211,238,0.12)_0%,rgba(59,130,246,0.06)_40%,transparent_65%)]"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-[-35%] h-[420px] bg-gradient-to-t from-[#030712] via-[#030712]/80 to-transparent"
+          aria-hidden
+        />
 
         <div className="relative mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center px-6 py-16">
           <div className="flex flex-col items-center gap-4 text-center">
-            <span className="inline-flex items-center gap-2 rounded-full border border-slate-800/60 bg-slate-900/70 px-4 py-1.5 text-[11px] uppercase tracking-[0.36em] text-slate-400">
-              <Sparkles className="h-3.5 w-3.5 text-blue-300" />
+            <span className="inline-flex items-center gap-2 rounded-full border border-cyan-500/25 bg-slate-950/60 px-4 py-1.5 text-[11px] uppercase tracking-[0.36em] text-cyan-100/85">
+              <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
               Secure OAuth handshake
             </span>
-            <h1 className="text-3xl font-semibold leading-tight sm:text-4xl">
+            <h1 className="text-3xl font-semibold leading-tight text-white sm:text-4xl">
               Finalizing your DocIt session
             </h1>
             <p className="max-w-2xl text-sm text-slate-400 sm:text-base">
@@ -160,25 +162,21 @@ function AuthCallbackContent() {
             </p>
           </div>
 
-          <div className="mt-12 w-full max-w-2xl rounded-3xl border border-slate-900/60 bg-slate-900/70 p-10 shadow-2xl shadow-blue-950/40">
+          <div className="mt-12 w-full max-w-2xl rounded-[28px] border border-cyan-500/20 bg-gradient-to-br from-slate-900/55 via-[#030712]/90 to-[#020817]/95 p-10 shadow-[0_40px_100px_-50px_rgba(34,211,238,0.18)] backdrop-blur-[18px]">
             <div className="flex flex-col items-center gap-6 text-center">
               <div className="relative">
                 <div
                   className={`absolute inset-0 rounded-full bg-gradient-to-br ${currentContent.accent} via-transparent to-transparent blur-xl opacity-70`}
                   aria-hidden
                 />
-                <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-slate-800/60 bg-slate-950/80">
-                  {status === "loading" ? (
-                    <currentContent.icon className="h-7 w-7 animate-spin text-blue-200" />
-                  ) : (
-                    <currentContent.icon className="h-7 w-7 text-blue-200" />
-                  )}
+                <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-cyan-500/20 bg-slate-950/80">
+                  <currentContent.icon className={iconClass} />
                 </div>
               </div>
 
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-950/60 px-3 py-1 text-[11px] uppercase tracking-[0.3em] text-slate-500">
-                  <ShieldCheck className="h-3.5 w-3.5 text-blue-300" />
+                <span className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-slate-950/60 px-3 py-1 text-[11px] uppercase tracking-[0.3em] text-slate-400">
+                  <ShieldCheck className="h-3.5 w-3.5 text-cyan-400" />
                   {currentContent.badge}
                 </span>
                 <h2 className="text-2xl font-semibold text-slate-100 sm:text-3xl">
@@ -203,8 +201,11 @@ function AuthCallbackContent() {
               <div className="flex flex-col items-center gap-4">
                 {status === "error" ? (
                   <button
-                    onClick={() => router.push("/login")}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-500/50 bg-blue-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-blue-400"
+                    type="button"
+                    onClick={() => {
+                      void startGitHubOAuth();
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-400/50 bg-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-500/25 transition hover:bg-cyan-400"
                   >
                     Try sign-in again
                   </button>
@@ -234,17 +235,18 @@ export default function AuthCallbackPage() {
 function LoadingFallback() {
   return (
     <Layout>
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-        <div className="max-w-md w-full mx-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-200 dark:border-gray-700">
-            <div className="text-center">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full mb-4">
-                <Loader2 className="w-8 h-8 text-blue-600 dark:text-blue-400 animate-spin" />
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                Loading...
-              </h2>
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#030712] px-4">
+        <div
+          className="pointer-events-none absolute inset-0 landing-grid-bg opacity-[0.35]"
+          aria-hidden
+        />
+        <div className="relative mx-auto w-full max-w-md rounded-2xl border border-cyan-500/20 bg-slate-900/50 p-8 shadow-[0_40px_100px_-50px_rgba(34,211,238,0.15)] backdrop-blur-xl">
+          <div className="text-center">
+            <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full border border-cyan-500/25 bg-slate-950/70">
+              <Loader2 className="h-8 w-8 animate-spin text-cyan-400" />
             </div>
+            <h2 className="mb-2 text-2xl font-bold text-white">Loading...</h2>
+            <p className="text-sm text-slate-400">Preparing OAuth callback…</p>
           </div>
         </div>
       </div>

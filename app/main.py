@@ -7,6 +7,7 @@ middleware, routes, and background tasks.
 
 import asyncio
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -195,6 +196,31 @@ async def lifespan(app: FastAPI):
                 pass
         logger.info("Application shutdown complete")
 
+
+def _cors_wildcard_origin_regex(origins: list) -> str | None:
+    """
+    Map BACKEND_CORS_ORIGINS entries like https://*.docit.in to a regex Starlette can use.
+    Browsers send an exact Origin (e.g. https://org.docit.in); wildcard strings are not
+    valid in Access-Control-Allow-Origin, so they must be expressed via allow_origin_regex.
+    """
+    patterns: list[str] = []
+    for origin in origins or []:
+        o = str(origin).strip()
+        if o.startswith("https://*."):
+            domain = o.removeprefix("https://*.").strip("/")
+            if domain:
+                patterns.append(rf"^https://[a-zA-Z0-9-]+\.{re.escape(domain)}$")
+        elif o.startswith("http://*."):
+            domain = o.removeprefix("http://*.").strip("/")
+            if domain:
+                patterns.append(rf"^http://[a-zA-Z0-9-]+\.{re.escape(domain)}$")
+    if not patterns:
+        return None
+    if len(patterns) == 1:
+        return patterns[0]
+    return "(?:" + "|".join(patterns) + ")"
+
+
 def create_application() -> FastAPI:
     """Create and configure the FastAPI application"""
     application = FastAPI(
@@ -221,16 +247,18 @@ def create_application() -> FastAPI:
         "http://127.0.0.1:8000",
     ]
     
-    # Add configured origins if any (filter out wildcard patterns)
+    # Add configured origins if any (filter out wildcard patterns — handled via regex below)
     if settings.BACKEND_CORS_ORIGINS:
         for origin in settings.BACKEND_CORS_ORIGINS:
             origin_str = str(origin)
-            if not origin_str.startswith("https://*."):
-                cors_origins.append(origin_str)
-    
-    # Build regex pattern for wildcard subdomains
-    origin_regex = r"^https://[a-zA-Z0-9-]+\.docbook\.site$"
-    
+            if origin_str.startswith("https://*.") or origin_str.startswith(
+                "http://*."
+            ):
+                continue
+            cors_origins.append(origin_str)
+
+    origin_regex = _cors_wildcard_origin_regex(settings.BACKEND_CORS_ORIGINS)
+
     application.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
