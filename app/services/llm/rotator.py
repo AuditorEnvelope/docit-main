@@ -132,18 +132,19 @@ class LLMRotator:
 
     def _setup(self) -> None:
         gemini_key = os.getenv("GEMINI_API_KEY")
-        groq_key = os.getenv("GROQ_API_KEY")
-        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+        # Gemini-only mode: keep other providers disabled for now.
+        # groq_key = os.getenv("GROQ_API_KEY")
+        # deepseek_key = os.getenv("DEEPSEEK_API_KEY")
 
         if gemini_key:
             self.providers.append(GeminiProvider(gemini_key))
             print("✅ Gemini provider initialized")
-        if groq_key:
-            self.providers.append(GroqProvider(groq_key))
-            print("✅ Groq provider initialized")
-        if deepseek_key:
-            self.providers.append(DeepSeekProvider(deepseek_key))
-            print("✅ DeepSeek provider initialized")
+        # if groq_key:
+        #     self.providers.append(GroqProvider(groq_key))
+        #     print("✅ Groq provider initialized")
+        # if deepseek_key:
+        #     self.providers.append(DeepSeekProvider(deepseek_key))
+        #     print("✅ DeepSeek provider initialized")
 
         print(f"🚀 Initialized {len(self.providers)} LLM providers")
         if not self.providers:

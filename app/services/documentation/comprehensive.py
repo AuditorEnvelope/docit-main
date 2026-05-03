@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.services.documentation.fallback_generation import create_fallback_doc
-from app.services.llm.rotator import generate_doc_for_file, get_rotator
+from app.services.llm.rotator import create_fallback_doc as create_rotator_fallback_doc
+from app.services.llm.rotator import get_rotator
 
 logger = logging.getLogger(__name__)
 
@@ -235,13 +236,13 @@ class ComprehensiveDocBuilder:
         print(f"👤 Persona: {self.doc_persona}")
         print("================================================================================")
 
-        quality = check_documentation_quality(self.repository_root)
+        quality = check_documentation_quality(self.repository_root, self.doc_persona)
         print(f"📋 Quality Report: {json.dumps(quality, indent=2)}")
 
         analysis = analyze_full_codebase(self.repository_root)
         recent_changes = {"generated_at": datetime.utcnow().isoformat()}
 
-        docs_dir = self.repository_root / "docs"
+        docs_dir = self.repository_root / "docs" / self.doc_persona
         docs_dir.mkdir(parents=True, exist_ok=True)
         
         # Always generate ALL docs (like old codebase) - don't rely on quality check for temp directories
@@ -328,14 +329,14 @@ async def generate_comprehensive_summary(
         "Generate a comprehensive README that includes overview, architecture, getting started, usage, project structure,"
         " API overview, development workflow, and key dependencies."
     )
-    return generate_doc_for_file("SUMMARY.md", prompt)
+    return _generate_from_prompt("SUMMARY.md", prompt)
 
 
 async def generate_versioned_architecture(
     repo_dir: Path, analysis: Dict[str, object], recent_changes: Dict[str, object], doc_persona: str
 ) -> str:
     """Generate versioned architecture documentation (like old codebase)"""
-    docs_dir = Path(repo_dir) / "docs"
+    docs_dir = Path(repo_dir) / "docs" / doc_persona
     arch_dir = docs_dir / "architecture"
     arch_dir.mkdir(parents=True, exist_ok=True)
     version = get_current_version(docs_dir, "architecture")
@@ -454,7 +455,7 @@ BE SPECIFIC. USE ONLY THE DATA FROM THE ANALYSIS. NO GENERIC TEMPLATES.
 async def generate_versioned_workflow(
     repo_dir: Path, analysis: Dict[str, object], recent_changes: Dict[str, object], doc_persona: str
 ) -> str:
-    docs_dir = Path(repo_dir) / "docs"
+    docs_dir = Path(repo_dir) / "docs" / doc_persona
     workflow_dir = docs_dir / "workflow"
     workflow_dir.mkdir(parents=True, exist_ok=True)
     version = get_current_version(docs_dir, "workflow")
@@ -468,7 +469,7 @@ async def generate_versioned_workflow(
         f"RECENT CHANGES:\n{json.dumps(recent_changes, indent=2)}\n"
         "Cover development workflow, CI/CD, deployments, release process, and monitoring."
     )
-    content = generate_doc_for_file("workflow.md", prompt)
+    content = _generate_from_prompt("workflow.md", prompt)
     (workflow_dir / f"v{version}-workflow.md").write_text(content)
     (workflow_dir / "current.md").write_text(content)
     return content
@@ -477,7 +478,7 @@ async def generate_versioned_workflow(
 async def generate_api_documentation(
     repo_dir: Path, analysis: Dict[str, object], recent_changes: Dict[str, object], doc_persona: str
 ) -> str:
-    docs_dir = Path(repo_dir) / "docs"
+    docs_dir = Path(repo_dir) / "docs" / doc_persona
     prompt = (
         "You are DocAI, an expert API writer documenting REAL endpoints from this repository.\n\n"
         f"Persona: {doc_persona}\n"
@@ -486,7 +487,7 @@ async def generate_api_documentation(
         f"RECENT CHANGES:\n{json.dumps(recent_changes, indent=2)}\n"
         "Provide endpoint summaries, request/response examples, authentication, rate limits, and SDK guidance."
     )
-    content = generate_doc_for_file("api.md", prompt)
+    content = _generate_from_prompt("api.md", prompt)
     (docs_dir / "api.md").write_text(content)
     return content
 
@@ -894,9 +895,38 @@ def update_summary_navigation(docs_dir: Path) -> None:
         summary.append(f"* Persona: **{persona}**")
         summary.append(f"* Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
     
-    # Write the SUMMARY.md file
-    (docs_dir / "SUMMARY.md").write_text("\n".join(summary))
+    summary_path = docs_dir / "SUMMARY.md"
+    nav_content = "\n".join(summary)
+
+    # Preserve rich generated summaries instead of overwriting them with a nav-only template.
+    if summary_path.exists():
+        existing = summary_path.read_text(encoding="utf-8", errors="ignore")
+        rich_summary = len(existing.strip()) > 800 and "##" in existing
+        if rich_summary:
+            marker = "\n\n---\n\n## Navigation Index\n"
+            if marker not in existing:
+                summary_path.write_text(existing.rstrip() + marker + nav_content, encoding="utf-8")
+                print(f"✅ Appended navigation index to SUMMARY.md for {docs_dir.name}")
+            else:
+                print(f"✅ Kept existing rich SUMMARY.md for {docs_dir.name}")
+            return
+
+    # Fall back to nav-first summary when no rich summary exists.
+    summary_path.write_text(nav_content, encoding="utf-8")
     print(f"✅ Updated SUMMARY.md for {docs_dir.name} (showing only recent versions)")
+
+
+def _generate_from_prompt(filename: str, prompt: str) -> str:
+    """Generate documentation from a fully-formed prompt.
+
+    We pass curated analysis prompts directly to the LLM instead of wrapping them
+    as if they were source code files, which degrades output quality.
+    """
+    rotator = get_rotator()
+    result = rotator.generate_with_rotation(prompt)
+    if result and len(result.strip()) >= 200:
+        return result
+    return create_rotator_fallback_doc(filename, prompt, rotator.get_status())
 
 
 
