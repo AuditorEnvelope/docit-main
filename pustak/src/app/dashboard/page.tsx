@@ -26,6 +26,12 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { getBackendApiV1Base } from "@/lib/api";
+import {
+  normalizeRepoLookupKey,
+  useRepositoriesRecentActivity,
+} from "@/hooks/useRepositoriesRecentActivity";
+import { RepoActivitySection } from "@/components/RepoActivitySection";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
@@ -371,7 +377,7 @@ export default function DashboardPage() {
 
     try {
       const response = await fetch(
-        `${BACKEND_URL}/docbook/check-exists?org_id=${encodeURIComponent(selectedOrg)}`,
+        `${getBackendApiV1Base()}/docbook/check-exists?org_id=${encodeURIComponent(selectedOrg)}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -424,7 +430,7 @@ export default function DashboardPage() {
 
     try {
       const response = await fetch(
-        `${BACKEND_URL}/org/${selectedOrg}/repositories/summary`,
+        `${getBackendApiV1Base()}/org/${selectedOrg}/repositories/summary`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -465,6 +471,33 @@ export default function DashboardPage() {
     () => repositories.filter((repo) => !isDocitManagedDocbookRepo(repo)),
     [repositories],
   );
+
+  const activityRepoTargets = useMemo(
+    () =>
+      userFacingRepositories
+        .map((r) => {
+          const fn = (r.full_name || r.name || "").trim();
+          if (!fn.includes("/")) return null;
+          const branch =
+            r.tracked_branch ||
+            r.docbook_tracked_branch ||
+            r.default_branch ||
+            "main";
+          return { full_name: fn, branch };
+        })
+        .filter((x): x is { full_name: string; branch: string } => x !== null),
+    [userFacingRepositories],
+  );
+
+  const {
+    byRepo: activityByRepo,
+    loading: activityLoading,
+    error: activityBatchError,
+    newPushByRepo,
+  } = useRepositoriesRecentActivity(token, selectedOrg, activityRepoTargets, {
+    pollMs: 30000,
+    disabled: !selectedOrg || !token,
+  });
 
   const filteredRepositories = useMemo(() => {
     const query = repoSearchQuery.trim().toLowerCase();
@@ -817,6 +850,11 @@ export default function DashboardPage() {
                     Search, filter, and trigger doc generation directly from
                     these tiles.
                   </p>
+                  {activityBatchError ? (
+                    <p className="mt-2 text-[11px] text-amber-400/95">
+                      Commit activity feed paused: {activityBatchError}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
@@ -931,29 +969,31 @@ export default function DashboardPage() {
                         "This is your docbook repository where generated documentation lives. Docs are already stored here.";
                       const repoShortName =
                         fullName.split("/")[1] || displayName;
-                      const docsHref = (() => {
-                        if (!docbookRepo) {
-                          return `/repo/${fullName}`;
-                        }
+                        const docsHref = (() => {
+                          if (!docbookRepo) {
+                            return `/repo/${fullName}`;
+                          }
 
-                        const { canonicalSlug } = mapDocsRouteToRepoSlug({
-                          org: fullName.split("/")[0] || "",
-                          repo: repoShortName,
-                          slug: ["introduction"],
-                        });
+                          const { canonicalSlug } = mapDocsRouteToRepoSlug({
+                            org: fullName.split("/")[0] || "",
+                            repo: repoShortName,
+                            slug: ["introduction"],
+                          });
 
-                        const slugPath = canonicalSlug.join("/");
-                        return `/docs/${fullName.split("/")[0]}/${repoShortName}/${slugPath}`;
-                      })();
-                      const viewDocsDisabled = !docbookRepo;
+                          const slugPath = canonicalSlug.join("/");
+                          return `/docs/${fullName.split("/")[0]}/${repoShortName}/${slugPath}`;
+                        })();
+                        const viewDocsDisabled = !docbookRepo;
 
-                      // Generate mock activity data for visualization
-                      const activityData = Array.from({ length: 14 }, () =>
-                        Math.floor(Math.random() * 100),
-                      );
-                      const maxActivity = Math.max(...activityData, 1);
+                        const actKey = normalizeRepoLookupKey(fullName);
+                        const actEntry = activityByRepo[actKey];
+                        const activityCommits = actEntry?.commits ?? [];
+                        const activityBranch =
+                          actEntry?.branch ?? trackedBranch;
+                        const activityRowError = actEntry?.error ?? null;
+                        const showNewPush = Boolean(newPushByRepo[actKey]);
 
-                      const cardGradient = isDocbookRepo
+                        const cardGradient = isDocbookRepo
                         ? "from-blue-500/20 via-slate-900/70 to-slate-900/60"
                         : "from-slate-900/80 via-slate-900/70 to-slate-900/60";
 
@@ -1052,33 +1092,22 @@ export default function DashboardPage() {
                               </div>
                             </div>
 
-                            {/* Activity Chart */}
-                            <div className="mb-4">
-                              <p className="text-slate-500 text-[9px] uppercase tracking-wider mb-2">
-                                Activity (14 days)
-                              </p>
-                              <div className="flex items-end justify-between gap-1 h-12 rounded-lg bg-slate-900/50 border border-slate-800/40 p-2">
-                                {activityData.map((value, idx) => {
-                                  const height = Math.max(
-                                    (value / maxActivity) * 100,
-                                    8,
-                                  );
-                                  const isHighlight = idx === 8;
-                                  return (
-                                    <div
-                                      key={idx}
-                                      className={`flex-1 rounded-sm transition-all hover:opacity-80 ${
-                                        isHighlight
-                                          ? "bg-blue-500 shadow-lg shadow-blue-500/50"
-                                          : "bg-slate-700/50 hover:bg-slate-600/50"
-                                      }`}
-                                      style={{ height: `${height}%` }}
-                                      title={`Activity: ${value}`}
-                                    />
-                                  );
-                                })}
-                              </div>
-                            </div>
+                            <RepoActivitySection
+                              fullName={fullName}
+                              branch={activityBranch}
+                              commits={activityCommits}
+                              loading={
+                                activityLoading && activityCommits.length === 0
+                              }
+                              fetchError={
+                                activityBatchError ||
+                                (activityRowError &&
+                                activityCommits.length === 0
+                                  ? activityRowError
+                                  : null)
+                              }
+                              newPush={showNewPush}
+                            />
 
                             {isDocbookRepo && (
                               <div className="rounded-lg border border-blue-400/30 bg-blue-500/10 backdrop-blur-sm px-3 py-2 text-[10px] text-blue-100 mb-3">

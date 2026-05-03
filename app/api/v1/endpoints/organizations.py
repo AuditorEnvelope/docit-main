@@ -1,10 +1,13 @@
 """Organization-related API endpoints."""
 
+import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, cast, String
 
@@ -137,6 +140,95 @@ async def _resolve_reader_installation_token(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to get reader installation token")
 
     return reader_token, dual_app
+
+
+def _sanitize_commit_message(message: Optional[str]) -> str:
+    if not message:
+        return ""
+    return message.strip().split("\n", 1)[0].strip()[:220]
+
+
+def _normalize_github_commit(full_name: str, item: Dict[str, Any]) -> Dict[str, Any]:
+    sha = item.get("sha") or ""
+    gh_author = item.get("author") or {}
+    inner = item.get("commit") or {}
+    author_blob = inner.get("author") or {}
+    login = gh_author.get("login")
+    name = author_blob.get("name") or login or "Unknown"
+    date = author_blob.get("date") or ""
+    return {
+        "sha": sha[:40] if isinstance(sha, str) else "",
+        "short_sha": sha[:7] if isinstance(sha, str) else "",
+        "message": _sanitize_commit_message(inner.get("message")),
+        "author_login": login,
+        "author_name": name,
+        "author_avatar_url": gh_author.get("avatar_url"),
+        "committed_at": date,
+        "html_url": item.get("html_url")
+        or (
+            f"https://github.com/{full_name}/commit/{sha[:7]}"
+            if isinstance(sha, str) and len(sha) >= 7
+            else None
+        ),
+    }
+
+
+async def _fetch_repo_commits_for_branch(
+    installation_token: str,
+    full_name: str,
+    branch: str,
+    *,
+    per_page: int,
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """Return normalized commits newest-first, plus optional GitHub error string."""
+    key = _normalize_repo_key(full_name)
+    parts = full_name.split("/", 1)
+    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+        return [], "invalid_repository_name"
+    owner, repo_slug = parts[0].strip(), parts[1].strip()
+    headers = {
+        "Authorization": f"token {installation_token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "DocIt-AI",
+    }
+    url = f"https://api.github.com/repos/{owner}/{repo_slug}/commits"
+    params: Dict[str, Any] = {"sha": branch or "main", "per_page": min(per_page, 30)}
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(url, headers=headers, params=params)
+    except httpx.HTTPError as exc:
+        logger.warning("[recent-commits] httpx error %s %s", key, exc)
+        return [], f"github_http_error:{exc}"
+
+    if response.status_code != 200:
+        logger.info(
+            "[recent-commits] non-200 for %s branch=%s status=%s body=%s",
+            key,
+            branch,
+            response.status_code,
+            (response.text or "")[:200],
+        )
+        return [], f"github_status_{response.status_code}"
+
+    raw = response.json()
+    if not isinstance(raw, list):
+        return [], "invalid_github_response"
+
+    out: List[Dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, dict) and item.get("sha"):
+            out.append(_normalize_github_commit(full_name, item))
+    return out, None
+
+
+class RepoActivityRef(BaseModel):
+    full_name: str
+    branch: str
+
+
+class RecentCommitsBatchRequest(BaseModel):
+    repos: List[RepoActivityRef] = Field(default_factory=list, max_length=40)
+    per_repo_limit: int = Field(default=12, ge=1, le=30)
 
 
 async def _list_installation_repos(installation_token: str) -> List[Dict[str, Any]]:
@@ -429,4 +521,59 @@ async def get_org_repository_summary(
         "docbook_tracked_branch": docbook_tracked_branch,
         "repositories": summaries,
         "total": len(summaries),
+    }
+
+
+@router.post("/org/{org_id}/repositories/recent-commits")
+async def batch_repository_recent_commits(
+    org_id: str,
+    body: RecentCommitsBatchRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Fetch recent commits on the tracked branch for multiple repos in one call
+    (Reader installation token). Used by the dashboard activity feed + polling.
+    """
+    reader_token, _dual = await _resolve_reader_installation_token(org_id, user, db)
+    if not reader_token:
+        return {
+            "org_id": org_id,
+            "by_repo": {},
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "error": "reader_app_not_available",
+        }
+
+    unique_refs: List[RepoActivityRef] = []
+    seen: set[str] = set()
+    for ref in body.repos:
+        k = _normalize_repo_key(ref.full_name)
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        unique_refs.append(ref)
+
+    sem = asyncio.Semaphore(8)
+
+    async def one(ref: RepoActivityRef) -> Tuple[str, Dict[str, Any]]:
+        async with sem:
+            commits, err = await _fetch_repo_commits_for_branch(
+                reader_token,
+                ref.full_name.strip(),
+                (ref.branch or "main").strip(),
+                per_page=body.per_repo_limit,
+            )
+        return _normalize_repo_key(ref.full_name), {
+            "full_name": ref.full_name.strip(),
+            "branch": (ref.branch or "main").strip(),
+            "commits": commits,
+            "error": err,
+        }
+
+    pairs = await asyncio.gather(*(one(r) for r in unique_refs)) if unique_refs else []
+    by_repo = {key: payload for key, payload in pairs}
+    return {
+        "org_id": org_id,
+        "by_repo": by_repo,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
