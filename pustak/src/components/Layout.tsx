@@ -66,8 +66,16 @@ export function Layout({ children }: LayoutProps) {
     return null;
   }
 
+  const isLanding = currentPath === "/" || currentPath === "";
+
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors">
+    <div
+      className={
+        isLanding
+          ? "min-h-screen bg-[#030712] text-slate-100 transition-colors"
+          : "min-h-screen bg-white dark:bg-gray-900 transition-colors"
+      }
+    >
       {/* Mobile sidebar overlay */}
       {!hideNavigation && sidebarOpen && (
         <div
@@ -98,8 +106,14 @@ export function Layout({ children }: LayoutProps) {
       {/* Main content */}
       <div className={!hideNavigation && sidebarPinned ? "lg:pl-64" : ""}>
         {/* Header */}
-        <header className="sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between px-4 py-3">
+        <header
+          className={
+            isLanding
+              ? "sticky top-0 z-30 border-b border-cyan-500/10 bg-[#030712]/85 backdrop-blur-xl"
+              : "sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700"
+          }
+        >
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
             <div className="flex items-center space-x-4">
               {!hideNavigation && (
                 <>
@@ -133,45 +147,106 @@ export function Layout({ children }: LayoutProps) {
                 </>
               )}
 
-              <div className="flex items-center space-x-2">
-                <BookOpen className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                  DocIt
-                </h1>
-                <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full">
-                  Beta
-                </span>
-              </div>
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                className={
+                  isLanding
+                    ? "flex items-center gap-2 rounded-lg outline-none ring-offset-2 ring-offset-[#030712] focus-visible:ring-2 focus-visible:ring-cyan-400/50"
+                    : "flex items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
+                }
+              >
+                {isLanding ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/logo.png"
+                      alt=""
+                      width={40}
+                      height={40}
+                      className="h-[2.1rem] w-[2.1rem] object-cover sm:h-[2.1rem] sm:w-[2.1rem] -mt-1"
+                    />
+                    <div className="flex items-center gap-2 sm:gap-2.5">
+                      <span className="text-lg font-bold tracking-tight text-white sm:text-[1.35rem]">
+                        DocIt
+                      </span>
+                      <span className="inline-flex shrink-0 items-center rounded-full border border-cyan-400/40 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-100">
+                        Beta
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    {/* <BookOpen className="w-6 h-6 text-blue-600 dark:text-blue-400" /> */}
+                    <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                      DocIt
+                    </h1>
+                    <span className="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                      Beta
+                    </span>
+                  </div>
+                )}
+              </button>
+              {isLanding && (
+                <nav className="ml-4 hidden items-center gap-6 md:flex">
+                  <a
+                    href="#features"
+                    className="text-sm font-medium text-slate-400 transition hover:text-white"
+                  >
+                    Features
+                  </a>
+                  <a
+                    href="#how-it-works"
+                    className="text-sm font-medium text-slate-400 transition hover:text-white"
+                  >
+                    How it works
+                  </a>
+                  <a
+                    href="#cta"
+                    className="text-sm font-medium text-slate-400 transition hover:text-white"
+                  >
+                    Get started
+                  </a>
+                </nav>
+              )}
             </div>
 
             <div className="flex items-center space-x-2">
               {!isAuthRoute && (
                 <>
                   {/* Search */}
-                  <button
+                  {/* <button
                     onClick={() => setSearchOpen(true)}
-                    className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    className={
+                      isLanding
+                        ? "flex items-center space-x-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300 transition hover:border-cyan-400/30 hover:bg-white/10"
+                        : "flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    }
                   >
                     <Search className="w-4 h-4" />
                     <span className="hidden sm:inline">Search docs...</span>
                     <kbd className="hidden sm:inline text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">
                       ⌘K
                     </kbd>
-                  </button>
+                  </button> */}
 
                   {/* Theme toggle */}
-                  <button
+                  {/* <button
                     onClick={() =>
                       setTheme(theme === "dark" ? "light" : "dark")
                     }
-                    className="p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    className={
+                      isLanding
+                        ? "rounded-full border border-white/10 p-2 text-slate-300 transition hover:border-cyan-400/30 hover:bg-white/10 hover:text-white"
+                        : "p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    }
                   >
                     {theme === "dark" ? (
                       <Sun className="w-5 h-5" />
                     ) : (
                       <Moon className="w-5 h-5" />
                     )}
-                  </button>
+                  </button> */}
 
                   {/* User Menu */}
                   {isAuthenticated && user ? (
@@ -285,9 +360,13 @@ export function Layout({ children }: LayoutProps) {
                   ) : (
                     <button
                       onClick={() => router.push("/login")}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
+                      className={
+                        isLanding
+                          ? "cursor-pointer rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:bg-cyan-400/10"
+                          : "px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
+                      }
                     >
-                      Login
+                      {isLanding ? "Sign in" : "Login"}
                     </button>
                   )}
                 </>

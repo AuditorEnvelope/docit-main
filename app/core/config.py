@@ -1,6 +1,8 @@
+import json
+
 from pydantic_settings import BaseSettings
-from typing import Optional, List
-from pydantic import AnyHttpUrl, field_validator, ConfigDict
+from typing import Optional, List, Union
+from pydantic import field_validator, ConfigDict
 
 class Settings(BaseSettings):
     # Application
@@ -26,11 +28,19 @@ class Settings(BaseSettings):
     
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
-    def assemble_cors_origins(cls, v):
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
-            return v
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, list):
+            return [str(i).strip() for i in v if str(i).strip()]
+        if isinstance(v, str):
+            s = v.strip()
+            if s.startswith("["):
+                try:
+                    parsed = json.loads(s)
+                    if isinstance(parsed, list):
+                        return [str(i).strip() for i in parsed if str(i).strip()]
+                except json.JSONDecodeError:
+                    pass
+            return [i.strip() for i in s.split(",") if i.strip()]
         raise ValueError(v)
     
     # GitHub OAuth Configuration
@@ -38,6 +48,9 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: str = ""
     GITHUB_OAUTH_CALLBACK_URL: str = "http://localhost:8000/auth/callback"
     
+    # Fallback app id (install URLs use reader/writer ids first); see auth.py
+    GITHUB_APP_ID: Optional[str] = None
+
     # GitHub App Configuration (Reader App)
     GITHUB_READER_APP_ID: str = "2072879"
     GITHUB_READER_PRIVATE_KEY: str = ""
@@ -52,7 +65,7 @@ class Settings(BaseSettings):
     GITHUB_WEBHOOK_SECRET: str = ""
     
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost/pustak"
+    DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost/docit"
     DATABASE_ECHO: bool = False
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
