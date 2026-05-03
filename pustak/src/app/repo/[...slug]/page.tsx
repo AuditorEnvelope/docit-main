@@ -523,7 +523,9 @@ export default function RepoPage({ params }: RepoPageProps) {
 
                     {orgName && sourceRepo && persona && (
                       <a
-                        href={`https://docbook.site/render-docs/${orgName}/${sourceRepo}/internal/${sourcePath.replace(".md", "").split("/").pop() || "introduction"}`}
+                        // href={`https://docbook.site/render-docs/${orgName}/${sourceRepo}/internal/${sourcePath.replace(".md", "").split("/").pop() || "introduction"}`}
+                        href={`https://docit.in/render-docs/${orgName}/${sourceRepo}/internal/${sourcePath.replace(".md", "").split("/").pop() || "introduction"}`}
+
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-300 backdrop-blur-sm transition-all hover:border-amber-500/50 hover:bg-amber-500/20"
