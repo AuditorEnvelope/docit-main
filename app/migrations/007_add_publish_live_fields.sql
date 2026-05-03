@@ -33,6 +33,6 @@ CREATE TABLE IF NOT EXISTS docbook_publish_events (
 
 COMMENT ON TABLE docbook_publish_events IS 'Tracks history of live documentation publishing events';
 COMMENT ON COLUMN docbook_repos.last_published_commit IS 'SHA of the last commit published to live';
-COMMENT ON COLUMN docbook_repos.live_url IS 'Public URL where docs are accessible (e.g., https://org.docbook.site/repo)';
+COMMENT ON COLUMN docbook_repos.live_url IS 'Public URL where docs are accessible (e.g., https://org.docit.in/repo)';
 COMMENT ON COLUMN docbook_repos.live_theme IS 'Optional theme overrides for live site';
 COMMENT ON COLUMN docbook_repos.live_sidebar_config IS 'Optional sidebar configuration for live site';
