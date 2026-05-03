@@ -2,7 +2,6 @@
 
 import { useState, useEffect, JSX } from "react";
 import {
-  BookOpen,
   ChevronRight,
   ChevronDown,
   FileText,
@@ -310,10 +309,19 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
     return (
       <div className="flex h-full flex-col border-r border-slate-800/60 bg-slate-950/90 text-slate-100">
         <div className="border-b border-slate-800/60 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <BookOpen className="h-6 w-6 text-blue-400" />
-              <div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="shrink-0 overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/logo.png"
+                  alt=""
+                  width={36}
+                  height={36}
+                  className="h-9 w-9 object-cover"
+                />
+              </div>
+              <div className="min-w-0">
                 <h2 className="text-lg font-semibold text-white">DocIt</h2>
                 <p className="text-xs text-slate-400">Documentation Platform</p>
               </div>
@@ -368,23 +376,30 @@ export function EnhancedSidebar({ onClose }: SidebarProps) {
       {/* Header */}
       <div className="relative overflow-hidden border-b border-slate-800/70 px-3 py-4">
         <div
-          className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.35),_transparent_55%)]"
+          className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.22),_transparent_55%)]"
           aria-hidden
         />
         <div
-          className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.25),_transparent_60%)]"
+          className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.2),_transparent_60%)]"
           aria-hidden
         />
-        <div className="relative flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="rounded-xl bg-blue-500/20 p-1.5 ring-1 ring-inset ring-blue-400/40">
-              <BookOpen className="h-4 w-4 text-blue-300" />
+        <div className="relative flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="shrink-0 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.png"
+                alt=""
+                width={32}
+                height={32}
+                className="h-8 w-8 object-cover"
+              />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-[8px] uppercase tracking-[0.15em] text-slate-400">
                 Workspace
               </p>
-              <h2 className="text-xs font-semibold text-white">
+              <h2 className="truncate text-xs font-semibold text-white">
                 DocIt Docs Hub
               </h2>
             </div>

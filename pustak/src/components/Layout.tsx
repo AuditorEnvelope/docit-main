@@ -4,7 +4,6 @@ import { useState, useEffect, memo } from "react";
 import { useTheme } from "next-themes";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BookOpen,
   Search,
   Sun,
   Moon,
@@ -114,16 +113,16 @@ export function Layout({ children }: LayoutProps) {
           className={
             isLandingShell
               ? "sticky top-0 z-30 border-b border-cyan-500/10 bg-[#030712]/85 backdrop-blur-xl"
-              : "sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700"
+              : "sticky top-0 z-30 border-b border-gray-200 bg-white/90 backdrop-blur-sm dark:border-cyan-500/10 dark:bg-[#030712]/90 dark:backdrop-blur-xl"
           }
         >
-          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-            <div className="flex items-center space-x-4">
+          <div className="mx-auto flex w-full max-w-[1920px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
+            <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
               {!hideNavigation && (
                 <>
                   <button
                     onClick={() => setSidebarOpen(true)}
-                    className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                    className="shrink-0 rounded-md p-2 text-gray-600 hover:text-gray-900 dark:text-slate-300 dark:hover:text-white lg:hidden"
                     aria-label="Open sidebar"
                   >
                     <Menu className="w-5 h-5" />
@@ -137,7 +136,7 @@ export function Layout({ children }: LayoutProps) {
                         setSidebarOpen(false);
                       }
                     }}
-                    className="hidden lg:inline-flex items-center justify-center rounded-md border border-transparent bg-gray-100/60 px-2 py-1 text-gray-600 transition hover:bg-gray-200/70 dark:bg-gray-800/60 dark:text-gray-300 dark:hover:bg-gray-700/60"
+                    className="hidden shrink-0 rounded-md border border-transparent bg-gray-100/60 px-2 py-1 text-gray-600 transition hover:bg-gray-200/70 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 lg:inline-flex lg:items-center lg:justify-center"
                     aria-label={
                       sidebarPinned ? "Collapse sidebar" : "Expand sidebar"
                     }
@@ -156,40 +155,36 @@ export function Layout({ children }: LayoutProps) {
                 onClick={() => router.push("/")}
                 className={
                   isLandingShell
-                    ? "flex items-center gap-2 rounded-lg outline-none ring-offset-2 ring-offset-[#030712] focus-visible:ring-2 focus-visible:ring-cyan-400/50"
-                    : "flex items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
+                    ? "flex shrink-0 items-center gap-2 rounded-lg outline-none ring-offset-2 ring-offset-[#030712] focus-visible:ring-2 focus-visible:ring-cyan-400/50"
+                    : "flex shrink-0 items-center gap-2 rounded-lg outline-none ring-offset-2 ring-offset-white focus-visible:ring-2 focus-visible:ring-cyan-500/50 dark:ring-offset-[#030712]"
                 }
               >
-                {isLandingShell ? (
-                  <>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src="/logo.png"
-                      alt=""
-                      width={40}
-                      height={40}
-                      className="h-[2.1rem] w-[2.1rem] object-cover sm:h-[2.1rem] sm:w-[2.1rem] -mt-1"
-                    />
-                    <div className="flex items-center gap-2 sm:gap-2.5">
-                      <span className="text-lg font-bold tracking-tight text-white sm:text-[1.35rem]">
-                        DocIt
-                      </span>
-                      <span className="inline-flex shrink-0 items-center rounded-full border border-cyan-400/40 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-100">
-                        Beta
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex items-center space-x-2">
-                    {/* <BookOpen className="w-6 h-6 text-blue-600 dark:text-blue-400" /> */}
-                    <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                      DocIt
-                    </h1>
-                    <span className="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                      Beta
-                    </span>
-                  </div>
-                )}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {/* <img
+                  src="/logo.png"
+                  alt=""
+                  width={40}
+                  height={40}
+                  className={
+                    isLandingShell
+                      ? "h-[2.1rem] w-[2.1rem] shrink-0 object-cover sm:h-[2.1rem] sm:w-[2.1rem] -mt-1"
+                      : "h-9 w-9 shrink-0 object-cover sm:h-10 sm:w-10"
+                  }
+                /> */}
+                <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+                  <span
+                    className={
+                      isLandingShell
+                        ? "text-lg font-bold tracking-tight text-white sm:text-[1.35rem]"
+                        : "truncate text-lg font-bold tracking-tight text-gray-900 dark:text-white sm:text-[1.35rem]"
+                    }
+                  >
+                    DocIt
+                  </span>
+                  <span className="inline-flex shrink-0 items-center rounded-full border border-cyan-500/35 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-800 dark:border-cyan-400/40 dark:bg-cyan-400/10 dark:text-cyan-100">
+                    Beta
+                  </span>
+                </div>
               </button>
               {isLanding && (
                 <nav className="ml-4 hidden items-center gap-6 md:flex">
@@ -215,7 +210,7 @@ export function Layout({ children }: LayoutProps) {
               )}
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex shrink-0 items-center space-x-2">
               {!isAuthRoute && (
                 <>
                   {/* Search */}
