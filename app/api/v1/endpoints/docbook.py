@@ -82,7 +82,7 @@ async def _fetch_repo_data(org_id: str, repo_name: str, token: str) -> Optional[
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     logger.debug("🔍 GitHub repo lookup", extra={
@@ -166,7 +166,7 @@ async def _fetch_repo_branches(org_id: str, repo_name: str, token: str) -> List[
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     branches: List[str] = []
@@ -414,16 +414,17 @@ async def _fetch_folder_contents(
     repo_full_name: str,
     path: str,
     branch: str,
-    token: str,
+    token: Optional[str],
 ) -> List[Dict[str, Any]]:
     base_url = f"https://api.github.com/repos/{repo_full_name}/contents"
     normalized_path = path.lstrip("/")
     url = base_url if not normalized_path else f"{base_url}/{normalized_path}"
     headers = {
-        "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
     response = await client.get(url, headers=headers, params={"ref": branch})
 
@@ -565,7 +566,7 @@ async def check_docbook_exists(
         return {
             "exists": False,
             "org_id": org_id,
-            "message": f"No docbook linked for {org_id}. Create pustak-docbook-{org_id.lower()} and link it.",
+            "message": f"No docbook linked for {org_id}. Create docit-docbook-{org_id.lower()} and link it.",
         }
     
     # Verify the repository actually exists on GitHub
@@ -1016,7 +1017,7 @@ async def publish_docs_live(
         headers = {
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github+json",
-            "User-Agent": "Pustak-AI",
+            "User-Agent": "DocIt-AI",
         }
         
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1054,7 +1055,9 @@ async def publish_docs_live(
         db.add(publish_event)
         
         # Update docbook repo with live info
-        live_url = f"https://{request.org_id}.docbook.site/{request.repo_id}"
+        # live_url = f"https://{request.org_id}.docbook.site/{request.repo_id}"
+        live_url = f"https://{request.org_id}.docit.in/{request.repo_id}"
+
         docbook_repo.last_published_at = publish_event.completed_at
         docbook_repo.last_published_commit = main_commit
         docbook_repo.live_url = live_url
@@ -1202,9 +1205,12 @@ async def _build_live_manifest(
     user_uuid = user.id if user else None
     docbook_repo = await _resolve_docbook_repo(db=db, org_id=org_id, user_id=user_uuid)
 
+    token: Optional[str]
     if user:
         token = _require_github_token(user)
     else:
+        # Public endpoints prefer an installation token (higher rate limits),
+        # but may not have repo access; we'll retry unauthenticated on 404.
         token = await _resolve_app_installation_token(db=db, org_id=org_id)
 
     docbook_full_name = docbook_repo.docbook_full_name
@@ -1222,7 +1228,7 @@ async def _build_live_manifest(
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     try:
@@ -1237,19 +1243,29 @@ async def _build_live_manifest(
                     token=token,
                 )
             except HTTPException as e:
-                if e.status_code == 404:
+                if (not user) and token and e.status_code == 404:
+                    # For public repos, an installation token without access often looks like 404.
+                    # Retry without auth to confirm whether the content is actually present.
+                    await _fetch_github_file(
+                        client=client,
+                        repo_full_name=docbook_full_name,
+                        path=repo_path,
+                        ref=branch_ref,
+                        token=None,
+                    )
+                elif e.status_code == 404:
                     # Persona folder doesn't exist
                     if persona == "internal":
                         # For internal persona, suggest trying dev
                         raise HTTPException(
                             status_code=404,
-                            detail=f"Internal documentation not available for {repo_id}. Try accessing the dev documentation instead."
+                            detail=f"Internal documentation not available for {repo_id}. Try accessing the dev documentation instead.",
                         )
                     else:
                         # For dev persona
                         raise HTTPException(
                             status_code=404,
-                            detail=f"Documentation not available for {repo_id}."
+                            detail=f"Documentation not available for {repo_id}.",
                         )
                 else:
                     # Other error
@@ -1263,6 +1279,15 @@ async def _build_live_manifest(
                 branch_ref,  # Use main branch, not last_published_commit
                 token,
             )
+            if (not user) and token and not folder_tree:
+                # Same "404 vs access" ambiguity; retry unauthenticated for public repos.
+                folder_tree = await _fetch_folder_contents(
+                    client,
+                    docbook_full_name,
+                    repo_path,
+                    branch_ref,
+                    None,
+                )
     except Exception as e:
         if not isinstance(e, HTTPException):
             print(f"❌ Error fetching folder contents: {e}")
@@ -1368,14 +1393,15 @@ async def _fetch_github_file(
     repo_full_name: str,
     path: str,
     ref: str,
-    token: str,
+    token: Optional[str],
 ) -> Dict[str, Any]:
     url = f"https://api.github.com/repos/{repo_full_name}/contents/{path}"
     headers = {
-        "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
+    if token:
+        headers["Authorization"] = f"token {token}"
 
     response = await client.get(url, headers=headers, params={"ref": ref})
 

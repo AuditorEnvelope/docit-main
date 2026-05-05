@@ -26,14 +26,14 @@ export default function DocbookSetupModal({
   accessToken,
 }: DocbookSetupModalProps) {
   const [docbookRepoName, setDocbookRepoName] = useState(
-    `pustak-docbook-${orgId ? orgId.toLowerCase().replace(/[^a-z0-9-]/g, "") : ""}`
+    `DocIt-docbook-${orgId ? orgId.toLowerCase().replace(/[^a-z0-9-]/g, "") : ""}`,
   );
 
   // Update repo name when orgId changes
   useEffect(() => {
     if (orgId) {
       setDocbookRepoName(
-        `pustak-docbook-${orgId.toLowerCase().replace(/[^a-z0-9-]/g, "")}`
+        `DocIt-docbook-${orgId.toLowerCase().replace(/[^a-z0-9-]/g, "")}`,
       );
     }
   }, [orgId, isOpen]);
@@ -49,7 +49,14 @@ export default function DocbookSetupModal({
   const autoLinkAttemptedRef = useRef(false);
   const MAX_POLL_ATTEMPTS = 24; // 2 minutes at 5s interval
 
-  const githubCreateRepoUrl = `https://github.com/new?name=${docbookRepoName}&private=true&description=Pustak%20Docbook%20Repository`;
+  const BACKEND_URL =
+    process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
+  const apiBase = BACKEND_URL.endsWith("/api/v1")
+    ? BACKEND_URL
+    : `${BACKEND_URL.replace(/\/$/, "")}/api/v1`;
+
+  const githubCreateRepoUrl = `https://github.com/new?name=${docbookRepoName}&private=true&description=DocIt%20Docbook%20Repository`;
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current) {
@@ -62,9 +69,9 @@ export default function DocbookSetupModal({
   }, []);
 
   const linkRepo = useCallback(
-    async (mode: "manual" | "auto" = "manual"): Promise<
-      "linked" | "not_found" | "failed"
-    > => {
+    async (
+      mode: "manual" | "auto" = "manual",
+    ): Promise<"linked" | "not_found" | "failed"> => {
       const silent = mode === "auto";
 
       if (!docbookRepoName.trim()) {
@@ -83,7 +90,7 @@ export default function DocbookSetupModal({
         const token =
           accessToken ??
           (typeof window !== "undefined"
-            ? localStorage.getItem("pustak_access_token")
+            ? localStorage.getItem("DocIt_access_token")
             : null);
 
         if (!token) {
@@ -107,8 +114,37 @@ export default function DocbookSetupModal({
           {
             org_id: orgId,
             docbook_repo_name: docbookRepoName,
+          }),
+        });
+
+        if (response.status === 404) {
+          if (!silent) {
+            const data = (await response.json().catch(() => ({}))) as {
+              detail?: string;
+            };
+            setError(
+              data.detail ||
+                "Repository not found on GitHub. Please create it before linking.",
+            );
           }
-        );
+          return "not_found";
+        }
+
+        if (!response.ok) {
+          if (!silent) {
+            const data = (await response.json().catch(() => ({}))) as {
+              detail?: string;
+            };
+            setError(data.detail || "Failed to link docbook repository");
+          } else {
+            console.error(
+              "Automatic docbook linking failed",
+              response.status,
+              await response.text().catch(() => ""),
+            );
+          }
+          return "failed";
+        }
 
         if (silent) {
           setRepoDetected(true);
@@ -153,7 +189,7 @@ export default function DocbookSetupModal({
         }
       }
     },
-    [docbookRepoName, onClose, onSuccess, orgId]
+    [apiBase, docbookRepoName, onClose, onSuccess, orgId],
   );
 
   const startPolling = useCallback(() => {
@@ -170,7 +206,7 @@ export default function DocbookSetupModal({
       pollAttemptsRef.current += 1;
       const attempt = pollAttemptsRef.current;
       setPollingMessage(
-        `Checking if repository exists... (attempt ${attempt}/${MAX_POLL_ATTEMPTS})`
+        `Checking if repository exists... (attempt ${attempt}/${MAX_POLL_ATTEMPTS})`,
       );
 
       const result = await linkRepo("auto");
@@ -188,7 +224,7 @@ export default function DocbookSetupModal({
       if (attempt >= MAX_POLL_ATTEMPTS) {
         stopPolling();
         setError(
-          "Repository not detected after 2 minutes. Please verify it was created and try refreshing."
+          "Repository not detected after 2 minutes. Please verify it was created and try refreshing.",
         );
       }
     };
@@ -265,7 +301,11 @@ export default function DocbookSetupModal({
   const showStatusCard = useMemo(() => {
     if (success) return false;
     return Boolean(
-      pollingMessage || polling || checkingRepo || linking || repoDetected === false
+      pollingMessage ||
+      polling ||
+      checkingRepo ||
+      linking ||
+      repoDetected === false,
     );
   }, [checkingRepo, linking, polling, pollingMessage, repoDetected, success]);
 
@@ -307,8 +347,12 @@ export default function DocbookSetupModal({
         <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-purple-500 via-blue-500 to-cyan-400" />
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-slate-900/80 backdrop-blur">
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Docbook Setup</p>
-            <h2 className="mt-1 text-2xl font-semibold text-white">Link your documentation repository</h2>
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">
+              Docbook Setup
+            </p>
+            <h2 className="mt-1 text-2xl font-semibold text-white">
+              Link your documentation repository
+            </h2>
           </div>
           <button
             onClick={onClose}
@@ -324,9 +368,12 @@ export default function DocbookSetupModal({
             <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/20">
               <CheckCircle className="h-10 w-10 text-emerald-400" />
             </div>
-            <h3 className="mt-6 text-2xl font-semibold text-white">Docbook linked successfully</h3>
+            <h3 className="mt-6 text-2xl font-semibold text-white">
+              Docbook linked successfully
+            </h3>
             <p className="mt-3 text-sm text-slate-300">
-              Your documentation repository is connected. You’ll start seeing docs flow in as soon as we generate them.
+              Your documentation repository is connected. You’ll start seeing
+              docs flow in as soon as we generate them.
             </p>
           </div>
         ) : (
@@ -337,9 +384,12 @@ export default function DocbookSetupModal({
                   <span className="inline-flex items-center rounded-full bg-blue-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-blue-200">
                     Step • Link
                   </span>
-                  <h3 className="mt-3 text-lg font-semibold text-white">Automatic linking status</h3>
+                  <h3 className="mt-3 text-lg font-semibold text-white">
+                    Automatic linking status
+                  </h3>
                   <p className="mt-1 text-sm text-slate-300">
-                    We’ll sync the GitHub repo for you. If it already exists under your org, the link will complete automatically.
+                    We’ll sync the GitHub repo for you. If it already exists
+                    under your org, the link will complete automatically.
                   </p>
                 </div>
               </header>
@@ -369,7 +419,8 @@ export default function DocbookSetupModal({
 
               {!polling && !checkingRepo && repoDetected === false && (
                 <div className="mt-4 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-100">
-                  Repository not detected yet. Create it on GitHub, then use “Refresh status.”
+                  Repository not detected yet. Create it on GitHub, then use
+                  “Refresh status.”
                 </div>
               )}
 

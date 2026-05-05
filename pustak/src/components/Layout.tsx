@@ -4,7 +4,6 @@ import { useState, useEffect, memo } from "react";
 import { useTheme } from "next-themes";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BookOpen,
   Search,
   Sun,
   Moon,
@@ -23,6 +22,7 @@ import {
   Crown,
   PanelLeftClose,
   PanelLeftOpen,
+  Loader2,
 } from "lucide-react";
 import { EnhancedSidebar as EnhancedSidebarComponent } from "./EnhancedSidebar";
 
@@ -30,6 +30,7 @@ import { EnhancedSidebar as EnhancedSidebarComponent } from "./EnhancedSidebar";
 const EnhancedSidebar = memo(EnhancedSidebarComponent);
 import { GlobalSearch } from "./GlobalSearch";
 import { useAuth } from "@/contexts/AuthContext";
+import { startGitHubOAuth } from "@/lib/githubOAuth";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -45,9 +46,14 @@ export function Layout({ children }: LayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const [githubAuthLoading, setGithubAuthLoading] = useState(false);
 
   const sidebarHiddenExact = new Set(["/", "/settings", "/pricing", "/login"]);
-  const sidebarHiddenPrefixes = ["/pending-reviews", "/repo/settings", "/auth/"];
+  const sidebarHiddenPrefixes = [
+    "/pending-reviews",
+    "/repo/settings",
+    "/auth/",
+  ];
   const currentPath = pathname ?? "";
   const isAuthRoute = currentPath.startsWith("/auth/");
   const hideNavigation =
@@ -62,8 +68,17 @@ export function Layout({ children }: LayoutProps) {
     return null;
   }
 
+  const isLanding = currentPath === "/" || currentPath === "";
+  const isLandingShell = isLanding || isAuthRoute;
+
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors">
+    <div
+      className={
+        isLandingShell
+          ? "min-h-screen bg-[#030712] text-slate-100 transition-colors"
+          : "min-h-screen bg-white dark:bg-gray-900 transition-colors"
+      }
+    >
       {/* Mobile sidebar overlay */}
       {!hideNavigation && sidebarOpen && (
         <div
@@ -94,14 +109,20 @@ export function Layout({ children }: LayoutProps) {
       {/* Main content */}
       <div className={!hideNavigation && sidebarPinned ? "lg:pl-64" : ""}>
         {/* Header */}
-        <header className="sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center space-x-4">
+        <header
+          className={
+            isLandingShell
+              ? "sticky top-0 z-30 border-b border-cyan-500/10 bg-[#030712]/85 backdrop-blur-xl"
+              : "sticky top-0 z-30 border-b border-gray-200 bg-white/90 backdrop-blur-sm dark:border-cyan-500/10 dark:bg-[#030712]/90 dark:backdrop-blur-xl"
+          }
+        >
+          <div className="mx-auto flex w-full max-w-[1920px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
+            <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
               {!hideNavigation && (
                 <>
                   <button
                     onClick={() => setSidebarOpen(true)}
-                    className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                    className="shrink-0 rounded-md p-2 text-gray-600 hover:text-gray-900 dark:text-slate-300 dark:hover:text-white lg:hidden"
                     aria-label="Open sidebar"
                   >
                     <Menu className="w-5 h-5" />
@@ -115,8 +136,10 @@ export function Layout({ children }: LayoutProps) {
                         setSidebarOpen(false);
                       }
                     }}
-                    className="hidden lg:inline-flex items-center justify-center rounded-md border border-transparent bg-gray-100/60 px-2 py-1 text-gray-600 transition hover:bg-gray-200/70 dark:bg-gray-800/60 dark:text-gray-300 dark:hover:bg-gray-700/60"
-                    aria-label={sidebarPinned ? "Collapse sidebar" : "Expand sidebar"}
+                    className="hidden shrink-0 rounded-md border border-transparent bg-gray-100/60 px-2 py-1 text-gray-600 transition hover:bg-gray-200/70 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 lg:inline-flex lg:items-center lg:justify-center"
+                    aria-label={
+                      sidebarPinned ? "Collapse sidebar" : "Expand sidebar"
+                    }
                   >
                     {sidebarPinned ? (
                       <PanelLeftClose className="h-4 w-4" />
@@ -127,43 +150,102 @@ export function Layout({ children }: LayoutProps) {
                 </>
               )}
 
-              <div className="flex items-center space-x-2">
-                <BookOpen className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                  Pustak
-                </h1>
-                <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full">
-                  Beta
-                </span>
-              </div>
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                className={
+                  isLandingShell
+                    ? "flex shrink-0 items-center gap-2 rounded-lg outline-none ring-offset-2 ring-offset-[#030712] focus-visible:ring-2 focus-visible:ring-cyan-400/50"
+                    : "flex shrink-0 items-center gap-2 rounded-lg outline-none ring-offset-2 ring-offset-white focus-visible:ring-2 focus-visible:ring-cyan-500/50 dark:ring-offset-[#030712]"
+                }
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {/* <img
+                  src="/logo.png"
+                  alt=""
+                  width={40}
+                  height={40}
+                  className={
+                    isLandingShell
+                      ? "h-[2.1rem] w-[2.1rem] shrink-0 object-cover sm:h-[2.1rem] sm:w-[2.1rem] -mt-1"
+                      : "h-9 w-9 shrink-0 object-cover sm:h-10 sm:w-10"
+                  }
+                /> */}
+                <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+                  <span
+                    className={
+                      isLandingShell
+                        ? "text-lg font-bold tracking-tight text-white sm:text-[1.35rem]"
+                        : "truncate text-lg font-bold tracking-tight text-gray-900 dark:text-white sm:text-[1.35rem]"
+                    }
+                  >
+                    DocIt
+                  </span>
+                  <span className="inline-flex shrink-0 items-center rounded-full border border-cyan-500/35 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-800 dark:border-cyan-400/40 dark:bg-cyan-400/10 dark:text-cyan-100">
+                    Beta
+                  </span>
+                </div>
+              </button>
+              {isLanding && (
+                <nav className="ml-4 hidden items-center gap-6 md:flex">
+                  <a
+                    href="#features"
+                    className="text-sm font-medium text-slate-400 transition hover:text-white"
+                  >
+                    Features
+                  </a>
+                  <a
+                    href="#how-it-works"
+                    className="text-sm font-medium text-slate-400 transition hover:text-white"
+                  >
+                    How it works
+                  </a>
+                  <a
+                    href="#cta"
+                    className="text-sm font-medium text-slate-400 transition hover:text-white"
+                  >
+                    Get started
+                  </a>
+                </nav>
+              )}
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex shrink-0 items-center space-x-2">
               {!isAuthRoute && (
                 <>
                   {/* Search */}
-                  <button
+                  {/* <button
                     onClick={() => setSearchOpen(true)}
-                    className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    className={
+                      isLanding
+                        ? "flex items-center space-x-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300 transition hover:border-cyan-400/30 hover:bg-white/10"
+                        : "flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    }
                   >
                     <Search className="w-4 h-4" />
                     <span className="hidden sm:inline">Search docs...</span>
                     <kbd className="hidden sm:inline text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">
                       ⌘K
                     </kbd>
-                  </button>
+                  </button> */}
 
                   {/* Theme toggle */}
-                  <button
-                    onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                    className="p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  {/* <button
+                    onClick={() =>
+                      setTheme(theme === "dark" ? "light" : "dark")
+                    }
+                    className={
+                      isLanding
+                        ? "rounded-full border border-white/10 p-2 text-slate-300 transition hover:border-cyan-400/30 hover:bg-white/10 hover:text-white"
+                        : "p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    }
                   >
                     {theme === "dark" ? (
                       <Sun className="w-5 h-5" />
                     ) : (
                       <Moon className="w-5 h-5" />
                     )}
-                  </button>
+                  </button> */}
 
                   {/* User Menu */}
                   {isAuthenticated && user ? (
@@ -175,12 +257,14 @@ export function Layout({ children }: LayoutProps) {
                         {user.avatar_url ? (
                           <img
                             src={user.avatar_url}
-                            alt={user.name || user.username || 'User'}
+                            alt={user.name || user.username || "User"}
                             className="w-8 h-8 rounded-full border-2 border-blue-500"
                           />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-bold">
-                            {(user.name || user.username || 'U')[0].toUpperCase()}
+                            {(user.name ||
+                              user.username ||
+                              "U")[0].toUpperCase()}
                           </div>
                         )}
                       </button>
@@ -202,13 +286,20 @@ export function Layout({ children }: LayoutProps) {
                                 {user.email || `@${user.username}`}
                               </p>
                               <div className="mt-2">
-                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
-                                  user.plan === 'free' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300' :
-                                  user.plan === 'pro' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
-                                  user.plan === 'team' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
-                                  'bg-gradient-to-r from-yellow-400 to-orange-500 text-white'
-                                }`}>
-                                  {user.plan !== 'free' && <Crown className="w-3 h-3" />}
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
+                                    user.plan === "free"
+                                      ? "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                                      : user.plan === "pro"
+                                        ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                                        : user.plan === "team"
+                                          ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
+                                          : "bg-gradient-to-r from-yellow-400 to-orange-500 text-white"
+                                  }`}
+                                >
+                                  {user.plan !== "free" && (
+                                    <Crown className="w-3 h-3" />
+                                  )}
                                   {user.plan.toUpperCase()}
                                 </span>
                               </div>
@@ -219,7 +310,7 @@ export function Layout({ children }: LayoutProps) {
                               <button
                                 onClick={() => {
                                   setUserMenuOpen(false);
-                                  router.push('/dashboard');
+                                  router.push("/dashboard");
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                               >
@@ -229,7 +320,7 @@ export function Layout({ children }: LayoutProps) {
                               <button
                                 onClick={() => {
                                   setUserMenuOpen(false);
-                                  router.push('/pricing');
+                                  router.push("/pricing");
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                               >
@@ -239,7 +330,7 @@ export function Layout({ children }: LayoutProps) {
                               <button
                                 onClick={() => {
                                   setUserMenuOpen(false);
-                                  router.push('/settings');
+                                  router.push("/settings");
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                               >
@@ -267,10 +358,34 @@ export function Layout({ children }: LayoutProps) {
                     </div>
                   ) : (
                     <button
-                      onClick={() => router.push('/login')}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
+                      type="button"
+                      disabled={githubAuthLoading}
+                      onClick={async () => {
+                        setGithubAuthLoading(true);
+                        try {
+                          await startGitHubOAuth();
+                        } catch (e) {
+                          console.error(e);
+                          setGithubAuthLoading(false);
+                          alert("Failed to start GitHub sign-in. Please try again.");
+                        }
+                      }}
+                      className={
+                        isLanding
+                          ? "inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          : "inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      }
                     >
-                      Login
+                      {githubAuthLoading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="hidden sm:inline">Connecting…</span>
+                        </>
+                      ) : isLanding ? (
+                        "Sign in"
+                      ) : (
+                        "Login"
+                      )}
                     </button>
                   )}
                 </>

@@ -107,7 +107,7 @@ async def _fetch_branches_for_repo(org_id: str, repo_name: str, token: str) -> L
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Pustak-AI",
+        "User-Agent": "DocIt-AI",
     }
 
     logger.debug(

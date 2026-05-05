@@ -1,9 +1,11 @@
-# Pustak Setup Guide
+# DocIt Setup Guide
 
 ## Overview
-Pustak is a GitBook-like documentation platform that automatically fetches and displays markdown documentation from your GitHub organization's repositories.
+
+DocIt is a GitBook-like documentation platform that automatically fetches and displays markdown documentation from your GitHub organization's repositories.
 
 ## Prerequisites
+
 - Node.js 18+ installed
 - A GitHub account with access to your organization
 - GitHub Personal Access Token
@@ -11,13 +13,14 @@ Pustak is a GitBook-like documentation platform that automatically fetches and d
 ## Step 1: Clone and Install
 
 ```bash
-cd pustak
+cd DocIt
 npm install
 ```
 
 ## Step 2: Configure Environment Variables
 
 1. Copy the example environment file:
+
 ```bash
 cp .env.example .env.local
 ```
@@ -27,7 +30,7 @@ cp .env.example .env.local
 ```bash
 # Get your GitHub Personal Access Token from:
 # https://github.com/settings/tokens
-# Required scopes: 
+# Required scopes:
 #   - repo (for private repos)
 #   - OR public_repo (for public repos only)
 GITHUB_TOKEN=ghp_your_actual_token_here
@@ -43,7 +46,7 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 
 1. Go to https://github.com/settings/tokens
 2. Click "Generate new token" → "Generate new token (classic)"
-3. Give it a descriptive name (e.g., "Pustak Documentation")
+3. Give it a descriptive name (e.g., "DocIt Documentation")
 4. Select scopes:
    - For **private repos**: Check `repo` (full control)
    - For **public repos only**: Check `public_repo`
@@ -53,7 +56,7 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 
 ## Step 3: Prepare Your Repositories
 
-Pustak looks for a `/docs` folder in each repository. Create this structure in your repos:
+DocIt looks for a `/docs` folder in each repository. Create this structure in your repos:
 
 ```
 your-repo/
@@ -70,7 +73,7 @@ your-repo/
 
 ### Supported Documentation Files
 
-Pustak automatically recognizes these files in the `/docs` folder:
+DocIt automatically recognizes these files in the `/docs` folder:
 
 - **README.md** or **SUMMARY.md** → Summary section
 - **api.md** → API Documentation section
@@ -96,7 +99,7 @@ npm start
 
 ## How It Works
 
-1. **Repository Discovery**: Pustak fetches all repositories from your GitHub organization using the GitHub API
+1. **Repository Discovery**: DocIt fetches all repositories from your GitHub organization using the GitHub API
 2. **Docs Detection**: It checks each repository for a `/docs` folder
 3. **Content Fetching**: For repos with docs, it fetches all markdown files
 4. **Rendering**: The markdown is rendered with syntax highlighting and GitHub-flavored markdown support
@@ -113,27 +116,30 @@ npm start
 ## Troubleshooting
 
 ### "No repositories found"
+
 - Check that `GITHUB_TOKEN` is valid and has correct permissions
 - Check that `GITHUB_ORG` matches your organization name exactly
 - Verify your token has access to the organization
 
 ### "Documentation Not Available"
+
 - Ensure the repository has a `/docs` folder
 - Check that the folder contains at least one `.md` file
 - Verify the token has read access to the repository
 
 ### API Rate Limiting
+
 - GitHub API has rate limits (5000 requests/hour for authenticated requests)
-- Pustak uses caching to minimize API calls
+- DocIt uses caching to minimize API calls
 - If you hit rate limits, wait an hour or upgrade your GitHub plan
 
 ## Environment Variables Reference
 
-| Variable | Required | Description | Example |
-|----------|----------|-------------|---------|
-| `GITHUB_TOKEN` | Yes | GitHub Personal Access Token | `ghp_abc123...` |
-| `GITHUB_ORG` | Yes | GitHub organization name | `AuditorEnvelope` |
-| `NEXT_PUBLIC_BACKEND_URL` | No | DocAI backend URL (optional) | `http://localhost:8000` |
+| Variable                  | Required | Description                  | Example                 |
+| ------------------------- | -------- | ---------------------------- | ----------------------- |
+| `GITHUB_TOKEN`            | Yes      | GitHub Personal Access Token | `ghp_abc123...`         |
+| `GITHUB_ORG`              | Yes      | GitHub organization name     | `AuditorEnvelope`       |
+| `NEXT_PUBLIC_BACKEND_URL` | No       | DocAI backend URL (optional) | `http://localhost:8000` |
 
 ## Security Notes
 
@@ -152,6 +158,7 @@ npm start
 ## Support
 
 For issues or questions:
+
 1. Check this guide first
 2. Review the GitHub API documentation
 3. Check Next.js documentation for deployment issues

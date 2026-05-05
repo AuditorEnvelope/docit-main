@@ -8,38 +8,50 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: {
-    default: "Pustak - AI-Powered Documentation Platform",
-    template: "%s | Pustak"
+    default: "DocIt - AI-Powered Documentation Platform",
+    template: "%s | DocIt",
   },
-  description: "Beautiful, AI-powered documentation platform that automatically generates and maintains documentation for your repositories. Powered by DocAI.",
-  keywords: ["documentation", "docs", "gitbook", "ai", "markdown", "github", "automatic documentation", "code documentation"],
-  authors: [{ name: "Pustak Team" }],
-  creator: "Pustak",
-  publisher: "Pustak",
+  description:
+    "Beautiful, AI-powered documentation platform that automatically generates and maintains documentation for your repositories. Powered by DocAI.",
+  keywords: [
+    "documentation",
+    "docs",
+    "gitbook",
+    "ai",
+    "markdown",
+    "github",
+    "automatic documentation",
+    "code documentation",
+  ],
+  authors: [{ name: "DocIt Team" }],
+  creator: "DocIt",
+  publisher: "DocIt",
   robots: {
     index: true,
     follow: true,
     googleBot: {
       index: true,
       follow: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
     },
   },
   openGraph: {
-    type: 'website',
-    locale: 'en_US',
-    url: 'https://pustak.dev',
-    title: 'Pustak - AI-Powered Documentation Platform',
-    description: 'Beautiful, AI-powered documentation platform that automatically generates and maintains documentation for your repositories.',
-    siteName: 'Pustak',
+    type: "website",
+    locale: "en_US",
+    url: "https://DocIt.dev",
+    title: "DocIt - AI-Powered Documentation Platform",
+    description:
+      "Beautiful, AI-powered documentation platform that automatically generates and maintains documentation for your repositories.",
+    siteName: "DocIt",
   },
   twitter: {
-    card: 'summary_large_image',
-    title: 'Pustak - AI-Powered Documentation Platform',
-    description: 'Beautiful, AI-powered documentation platform that automatically generates and maintains documentation for your repositories.',
-    creator: '@pustak',
+    card: "summary_large_image",
+    title: "DocIt - AI-Powered Documentation Platform",
+    description:
+      "Beautiful, AI-powered documentation platform that automatically generates and maintains documentation for your repositories.",
+    creator: "@DocIt",
   },
 };
 
@@ -52,18 +64,18 @@ export default async function RootLayout({
   const hostHeader = headersList.get("host")?.toLowerCase() || "";
   const normalizedHost = hostHeader.replace(/:\d+$/, "");
   const docbookSuffix = (
-    process.env.NEXT_PUBLIC_DOCBOOK_DOMAIN || "docbook.site"
+    process.env.NEXT_PUBLIC_DOCBOOK_DOMAIN || "docbook.site" || "docit.in"
   )
     .toLowerCase()
     .replace(/^\.+/, "");
   const isDocbookHost = Boolean(
     docbookSuffix &&
-      (normalizedHost === docbookSuffix ||
-        normalizedHost.endsWith(`.${docbookSuffix}`))
+    (normalizedHost === docbookSuffix ||
+      normalizedHost.endsWith(`.${docbookSuffix}`)),
   );
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="scroll-smooth" suppressHydrationWarning>
       <body className={inter.className}>
         <Providers isDocbookHost={isDocbookHost}>{children}</Providers>
       </body>

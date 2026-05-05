@@ -395,7 +395,7 @@ async def fetch_file_from_github(
                 headers={
                     "Authorization": f"Bearer {github_token}",
                     "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Pustak-AI"
+                    "User-Agent": "DocIt-AI"
                 },
                 params={"ref": branch}
             )
@@ -455,7 +455,7 @@ async def commit_file_to_github(
                 headers={
                     "Authorization": f"Bearer {github_token}",
                     "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Pustak-AI"
+                    "User-Agent": "DocIt-AI"
                 }
             )
 
@@ -467,7 +467,7 @@ async def commit_file_to_github(
 
             user_data = user_response.json()
             author_name = user_data.get(
-                "name") or user_data.get("login", "Pustak User")
+                "name") or user_data.get("login", "DocIt User")
             author_email = user_data.get(
                 "email") or f"{user_data.get('id', '')}+{user_data.get('login', 'user')}@users.noreply.github.com"
 
@@ -478,7 +478,7 @@ async def commit_file_to_github(
                 headers={
                     "Authorization": f"Bearer {github_token}",
                     "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Pustak-AI"
+                    "User-Agent": "DocIt-AI"
                 },
                 params={"ref": request.branch}
             )
@@ -523,7 +523,7 @@ async def commit_file_to_github(
                 headers={
                     "Authorization": f"Bearer {github_token}",
                     "Accept": "application/vnd.github.v3+json",
-                    "User-Agent": "Pustak-AI"
+                    "User-Agent": "DocIt-AI"
                 },
                 json=commit_payload
             )

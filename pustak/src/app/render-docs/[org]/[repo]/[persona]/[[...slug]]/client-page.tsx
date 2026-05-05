@@ -7,7 +7,6 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import {
   Book,
-  
   Search,
   Menu,
   X,
@@ -46,7 +45,9 @@ const buildPublicHref = (repo: string, canonicalSlug: string[]): string => {
   if (!canonicalSlug.length) {
     return base;
   }
-  const segments = canonicalSlug.map((segment) => encodeURIComponent(segment.toLowerCase()));
+  const segments = canonicalSlug.map((segment) =>
+    encodeURIComponent(segment.toLowerCase()),
+  );
   return `${base}/${segments.join("/")}`;
 };
 
@@ -55,7 +56,9 @@ const titleizeSegment = (segment: string): string => {
   if (lower === "introduction") {
     return "Summary";
   }
-  return lower.replace(/[-_]/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  return lower
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
 const deriveCanonicalSlug = ({
@@ -81,7 +84,9 @@ const deriveCanonicalSlug = ({
     return personaNormalized === DEFAULT_PERSONA ? [] : [personaNormalized];
   }
 
-  const normalizedSegments = workingSegments.map((segment) => segment.trim()).filter(Boolean);
+  const normalizedSegments = workingSegments
+    .map((segment) => segment.trim())
+    .filter(Boolean);
   let personaPrefixed = normalizedSegments;
 
   const first = normalizedSegments[0]?.toLowerCase();
@@ -92,15 +97,13 @@ const deriveCanonicalSlug = ({
   }
 
   const docSegments = personaPrefixed.map((segment, index) =>
-    index === 0 ? segment.toLowerCase() : normalizeDocSegment(segment)
+    index === 0 ? segment.toLowerCase() : normalizeDocSegment(segment),
   );
 
   const withoutPersona = docSegments.slice(1);
 
   if (!withoutPersona.length || withoutPersona[0] === "introduction") {
-    return personaNormalized === DEFAULT_PERSONA
-      ? []
-      : [personaNormalized];
+    return personaNormalized === DEFAULT_PERSONA ? [] : [personaNormalized];
   }
 
   return personaNormalized === DEFAULT_PERSONA
@@ -109,15 +112,16 @@ const deriveCanonicalSlug = ({
 };
 
 const MarkdownRenderer = nextDynamic(
-  () => import("@/components/MarkdownRenderer").then((mod) => mod.MarkdownRenderer),
-  { ssr: false }
+  () =>
+    import("@/components/MarkdownRenderer").then((mod) => mod.MarkdownRenderer),
+  { ssr: false },
 );
 
 const backendEnvUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 if (!backendEnvUrl) {
   throw new Error(
-    "NEXT_PUBLIC_BACKEND_URL is not defined. Please set it in the environment before building the app."
+    "NEXT_PUBLIC_BACKEND_URL is not defined. Please set it in the environment before building the app.",
   );
 }
 
@@ -206,14 +210,23 @@ interface LiveDocsPageProps {
   };
 }
 
-export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) {
+export default function LiveDocsPage({
+  initialParams,
+}: LiveDocsPageProps = {}) {
   console.log("[Page] 🟢 RENDER-DOCS PAGE COMPONENT EXECUTED");
-  console.log("[Page] 🟢 URL Path Pattern: /render-docs/[org]/[repo]/[persona]/[...slug]");
+  console.log(
+    "[Page] 🟢 URL Path Pattern: /render-docs/[org]/[repo]/[persona]/[...slug]",
+  );
 
   // Use initialParams if provided (server-side), otherwise use useParams (client navigation)
   const clientParams = useParams();
   const params = initialParams || clientParams;
-  console.log("[Page] 🟢 Using params:", params, "from:", initialParams ? "server" : "client");
+  console.log(
+    "[Page] 🟢 Using params:",
+    params,
+    "from:",
+    initialParams ? "server" : "client",
+  );
 
   // STRICT EXTRACTION - NO GUESSING
   const org = params.org as string;
@@ -228,8 +241,8 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
     const raw = Array.isArray(rawSlug)
       ? rawSlug
       : typeof rawSlug === "string"
-      ? [rawSlug]
-      : [];
+        ? [rawSlug]
+        : [];
 
     const personaSegment = persona ? [persona] : [];
     const docsSlug = [...personaSegment, ...raw];
@@ -247,9 +260,8 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
   const initialApiSlug = routeMapping.docsMap.docPath.slice(2);
   const slugKey = initialApiSlug.join("/");
 
-  const [currentCanonicalSlug, setCurrentCanonicalSlug] = useState<string[]>(
-    initialCanonicalSlug
-  );
+  const [currentCanonicalSlug, setCurrentCanonicalSlug] =
+    useState<string[]>(initialCanonicalSlug);
 
   useEffect(() => {
     setCurrentCanonicalSlug(initialCanonicalSlug);
@@ -261,7 +273,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
 
   const manifestKey = useMemo(
     () => `${org ?? ""}::${repo ?? ""}::${persona ?? DEFAULT_PERSONA}`,
-    [org, repo, persona]
+    [org, repo, persona],
   );
 
   const fetchedManifestKeyRef = useRef<string | null>(null);
@@ -271,7 +283,9 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
 
   // Verify the migration worked - if repo is "docs", throw an error
   if (repo === "docs") {
-    throw new Error("MIGRATION FAILED: 'docs' should not be a repo name. The Next.js router is still using the wrong route.");
+    throw new Error(
+      "MIGRATION FAILED: 'docs' should not be a repo name. The Next.js router is still using the wrong route.",
+    );
   }
 
   const [manifest, setManifest] = useState<Manifest | null>(null);
@@ -362,14 +376,17 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       {
         level = "info",
         context,
-      }: { level?: "info" | "error"; context?: Record<string, unknown> | string } = {}
+      }: {
+        level?: "info" | "error";
+        context?: Record<string, unknown> | string;
+      } = {},
     ) => {
       const contextString =
         typeof context === "string"
           ? context
           : context
-          ? JSON.stringify(context, null, 2)
-          : undefined;
+            ? JSON.stringify(context, null, 2)
+            : undefined;
 
       const entry = {
         timestamp: new Date().toISOString(),
@@ -386,118 +403,132 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
         console.log("[LiveDocs Debug]", message, context);
       }
     },
-    []
+    [],
   );
 
-  const fetchManifest = useCallback(async (options: { force?: boolean } = {}) => {
-    const currentKey = manifestKey;
-    if (!options.force && fetchedManifestKeyRef.current === currentKey) {
-      console.log("[Page] 🟢 Manifest fetch skipped (duplicate key)", currentKey);
-      appendDebugLog("Manifest fetch skipped (duplicate key)", {
-        context: { cacheKey: currentKey },
-      });
-      return;
-    }
-
-    fetchedManifestKeyRef.current = currentKey;
-    try {
-      setLoading(true);
-      setError(null);
-
-      const manifestPath = isInternalPersona
-        ? "/docbook/live-manifest"
-        : "/docbook/live-manifest/public";
-      const url = `${apiBase}${manifestPath}?org_id=${encodeURIComponent(
-        org
-      )}&repo_id=${encodeURIComponent(repo)}&persona=${encodeURIComponent(
-        persona
-      )}`;
-
-      const headers: Record<string, string> = {};
-      if (isInternalPersona && token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-
-      console.log("[Page] 🟢 MANIFEST API CALL");
-      console.log("[Page] 🟢 URL:", url);
-      console.log("[Page] 🟢 Parameters:", {
-        org_id: org,
-        repo_id: repo,
-        persona: persona,
-      });
-      appendDebugLog("Manifest fetch started", {
-        context: { url, org, repo, persona, cacheKey: currentKey },
-      });
-
-      const response = await fetch(url, { headers });
-
-      if (!response.ok) {
-        appendDebugLog("Manifest fetch failed with non-OK status", {
-          level: "error",
-          context: { status: response.status, statusText: response.statusText, url },
+  const fetchManifest = useCallback(
+    async (options: { force?: boolean } = {}) => {
+      const currentKey = manifestKey;
+      if (!options.force && fetchedManifestKeyRef.current === currentKey) {
+        console.log(
+          "[Page] 🟢 Manifest fetch skipped (duplicate key)",
+          currentKey,
+        );
+        appendDebugLog("Manifest fetch skipped (duplicate key)", {
+          context: { cacheKey: currentKey },
         });
-        if (response.status === 401) {
-          setError("Authentication required to view internal documentation.");
-          throw new Error("Unauthorized");
-        }
-        if (response.status === 403) {
-          setError("You do not have access to the internal documentation for this organization.");
-          throw new Error("Forbidden");
-        }
-        throw new Error(`Failed to load manifest: ${response.statusText}`);
+        return;
       }
 
-      const data = await response.json();
-      setManifest(data);
-      if (Array.isArray(data.sidebar)) {
-        const expanded = new Set<string>();
-        const expandAll = (items: SidebarItem[]) => {
-          for (const item of items) {
-            if (item.type === "folder") {
-              expanded.add(item.id);
-              if (item.children?.length) {
-                expandAll(item.children as SidebarItem[]);
+      fetchedManifestKeyRef.current = currentKey;
+      try {
+        setLoading(true);
+        setError(null);
+
+        const manifestPath = isInternalPersona
+          ? "/docbook/live-manifest"
+          : "/docbook/live-manifest/public";
+        const url = `${apiBase}${manifestPath}?org_id=${encodeURIComponent(
+          org,
+        )}&repo_id=${encodeURIComponent(repo)}&persona=${encodeURIComponent(
+          persona,
+        )}`;
+
+        const headers: Record<string, string> = {};
+        if (isInternalPersona && token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
+        console.log("[Page] 🟢 MANIFEST API CALL");
+        console.log("[Page] 🟢 URL:", url);
+        console.log("[Page] 🟢 Parameters:", {
+          org_id: org,
+          repo_id: repo,
+          persona: persona,
+        });
+        appendDebugLog("Manifest fetch started", {
+          context: { url, org, repo, persona, cacheKey: currentKey },
+        });
+
+        const response = await fetch(url, { headers });
+
+        if (!response.ok) {
+          appendDebugLog("Manifest fetch failed with non-OK status", {
+            level: "error",
+            context: {
+              status: response.status,
+              statusText: response.statusText,
+              url,
+            },
+          });
+          if (response.status === 401) {
+            setError("Authentication required to view internal documentation.");
+            throw new Error("Unauthorized");
+          }
+          if (response.status === 403) {
+            setError(
+              "You do not have access to the internal documentation for this organization.",
+            );
+            throw new Error("Forbidden");
+          }
+          throw new Error(`Failed to load manifest: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        setManifest(data);
+        if (Array.isArray(data.sidebar)) {
+          const expanded = new Set<string>();
+          const expandAll = (items: SidebarItem[]) => {
+            for (const item of items) {
+              if (item.type === "folder") {
+                expanded.add(item.id);
+                if (item.children?.length) {
+                  expandAll(item.children as SidebarItem[]);
+                }
               }
             }
-          }
-        };
-        expandAll(data.sidebar);
-        setExpandedNodes(expanded);
+          };
+          expandAll(data.sidebar);
+          setExpandedNodes(expanded);
+        }
+        setError(null);
+        appendDebugLog("Manifest fetch succeeded", {
+          context: {
+            url,
+            sidebarItems: Array.isArray(data.sidebar) ? data.sidebar.length : 0,
+            navigationKeys: data.navigation
+              ? Object.keys(data.navigation).length
+              : 0,
+          },
+        });
+      } catch (err) {
+        console.error("Error fetching manifest:", err);
+        fetchedManifestKeyRef.current = null;
+        setError(
+          err instanceof Error ? err.message : "Failed to load documentation",
+        );
+        appendDebugLog("Manifest fetch failed", {
+          level: "error",
+          context:
+            err instanceof Error
+              ? { message: err.message, stack: err.stack }
+              : { message: String(err) },
+        });
+      } finally {
+        setLoading(false);
       }
-      setError(null);
-      appendDebugLog("Manifest fetch succeeded", {
-        context: {
-          url,
-          sidebarItems: Array.isArray(data.sidebar) ? data.sidebar.length : 0,
-          navigationKeys: data.navigation ? Object.keys(data.navigation).length : 0,
-        },
-      });
-    } catch (err) {
-      console.error("Error fetching manifest:", err);
-      fetchedManifestKeyRef.current = null;
-      setError(
-        err instanceof Error ? err.message : "Failed to load documentation"
-      );
-      appendDebugLog("Manifest fetch failed", {
-        level: "error",
-        context:
-          err instanceof Error
-            ? { message: err.message, stack: err.stack }
-            : { message: String(err) },
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    appendDebugLog,
-    apiBase,
-    isInternalPersona,
-    manifestKey,
-    org,
-    persona,
-    repo,
-    token,
-  ]);
+    },
+    [
+      appendDebugLog,
+      apiBase,
+      isInternalPersona,
+      manifestKey,
+      org,
+      persona,
+      repo,
+      token,
+    ],
+  );
 
   useEffect(() => {
     if (!org || !repo || !persona) {
@@ -523,11 +554,14 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
 
     if (isInternalPersona) {
       if (authLoading) {
-        console.log("[Page] ⏳ Waiting for auth state before fetching internal manifest");
+        console.log(
+          "[Page] ⏳ Waiting for auth state before fetching internal manifest",
+        );
         return;
       }
       if (!token) {
-        const message = "Sign in to view internal documentation for this repository.";
+        const message =
+          "Sign in to view internal documentation for this repository.";
         setError(message);
         setLoading(false);
         appendDebugLog("Manifest fetch blocked - no token", {
@@ -538,10 +572,11 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       }
     }
 
-    console.log(
-      "[Page] 🟢 useEffect triggered, fetching manifest with:",
-      { org, repo, persona }
-    );
+    console.log("[Page] 🟢 useEffect triggered, fetching manifest with:", {
+      org,
+      repo,
+      persona,
+    });
     appendDebugLog("Route params resolved", {
       context: {
         org,
@@ -577,7 +612,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       slugSegments: string[],
       displayPath?: string,
       sourceSegments?: string[],
-      options: { force?: boolean } = {}
+      options: { force?: boolean } = {},
     ) => {
       if (isInternalPersona) {
         if (authLoading) {
@@ -618,13 +653,18 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
         });
 
         const segmentsToUse =
-          sourceSegments && sourceSegments.length ? sourceSegments : slugSegments;
+          sourceSegments && sourceSegments.length
+            ? sourceSegments
+            : slugSegments;
 
         const contentKey = `${manifestKey}::${
           segmentsToUse.length ? segmentsToUse.join("/") : "SUMMARY.md"
         }`;
         if (!options.force && fetchedContentKeyRef.current === contentKey) {
-          console.log("[Page] 🟢 Content fetch skipped (duplicate key)", contentKey);
+          console.log(
+            "[Page] 🟢 Content fetch skipped (duplicate key)",
+            contentKey,
+          );
           setLoading(false);
           return;
         }
@@ -669,7 +709,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
           }
           if (response.status === 403) {
             setError(
-              "You do not have access to the internal documentation for this organization."
+              "You do not have access to the internal documentation for this organization.",
             );
             throw new Error("Forbidden");
           }
@@ -691,7 +731,9 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
           }
 
           const rawSegments =
-            sourceSegments && sourceSegments.length ? [...sourceSegments] : [...slugSegments];
+            sourceSegments && sourceSegments.length
+              ? [...sourceSegments]
+              : [...slugSegments];
 
           if (!rawSegments.length) {
             return `/${repo}/${personaNormalized}/SUMMARY`;
@@ -713,7 +755,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
             ? rawSegments.map((segment, index) =>
                 index === rawSegments.length - 1
                   ? segment.replace(/\.md$/i, "") || "SUMMARY"
-                  : segment
+                  : segment,
               )
             : ["SUMMARY"];
 
@@ -725,7 +767,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
             return manifestPath;
           }
           const match = Object.keys(manifest.navigation).find(
-            (key) => key.toLowerCase() === manifestPath.toLowerCase()
+            (key) => key.toLowerCase() === manifestPath.toLowerCase(),
           );
           return match ?? manifestPath;
         })();
@@ -770,7 +812,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       persona,
       repo,
       token,
-    ]
+    ],
   );
 
   useEffect(() => {
@@ -778,22 +820,22 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
 
     const loadIntroduction = () => {
       const flattened = manifest.sidebar.flatMap((item) =>
-        item.type === "folder" && item.children ? item.children : [item]
+        item.type === "folder" && item.children ? item.children : [item],
       );
       const summaryItem = flattened.find(
-        (item) => item.type === "file" && item.name.toLowerCase() === "summary"
+        (item) => item.type === "file" && item.name.toLowerCase() === "summary",
       );
       const sourceSegments = summaryItem?.source_path
         ? summaryItem.source_path.split("/").filter(Boolean).slice(1)
         : [persona, "SUMMARY.md"];
-      fetchContent(sourceSegments, summaryItem?.path, sourceSegments).catch((err) =>
-        console.error("[Page] 🟥 Default content fetch failed:", err)
+      fetchContent(sourceSegments, summaryItem?.path, sourceSegments).catch(
+        (err) => console.error("[Page] 🟥 Default content fetch failed:", err),
       );
     };
 
     if (initialApiSlug.length) {
       fetchContent(initialApiSlug).catch((err) =>
-        console.error("[Page] 🟥 Content fetch failed:", err)
+        console.error("[Page] 🟥 Content fetch failed:", err),
       );
     } else {
       loadIntroduction();
@@ -822,7 +864,9 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
         }
 
         const sortedByPosition = [...entries].sort(
-          (a, b) => Math.abs(a.boundingClientRect.top) - Math.abs(b.boundingClientRect.top)
+          (a, b) =>
+            Math.abs(a.boundingClientRect.top) -
+            Math.abs(b.boundingClientRect.top),
         );
 
         if (sortedByPosition[0]?.target?.id) {
@@ -832,7 +876,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       {
         rootMargin: "-120px 0px -60% 0px",
         threshold: [0, 0.1, 0.25, 0.5],
-      }
+      },
     );
 
     headings.forEach((heading) => {
@@ -866,7 +910,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
   const fetchContentByPath = async (
     path: string,
     pushHistory = true,
-    sourcePath?: string
+    sourcePath?: string,
   ) => {
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     const segments = normalizedPath.split("/").filter(Boolean);
@@ -945,7 +989,9 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
               </div>
             </button>
             {isOpen && item.children && (
-              <div className="mt-1">{renderSidebarItems(item.children, depth + 1)}</div>
+              <div className="mt-1">
+                {renderSidebarItems(item.children, depth + 1)}
+              </div>
             )}
           </div>
         );
@@ -957,17 +1003,15 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       return (
         <button
           key={item.id}
-          onClick={() =>
-            fetchContentByPath(item.path, true, item.source_path)
-          }
+          onClick={() => fetchContentByPath(item.path, true, item.source_path)}
           className={`mb-1 flex w-full items-center gap-2 rounded-lg py-2 pr-3 text-sm transition-colors ${
             isActive
               ? isLight
                 ? "bg-indigo-50 text-indigo-600 font-medium"
                 : "bg-indigo-500/10 text-indigo-300 font-medium"
               : isLight
-              ? "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
-              : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                ? "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
           }`}
           style={{ paddingLeft: `${itemPadding}px` }}
         >
@@ -995,7 +1039,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       return items.flatMap((item) =>
         item.type === "folder" && item.children
           ? [item, ...flatten(item.children)]
-          : [item]
+          : [item],
       );
     };
     return flatten(manifest.sidebar).filter((item) => item.type === "file");
@@ -1031,11 +1075,11 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
     const relevantSegments = currentCanonicalSlug.length
       ? currentCanonicalSlug
       : personaNormalized === DEFAULT_PERSONA
-      ? []
-      : [personaNormalized];
+        ? []
+        : [personaNormalized];
 
     const breadcrumbSegments = relevantSegments.filter(
-      (segment) => segment !== personaNormalized
+      (segment) => segment !== personaNormalized,
     );
 
     const docBreadcrumbs = breadcrumbSegments.map((segment, index) => {
@@ -1078,13 +1122,18 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
         <div className="text-center">
           <h1 className="text-2xl font-semibold">Sign in required</h1>
           <p className="mt-2 max-w-sm text-sm text-slate-400">
-            Log in with your GitHub account that belongs to the <span className="font-medium">{org}</span> organization to view internal documentation for <span className="font-medium">{repo}</span>.
+            Log in with your GitHub account that belongs to the{" "}
+            <span className="font-medium">{org}</span> organization to view
+            internal documentation for{" "}
+            <span className="font-medium">{repo}</span>.
           </p>
         </div>
         <Link
           href={`/login?redirect=${encodeURIComponent(
             `/render-docs/${org}/${repo}/${persona}` +
-              (initialCanonicalSlug.length ? `/${initialCanonicalSlug.join("/")}` : "")
+              (initialCanonicalSlug.length
+                ? `/${initialCanonicalSlug.join("/")}`
+                : ""),
           )}`}
           className="inline-flex items-center rounded-full bg-slate-100 px-6 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white"
         >
@@ -1142,9 +1191,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
       </div>
 
       {showDebugPanel && (
-        <div
-          className="fixed inset-x-0 bottom-0 z-40 max-h-80 overflow-y-auto border-t border-slate-700/60 bg-slate-900/90 p-4 text-sm text-slate-100 backdrop-blur"
-        >
+        <div className="fixed inset-x-0 bottom-0 z-40 max-h-80 overflow-y-auto border-t border-slate-700/60 bg-slate-900/90 p-4 text-sm text-slate-100 backdrop-blur">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">
               Debug Logs
@@ -1195,7 +1242,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           } ${
             isLight
-              ? "border-slate-300 bg-white" 
+              ? "border-slate-300 bg-white"
               : "border-slate-800 bg-slate-900"
           }`}
         >
@@ -1271,7 +1318,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
                     isLight ? "text-indigo-600" : "text-indigo-300"
                   }`}
                 >
-                  Pustak
+                  DocIt
                 </p>
                 <p
                   className={`mt-3 text-xs leading-relaxed ${
@@ -1293,7 +1340,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
               isLight
                 ? "border-slate-300 bg-white/85"
                 : "border-slate-800 bg-slate-900/80"
-              }`}
+            }`}
           >
             <div className="flex flex-col gap-3 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-1 items-center gap-4">
@@ -1335,8 +1382,8 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
                                 ? "text-base font-semibold text-slate-900"
                                 : "text-base font-semibold text-white"
                               : isLight
-                              ? "text-xs font-semibold uppercase tracking-[0.3em] text-slate-500 hover:text-slate-800"
-                              : "text-xs font-semibold uppercase tracking-[0.3em] text-slate-500/80 hover:text-slate-200"
+                                ? "text-xs font-semibold uppercase tracking-[0.3em] text-slate-500 hover:text-slate-800"
+                                : "text-xs font-semibold uppercase tracking-[0.3em] text-slate-500/80 hover:text-slate-200"
                           }`}
                         >
                           {isLast ? crumb.label : crumb.label}
@@ -1444,7 +1491,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
                                 fetchContentByPath(
                                   neighbors.previous!.path,
                                   true,
-                                  neighbors.previous!.source_path
+                                  neighbors.previous!.source_path,
                                 )
                               }
                               className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
@@ -1477,7 +1524,7 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
                                 fetchContentByPath(
                                   neighbors.next!.path,
                                   true,
-                                  neighbors.next!.source_path
+                                  neighbors.next!.source_path,
                                 )
                               }
                               className={`flex flex-col items-end gap-1 rounded-lg border p-3 text-right transition-colors ${
@@ -1511,7 +1558,9 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
                       <aside className="hidden w-64 shrink-0 lg:mt-14 lg:block">
                         <div
                           className={`sticky top-28 rounded-2xl border p-4 text-sm ${
-                            isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-900"
+                            isLight
+                              ? "border-slate-200 bg-white"
+                              : "border-slate-800 bg-slate-900"
                           }`}
                         >
                           <h3
@@ -1523,10 +1572,13 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
                           </h3>
                           <ul className="mt-4 flex flex-col gap-2">
                             {headings.map((heading) => {
-                              const indentClass = TOC_INDENT_CLASSES[Math.min(
-                                heading.level - 1,
-                                TOC_INDENT_CLASSES.length - 1
-                              )];
+                              const indentClass =
+                                TOC_INDENT_CLASSES[
+                                  Math.min(
+                                    heading.level - 1,
+                                    TOC_INDENT_CLASSES.length - 1,
+                                  )
+                                ];
                               const isActive = heading.id === activeHeadingId;
 
                               return (
@@ -1539,8 +1591,8 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
                                           ? "bg-indigo-50 text-indigo-700"
                                           : "bg-indigo-500/20 text-indigo-200"
                                         : isLight
-                                        ? "text-slate-600 hover:bg-slate-100"
-                                        : "text-slate-400 hover:bg-slate-800"
+                                          ? "text-slate-600 hover:bg-slate-100"
+                                          : "text-slate-400 hover:bg-slate-800"
                                     }`}
                                   >
                                     {heading.text}
@@ -1613,8 +1665,12 @@ export default function LiveDocsPage({ initialParams }: LiveDocsPageProps = {}) 
                       }}
                       className={`flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"}`}
                     >
-                      <FileText className={`h-4 w-4 shrink-0 ${isLight ? "text-slate-500" : "text-slate-400"}`} />
-                      <span className={`font-medium ${isLight ? "text-slate-900" : "text-white"}`}>
+                      <FileText
+                        className={`h-4 w-4 shrink-0 ${isLight ? "text-slate-500" : "text-slate-400"}`}
+                      />
+                      <span
+                        className={`font-medium ${isLight ? "text-slate-900" : "text-white"}`}
+                      >
                         {item.name.replace(/-/g, " ").replace(/_/g, " ")}
                       </span>
                     </button>

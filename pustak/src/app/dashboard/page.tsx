@@ -32,6 +32,37 @@ import {
 	Sparkles,
 	X,
 } from "lucide-react";
+import { getBackendApiV1Base } from "@/lib/api";
+import {
+	normalizeRepoLookupKey,
+	useRepositoriesRecentActivity,
+} from "@/hooks/useRepositoriesRecentActivity";
+import { RepoActivitySection } from "@/components/RepoActivitySection";
+
+const BACKEND_URL =
+	process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
+interface RepositorySummary {
+	full_name?: string;
+	name?: string;
+	description?: string | null;
+	default_branch?: string | null;
+	tracked_branch?: string | null;
+	tracked_branch_source?: string | null;
+	docbook_tracked_branch?: string | null;
+	doc_persona?: string | null;
+	last_documented_at?: string | null;
+	pending_reviews?: number | null;
+	html_url?: string | null;
+}
+
+/** DocIt staging repo per org (`DocIt-docbook-<org>`); omit from overview tiles. */
+function isDocitManagedDocbookRepo(repo: RepositorySummary): boolean {
+	const full = (repo.full_name || repo.name || "").trim();
+	if (!full) return false;
+	const slug = full.includes("/") ? (full.split("/").pop() ?? full) : full;
+	return slug.toLowerCase().startsWith("docit-docbook-");
+}
 
 // Onboarding Guard component that checks if all required components are set up
 function OnboardingGuard({ children }: { children: React.ReactNode }) {
@@ -69,7 +100,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 
 		const interval = setInterval(() => {
 			setProgressIndex(
-				(prev) => (prev + 1) % ONBOARDING_PROGRESS_MESSAGES.length
+				(prev) => (prev + 1) % ONBOARDING_PROGRESS_MESSAGES.length,
 			);
 		}, 1800);
 
@@ -105,7 +136,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 					.map((org: any) =>
 						typeof org === "string"
 							? org
-							: org?.login || org?.org || org?.name || ""
+							: org?.login || org?.org || org?.name || "",
 					)
 					.filter(Boolean);
 
@@ -175,7 +206,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 						} catch (error) {
 							console.error(
 								`Failed to load docbook status for ${orgId}`,
-								error
+								error,
 							);
 						}
 
@@ -198,7 +229,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 						}
 
 						summaries[orgId] = summary;
-					})
+					}),
 				);
 
 				setOrgSummaries(summaries);
@@ -231,7 +262,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 				}
 			}
 		},
-		[token]
+		[token],
 	);
 
 	// Initial check when component mounts
@@ -322,15 +353,15 @@ export default function DashboardPage() {
 	const filteredRepositories = useMemo(() => {
 		const query = repoSearchQuery.trim().toLowerCase();
 		if (!query) {
-			return repositories;
+			return userFacingRepositories;
 		}
 
-		return repositories.filter((repo) => {
+		return userFacingRepositories.filter((repo) => {
 			const fullName = (repo.full_name || repo.name || "").toLowerCase();
 			const description = (repo.description || "").toLowerCase();
 			return fullName.includes(query) || description.includes(query);
 		});
-	}, [repoSearchQuery, repositories]);
+	}, [repoSearchQuery, userFacingRepositories]);
 
 	// Count of repositories that are actually displayed (excludes docbook repos)
 	const displayableRepoCount = useMemo(() => {
@@ -344,6 +375,13 @@ export default function DashboardPage() {
 	}, [repositories]);
 
 	const reviewButtonDisabled = pendingReviewsDisabled || !!pendingReviewsError;
+
+	const documentedCount = useMemo(
+		() =>
+			userFacingRepositories.filter((repo) => Boolean(repo.last_documented_at))
+				.length,
+		[userFacingRepositories],
+	);
 
 	const formatPersona = (persona?: string | null) => {
 		if (!persona) return "internal";
@@ -496,7 +534,7 @@ export default function DashboardPage() {
 										{loadingRepos ? (
 											<Loader2 className="h-6 w-6 animate-spin text-blue-300" />
 										) : (
-											displayableRepoCount
+											userFacingRepositories.length
 										)}
 									</p>
 									<p className="text-sm text-slate-400">
@@ -550,7 +588,7 @@ export default function DashboardPage() {
 													router.push("/pending-reviews");
 												}
 											}}
-											className={`inline-flex items-center gap-1.5 rounded-full border border-purple-400/50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition ${
+											className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full border border-purple-400/50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition ${
 												reviewButtonDisabled
 													? "cursor-not-allowed bg-purple-500/10 text-purple-200/60"
 													: "bg-purple-500/20 text-purple-50 hover:bg-purple-500/30"
@@ -671,6 +709,11 @@ export default function DashboardPage() {
 										Search, filter, and trigger doc generation directly from
 										these tiles.
 									</p>
+									{activityBatchError ? (
+										<p className="mt-2 text-[11px] text-amber-400/95">
+											Commit activity feed paused: {activityBatchError}
+										</p>
+									) : null}
 								</div>
 
 								<div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
@@ -744,6 +787,19 @@ export default function DashboardPage() {
 									<div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 p-6 text-sm text-rose-200">
 										{errorMessage}
 									</div>
+								) : !userFacingRepositories.length ? (
+									<div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/70 px-6 py-12 text-center text-slate-300">
+										<p className="text-lg font-semibold text-white">
+											{repositories.length > 0
+												? "No application repositories to show"
+												: "No repositories found for this organization"}
+										</p>
+										<p className="text-sm text-slate-400">
+											{repositories.length > 0
+												? "DocIt docbook repos are hidden here. Add or connect other repositories to see them in this overview."
+												: "Modify filters or update GitHub permissions to include more repositories."}
+										</p>
+									</div>
 								) : !filteredRepositories.length ? (
 									<div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/70 px-6 py-12 text-center text-slate-300">
 										<p className="text-lg font-semibold text-white">
@@ -756,265 +812,236 @@ export default function DashboardPage() {
 									</div>
 								) : (
 									<div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-										{filteredRepositories
-											.filter((repo) => {
-												const fullName = (
-													repo.full_name ||
-													repo.name ||
-													""
-												).toLowerCase();
-												// Filter out docbook repositories
-												return (
-													!fullName.includes("/pustak-docbook-") &&
-													!fullName.includes("pustak-docbook")
-												);
-											})
-											.map((repo) => {
-												const fullName = repo.full_name || repo.name || "";
-												const displayName =
-													repo.name || fullName.split("/").pop() || fullName;
-												const trackedBranch =
-													repo.tracked_branch ||
-													repo.docbook_tracked_branch ||
-													repo.default_branch ||
-													"main";
-												const pendingReviews = repo.pending_reviews || 0;
-												const hasDocs = Boolean(repo.last_documented_at);
-												const isDocbookRepo = fullName
-													.toLowerCase()
-													.includes("/pustak-docbook-");
-												const docbookNotice =
-													"This is your docbook repository where generated documentation lives. Docs are already stored here.";
-												const repoShortName =
-													fullName.split("/")[1] || displayName;
-												const docsHref = (() => {
-													if (!docbookRepo) {
-														return `/repo/${fullName}`;
-													}
+										{filteredRepositories.map((repo) => {
+											const fullName = repo.full_name || repo.name || "";
+											const displayName =
+												repo.name || fullName.split("/").pop() || fullName;
+											const trackedBranch =
+												repo.tracked_branch ||
+												repo.docbook_tracked_branch ||
+												repo.default_branch ||
+												"main";
+											const pendingReviews = repo.pending_reviews || 0;
+											const hasDocs = Boolean(repo.last_documented_at);
+											const isDocbookRepo = isDocitManagedDocbookRepo(repo);
+											const docbookNotice =
+												"This is your docbook repository where generated documentation lives. Docs are already stored here.";
+											const repoShortName =
+												fullName.split("/")[1] || displayName;
+											const docsHref = (() => {
+												if (!docbookRepo) {
+													return `/repo/${fullName}`;
+												}
 
-													const { canonicalSlug } = mapDocsRouteToRepoSlug({
-														org: fullName.split("/")[0] || "",
-														repo: repoShortName,
-														slug: ["introduction"],
-													});
+												const { canonicalSlug } = mapDocsRouteToRepoSlug({
+													org: fullName.split("/")[0] || "",
+													repo: repoShortName,
+													slug: ["introduction"],
+												});
 
-													const slugPath = canonicalSlug.join("/");
-													return `/docs/${
-														fullName.split("/")[0]
-													}/${repoShortName}/${slugPath}`;
-												})();
-												const viewDocsDisabled = !docbookRepo;
+												const slugPath = canonicalSlug.join("/");
+												return `/docs/${fullName.split("/")[0]}/${repoShortName}/${slugPath}`;
+											})();
+											const viewDocsDisabled = !docbookRepo;
 
-												// Generate mock activity data for visualization
-												const activityData = Array.from({ length: 14 }, () =>
-													Math.floor(Math.random() * 100)
-												);
-												const maxActivity = Math.max(...activityData, 1);
+											const actKey = normalizeRepoLookupKey(fullName);
+											const actEntry = activityByRepo[actKey];
+											const activityCommits = actEntry?.commits ?? [];
+											const activityBranch = actEntry?.branch ?? trackedBranch;
+											const activityRowError = actEntry?.error ?? null;
+											const showNewPush = Boolean(newPushByRepo[actKey]);
 
-												const cardGradient = isDocbookRepo
-													? "from-blue-500/20 via-slate-900/70 to-slate-900/60"
-													: "from-slate-900/80 via-slate-900/70 to-slate-900/60";
+											const cardGradient = isDocbookRepo
+												? "from-blue-500/20 via-slate-900/70 to-slate-900/60"
+												: "from-slate-900/80 via-slate-900/70 to-slate-900/60";
 
-												return (
-													<div
-														key={fullName}
-														className={`group relative flex min-h-[320px] flex-col overflow-hidden rounded-xl border bg-gradient-to-br shadow-lg transition-all duration-300 ${
-															isDocbookRepo
-																? "border-blue-500/30 from-blue-950/40 via-slate-900/60 to-slate-900/40 hover:border-blue-500/50 hover:shadow-blue-500/20"
-																: "border-slate-800/60 from-slate-900/70 via-slate-900/60 to-slate-900/50 hover:border-slate-700/70 hover:shadow-slate-700/10"
-														}`}
-													>
-														{/* Ambient glow effects */}
-														<div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100">
-															<div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.15),_transparent_50%)]" />
-															<div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_rgba(16,185,129,0.1),_transparent_50%)]" />
-														</div>
+											return (
+												<div
+													key={fullName}
+													className={`group relative flex min-h-[320px] flex-col overflow-hidden rounded-xl border bg-gradient-to-br shadow-lg transition-all duration-300 ${
+														isDocbookRepo
+															? "border-blue-500/30 from-blue-950/40 via-slate-900/60 to-slate-900/40 hover:border-blue-500/50 hover:shadow-blue-500/20"
+															: "border-slate-800/60 from-slate-900/70 via-slate-900/60 to-slate-900/50 hover:border-slate-700/70 hover:shadow-slate-700/10"
+													}`}
+												>
+													{/* Ambient glow effects */}
+													<div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100">
+														<div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.15),_transparent_50%)]" />
+														<div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_rgba(16,185,129,0.1),_transparent_50%)]" />
+													</div>
 
-														<div className="relative flex h-full flex-col p-4">
-															{/* Header */}
-															<div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-slate-800/50">
-																<div className="flex-1 min-w-0">
-																	<div className="flex items-center gap-2 mb-1">
-																		<h3 className="text-lg font-bold text-white truncate">
-																			{displayName}
-																		</h3>
-																		{hasDocs && (
-																			<div className="flex-shrink-0 flex items-center gap-1">
-																				<div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-																				<span className="text-[9px] text-emerald-400 font-medium">
-																					LIVE
-																				</span>
-																			</div>
-																		)}
-																	</div>
-																	<p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 truncate">
-																		{fullName}
-																	</p>
+													<div className="relative flex h-full flex-col p-4">
+														{/* Header */}
+														<div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-slate-800/50">
+															<div className="flex-1 min-w-0">
+																<div className="flex items-center gap-2 mb-1">
+																	<h3 className="text-lg font-bold text-white truncate">
+																		{displayName}
+																	</h3>
+																	{hasDocs && (
+																		<div className="flex-shrink-0 flex items-center gap-1">
+																			<div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+																			<span className="text-[9px] text-emerald-400 font-medium">
+																				LIVE
+																			</span>
+																		</div>
+																	)}
 																</div>
-																<div className="flex items-center gap-1.5 flex-shrink-0">
-																	<span className="inline-flex items-center gap-1 rounded-full border border-blue-400/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-200">
-																		<GitBranch className="h-2.5 w-2.5" />
-																		{trackedBranch}
-																	</span>
-																	<button
-																		onClick={() => {
-																			const [org, repo] = fullName.split("/");
-																			if (org && repo) {
-																				const hostname =
-																					window.location.hostname;
-																				const isSubdomain =
-																					hostname.split(".").length > 2 &&
-																					!hostname.startsWith("www.") &&
-																					!hostname.startsWith("localhost");
-
-																				if (isSubdomain) {
-																					const domainParts =
-																						hostname.split(".");
-																					const mainDomain = domainParts
-																						.slice(1)
-																						.join(".");
-																					const protocol =
-																						window.location.protocol;
-																					const settingsUrl = `${protocol}//${mainDomain}/repo/settings/${org}/${repo}`;
-																					window.location.href = settingsUrl;
-																				} else {
-																					router.push(
-																						`/repo/settings/${org}/${repo}`
-																					);
-																				}
-																			}
-																		}}
-																		className="p-1 rounded-md hover:bg-slate-800/60 transition-all cursor-pointer"
-																		title="Repository Settings"
-																	>
-																		<Settings className="h-3.5 w-3.5 text-slate-400 hover:text-white transition-colors" />
-																	</button>
-																</div>
-															</div>
-
-															{/* Metadata Grid */}
-															<div className="mb-3 grid grid-cols-2 gap-3">
-																<div className="rounded-lg bg-slate-800/30 border border-slate-700/30 px-3 py-2">
-																	<p className="text-slate-500 text-[9px] uppercase tracking-wider mb-1">
-																		Persona
-																	</p>
-																	<p className="text-white font-semibold text-xs">
-																		{formatPersona(repo.doc_persona)}
-																	</p>
-																</div>
-																<div className="rounded-lg bg-slate-800/30 border border-slate-700/30 px-3 py-2">
-																	<p className="text-slate-500 text-[9px] uppercase tracking-wider mb-1">
-																		Last documented
-																	</p>
-																	<p className="text-white font-semibold text-[10px]">
-																		{formatDateTime(repo.last_documented_at)}
-																	</p>
-																</div>
-															</div>
-
-															{/* Activity Chart */}
-															<div className="mb-4">
-																<p className="text-slate-500 text-[9px] uppercase tracking-wider mb-2">
-																	Activity (14 days)
+																<p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 truncate">
+																	{fullName}
 																</p>
-																<div className="flex items-end justify-between gap-1 h-12 rounded-lg bg-slate-900/50 border border-slate-800/40 p-2">
-																	{activityData.map((value, idx) => {
-																		const height = Math.max(
-																			(value / maxActivity) * 100,
-																			8
-																		);
-																		const isHighlight = idx === 8;
-																		return (
-																			<div
-																				key={idx}
-																				className={`flex-1 rounded-sm transition-all hover:opacity-80 ${
-																					isHighlight
-																						? "bg-blue-500 shadow-lg shadow-blue-500/50"
-																						: "bg-slate-700/50 hover:bg-slate-600/50"
-																				}`}
-																				style={{ height: `${height}%` }}
-																				title={`Activity: ${value}`}
-																			/>
-																		);
-																	})}
-																</div>
 															</div>
-
-															{isDocbookRepo && (
-																<div className="rounded-lg border border-blue-400/30 bg-blue-500/10 backdrop-blur-sm px-3 py-2 text-[10px] text-blue-100 mb-3">
-																	<div className="flex items-start gap-2">
-																		<BookOpen className="h-3 w-3 flex-shrink-0 mt-0.5 text-blue-300" />
-																		<span>{docbookNotice}</span>
-																	</div>
-																</div>
-															)}
-
-															{/* Action Buttons - 3 Buttons in Row */}
-															<div className="mt-auto grid grid-cols-3 gap-1.5">
-																{/* View Docs - Blue Transparent */}
+															<div className="flex items-center gap-1.5 flex-shrink-0">
+																<span className="inline-flex items-center gap-1 rounded-full border border-blue-400/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-200">
+																	<GitBranch className="h-2.5 w-2.5" />
+																	{trackedBranch}
+																</span>
 																<button
 																	onClick={() => {
-																		if (viewDocsDisabled) return;
-																		router.push(docsHref);
-																	}}
-																	disabled={viewDocsDisabled}
-																	className={`group relative col-span-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-semibold transition-all overflow-hidden ${
-																		viewDocsDisabled
-																			? "cursor-not-allowed bg-slate-800/30 text-slate-500 border border-slate-700/40"
-																			: "cursor-pointer bg-blue-500/15 text-blue-300 border border-blue-500/25 hover:bg-blue-500/25 hover:border-blue-500/40 hover:shadow-lg hover:shadow-blue-500/20"
-																	}`}
-																>
-																	{!viewDocsDisabled && (
-																		<div className="absolute inset-0 bg-gradient-to-r from-blue-400/0 via-blue-400/10 to-blue-400/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
-																	)}
-																	<BookOpen className="h-3.5 w-3.5 relative z-10" />
-																	<span className="hidden xl:inline relative z-10">
-																		View docs
-																	</span>
-																</button>
+																		const [org, repo] = fullName.split("/");
+																		if (org && repo) {
+																			const hostname = window.location.hostname;
+																			const isSubdomain =
+																				hostname.split(".").length > 2 &&
+																				!hostname.startsWith("www.") &&
+																				!hostname.startsWith("localhost");
 
-																{/* Regenerate Docs - Green Transparent */}
-																<div className="col-span-2">
-																	<GenerateDocsButton
-																		repoName={displayName}
-																		repoFullName={fullName}
-																		hasDocsFolder={hasDocs}
-																		onGenerationComplete={loadRepositories}
-																		disabled={isDocbookRepo}
-																		disabledReason={
-																			isDocbookRepo ? "" : undefined
-																		}
-																		fullWidth
-																	/>
-																</div>
-
-																{/* Publish to Live - Yellow Transparent - Full Width */}
-																{!isDocbookRepo && (
-																	<div className="col-span-3">
-																		<PublishToLiveButton
-																			repoFullName={fullName}
-																			orgId={selectedOrg}
-																			repoId={
-																				fullName.split("/")[1] || displayName
+																			if (isSubdomain) {
+																				const domainParts = hostname.split(".");
+																				const mainDomain = domainParts
+																					.slice(1)
+																					.join(".");
+																				const protocol =
+																					window.location.protocol;
+																				const settingsUrl = `${protocol}//${mainDomain}/repo/settings/${org}/${repo}`;
+																				window.location.href = settingsUrl;
+																			} else {
+																				router.push(
+																					`/repo/settings/${org}/${repo}`,
+																				);
 																			}
-																			hasPublished={false}
-																			lastPublishedAt={null}
-																			onPublishComplete={loadRepositories}
-																			fullWidth
-																			disabled={!hasDocs}
-																		/>
-																		{!hasDocs && (
-																			<p className="mt-1 text-[10px] text-amber-400/70 text-center">
-																				Generate docs first to publish
-																			</p>
-																		)}
-																	</div>
-																)}
+																		}
+																	}}
+																	className="p-1 rounded-md hover:bg-slate-800/60 transition-all cursor-pointer"
+																	title="Repository Settings"
+																>
+																	<Settings className="h-3.5 w-3.5 text-slate-400 hover:text-white transition-colors" />
+																</button>
 															</div>
 														</div>
+
+														{/* Metadata Grid */}
+														<div className="mb-3 grid grid-cols-2 gap-3">
+															<div className="rounded-lg bg-slate-800/30 border border-slate-700/30 px-3 py-2">
+																<p className="text-slate-500 text-[9px] uppercase tracking-wider mb-1">
+																	Persona
+																</p>
+																<p className="text-white font-semibold text-xs">
+																	{formatPersona(repo.doc_persona)}
+																</p>
+															</div>
+															<div className="rounded-lg bg-slate-800/30 border border-slate-700/30 px-3 py-2">
+																<p className="text-slate-500 text-[9px] uppercase tracking-wider mb-1">
+																	Last documented
+																</p>
+																<p className="text-white font-semibold text-[10px]">
+																	{formatDateTime(repo.last_documented_at)}
+																</p>
+															</div>
+														</div>
+
+														<RepoActivitySection
+															fullName={fullName}
+															branch={activityBranch}
+															commits={activityCommits}
+															loading={
+																activityLoading && activityCommits.length === 0
+															}
+															fetchError={
+																activityBatchError ||
+																(activityRowError &&
+																activityCommits.length === 0
+																	? activityRowError
+																	: null)
+															}
+															newPush={showNewPush}
+														/>
+
+														{isDocbookRepo && (
+															<div className="rounded-lg border border-blue-400/30 bg-blue-500/10 backdrop-blur-sm px-3 py-2 text-[10px] text-blue-100 mb-3">
+																<div className="flex items-start gap-2">
+																	<BookOpen className="h-3 w-3 flex-shrink-0 mt-0.5 text-blue-300" />
+																	<span>{docbookNotice}</span>
+																</div>
+															</div>
+														)}
+
+														{/* Action Buttons - 3 Buttons in Row */}
+														<div className="mt-auto grid grid-cols-3 gap-1.5">
+															{/* View Docs - Blue Transparent */}
+															<button
+																onClick={() => {
+																	if (viewDocsDisabled) return;
+																	router.push(docsHref);
+																}}
+																disabled={viewDocsDisabled}
+																className={`group relative col-span-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-semibold transition-all overflow-hidden ${
+																	viewDocsDisabled
+																		? "cursor-not-allowed bg-slate-800/30 text-slate-500 border border-slate-700/40"
+																		: "cursor-pointer bg-blue-500/15 text-blue-300 border border-blue-500/25 hover:bg-blue-500/25 hover:border-blue-500/40 hover:shadow-lg hover:shadow-blue-500/20"
+																}`}
+															>
+																{!viewDocsDisabled && (
+																	<div className="absolute inset-0 bg-gradient-to-r from-blue-400/0 via-blue-400/10 to-blue-400/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+																)}
+																<BookOpen className="h-3.5 w-3.5 relative z-10" />
+																<span className="hidden xl:inline relative z-10">
+																	View docs
+																</span>
+															</button>
+
+															{/* Regenerate Docs - Green Transparent */}
+															<div className="col-span-2">
+																<GenerateDocsButton
+																	repoName={displayName}
+																	repoFullName={fullName}
+																	hasDocsFolder={hasDocs}
+																	onGenerationComplete={loadRepositories}
+																	disabled={isDocbookRepo}
+																	disabledReason={
+																		isDocbookRepo ? "" : undefined
+																	}
+																	fullWidth
+																/>
+															</div>
+
+															{/* Publish to Live - Yellow Transparent - Full Width */}
+															{!isDocbookRepo && (
+																<div className="col-span-3">
+																	<PublishToLiveButton
+																		repoFullName={fullName}
+																		orgId={selectedOrg}
+																		repoId={
+																			fullName.split("/")[1] || displayName
+																		}
+																		hasPublished={false}
+																		lastPublishedAt={null}
+																		onPublishComplete={loadRepositories}
+																		fullWidth
+																		disabled={!hasDocs}
+																	/>
+																	{!hasDocs && (
+																		<p className="mt-1 text-[10px] text-amber-400/70 text-center">
+																			Generate docs first to publish
+																		</p>
+																	)}
+																</div>
+															)}
+														</div>
 													</div>
-												);
-											})}
+												</div>
+											);
+										})}
 									</div>
 								)}
 							</div>
