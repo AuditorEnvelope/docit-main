@@ -138,7 +138,7 @@ Your task: Generate First-Principles Documentation that reveals the SOUL of this
 📋 PROJECT CONTEXT
 ═══════════════════════════════════════════════════════════════════════════════════════════
 Repository: {display_name}
-Persona: {persona.upper()} {"(Surgeon Manual - Document the guts)" if persona == "internal" else "(Owner Manual - Document the surface)"}
+Persona: {persona.upper()} {"(Surgeon's Manual - Exhaustive internals for onboarding engineers)" if persona == "internal" else "(User's Guide - Pure user journey, SDK surface, zero code internals)"}
 Archetype: {archetype.value.upper()}
 
 {archetype_context}
@@ -275,6 +275,37 @@ def build_discovery_context(report: DiscoveryReport) -> str:
         lines.append("\nBRITTLE POINTS (Complex or risky code):")
         for b in report.brittle_points[:5]:
             lines.append(f"   - {b}")
+
+    # Existing documentation (enterprise evidence)
+    if report.existing_docs:
+        lines.append(
+            "\nEXISTING DOCUMENTATION (Human-written docs found in repo):")
+        for rel_path in list(report.existing_docs.keys())[:10]:
+            lines.append(f"   - {rel_path}")
+
+    # API specifications
+    if report.api_specs:
+        lines.append("\nAPI SPECIFICATIONS (OpenAPI/Swagger found):")
+        for rel_path in report.api_specs.keys():
+            lines.append(f"   - {rel_path}")
+
+    # CI/CD configs
+    if report.ci_cd_configs:
+        lines.append("\nCI/CD PIPELINES:")
+        for rel_path in list(report.ci_cd_configs.keys())[:8]:
+            lines.append(f"   - {rel_path}")
+
+    # Schema files
+    if report.schema_files:
+        lines.append("\nSCHEMA DEFINITIONS (Proto/GraphQL/Prisma):")
+        for rel_path in list(report.schema_files.keys())[:8]:
+            lines.append(f"   - {rel_path}")
+
+    # Infrastructure configs
+    if report.infra_configs:
+        lines.append("\nINFRASTRUCTURE (IaC configs):")
+        for rel_path in list(report.infra_configs.keys())[:6]:
+            lines.append(f"   - {rel_path}")
 
     return "\n".join(lines)
 

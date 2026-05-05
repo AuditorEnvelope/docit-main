@@ -203,7 +203,7 @@ class DocumentTreeBuilder:
         Build a single DocumentSection from flat content.
 
         Args:
-            key: Section key (summary, architecture, workflow, api)
+            key: Section key (e.g. 'connect-wallet-access' or 'summary')
             content: Markdown content
             index: Section index for ID generation
             plan: Optional plan for dependency mapping
@@ -214,8 +214,11 @@ class DocumentTreeBuilder:
         try:
             section_type = self.KEY_TO_TYPE.get(key, "custom")
 
-            # Get title from plan if available, else use default
-            title = self._get_section_title(section_type, plan)
+            # Get title: prefer extracting from the content's first H1 heading,
+            # then fall back to plan lookup, then defaults.
+            title = self._extract_title_from_content(content)
+            if not title:
+                title = self._get_section_title(section_type, plan)
 
             # Generate unique ID
             section_id = create_section_id(section_type, index)
@@ -258,6 +261,19 @@ class DocumentTreeBuilder:
         except Exception as e:
             print(f"⚠️ Failed to build section {key}: {e}")
             return None
+
+    @staticmethod
+    def _extract_title_from_content(content: str) -> Optional[str]:
+        """Extract the first H1 heading from markdown content."""
+        if not content:
+            return None
+        for line in content.split("\n")[:10]:  # Only check first 10 lines
+            line = line.strip()
+            if line.startswith("# ") and not line.startswith("## "):
+                title = line[2:].strip()
+                if title:
+                    return title
+        return None
 
     def _get_section_title(self, section_type: str, plan: Optional[DocumentationPlan]) -> str:
         """Get section title from plan or use default."""

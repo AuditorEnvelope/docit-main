@@ -20,6 +20,8 @@ from typing import Any, Dict, Iterable, List, Optional
 
 # The new aggregate_prompt replaces the old one completely
 from app.services.documentation.aggregate_prompt import generate_all_docs_in_single_call
+from app.services.documentation.section_validator import validate_sections, print_validation_report
+from app.services.documentation.section_semantic_validator import get_semantic_issues
 from app.services.documentation.planner import get_planner, DocumentationPlan
 from app.services.documentation.tree_builder import build_document_tree, debug_tree_structure
 from app.services.documentation.tree_models import DocumentTree
@@ -238,6 +240,30 @@ class ComprehensiveDocBuilder:
         docs["token_data"] = token_data
         print(
             f"📊 Token Usage: {token_data['input_tokens']} in / {token_data['output_tokens']} out | Model: {token_data['model_name']}")
+
+        # ── Validate generated sections ──────────────────────────────────────
+        planned_for_validation = docs.get("plan", {}).get("sections", [])
+        if planned_for_validation:
+            validation_results = validate_sections(
+                docs, planned_for_validation, min_words=200
+            )
+            print_validation_report(validation_results)
+            failed = [r for r in validation_results if not r.passed]
+            if failed:
+                print(
+                    f"⚠️  {len(failed)} section(s) have quality issues (see above)")
+
+            # Semantic quality summary (informational only – retries happened in fan-out)
+            sem_weak = 0
+            for s in planned_for_validation:
+                content = docs.get(s.get("id", ""), "")
+                if content:
+                    issues = get_semantic_issues(content)
+                    if len(issues) > 1:
+                        sem_weak += 1
+            if sem_weak:
+                print(
+                    f"ℹ️  {sem_weak} section(s) flagged as semantically weak after retries")
 
         # ── Document tree (Phase 2 – non-breaking) ───────────────────────────
         doc_tree = build_document_tree(

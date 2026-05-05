@@ -84,8 +84,8 @@ class ManualDocGenerator:
             model_name = token_data.get("model_name", "unknown")
 
             # Create the proper folder structure based on doc_persona
-            # Map 'dev' to 'developer' for folder naming
-            persona_folder_name = "dev" if self.doc_persona == "dev" else "internal"
+            persona_folder_name = "dev" if self.doc_persona in (
+                "dev", "developer") else "internal"
             print(f"📚 Creating documentation in {persona_folder_name} folder")
 
             # Create the current persona folder
@@ -118,15 +118,18 @@ class ManualDocGenerator:
             # Get the plan from generated_docs (contains meaningful section IDs)
             plan_data = generated_docs.get("plan", {})
             planned_sections = plan_data.get("sections", [])
-            
+
             # DEBUG: Log what we received
             print(f"   🔍 DEBUG: plan_data keys: {list(plan_data.keys())}")
-            print(f"   🔍 DEBUG: planned_sections count: {len(planned_sections)}")
-            print(f"   🔍 DEBUG: generated_docs keys: {[k for k in generated_docs.keys() if not k.startswith('_')]}")
+            print(
+                f"   🔍 DEBUG: planned_sections count: {len(planned_sections)}")
+            print(
+                f"   🔍 DEBUG: generated_docs keys: {[k for k in generated_docs.keys() if not k.startswith('_')]}")
             for ps in planned_sections[:3]:
                 section_id = ps.get("id", "")
                 has_content = bool(generated_docs.get(section_id, ""))
-                print(f"   🔍 DEBUG: section '{section_id}' has content: {has_content}")
+                print(
+                    f"   🔍 DEBUG: section '{section_id}' has content: {has_content}")
 
             written_sections = []
             for section_info in planned_sections:

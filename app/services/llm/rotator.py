@@ -1,23 +1,33 @@
-"""Multi-provider LLM rotation with rich logging.
+"""Multi-provider LLM rotation with key-pool parallelism.
 
-Ported from the legacy src/utilities/llm_provider_v2 implementation so we
-retain the same provider rotation behaviour and console visibility.
+Architecture (v2 – voice-locked fan-out):
+  - Each provider (Gemini, Groq, DeepSeek) owns N API keys parsed from a
+    comma-separated env var.
+  - A "key slot" tracks per-key health (error count, in-flight requests,
+    long-duration rate-limit disable).
+  - `generate_with_pool()` (async) picks the least-loaded healthy slot,
+    runs the call, and returns an LLMResult.
+  - `generate_with_rotation()` (sync, legacy) is retained for backward compat.
 
 Phase 6 Enhancement: Token tracking for shadow ledger metrics.
 """
 from __future__ import annotations
 
+import asyncio
 import os
+import re
 import time
 from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import google.generativeai as genai
 from groq import Groq
 import openai
 
-# No rate limiting needed (like old codebase)
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Data classes
+# ═══════════════════════════════════════════════════════════════════════════
 
 @dataclass
 class LLMResult:
@@ -29,47 +39,116 @@ class LLMResult:
     total_tokens: int
 
 
+@dataclass
+class KeySlot:
+    """Health tracker for a single API key within a provider's pool."""
+    key: str
+    index: int
+    healthy: bool = True
+    error_count: int = 0
+    in_flight: int = 0
+    last_error: str = ""
+    last_used_at: float = 0.0
+    max_errors: int = 3
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Provider base
+# ═══════════════════════════════════════════════════════════════════════════
+
 class LLMProvider:
-    """Base class for LLM providers (synchronous interface)."""
+    """Base class for multi-key LLM providers."""
 
-    max_errors = 3
+    provider_name: str = "Base"
 
-    def __init__(self, name: str, api_key: str):
-        self.name = name
-        self.api_key = api_key
-        self.is_available = bool(api_key)
+    def __init__(self, keys: List[str]):
+        self.slots: List[KeySlot] = [
+            KeySlot(key=k.strip(), index=i) for i, k in enumerate(keys) if k.strip()
+        ]
+        self.name = self.provider_name
+        # Legacy compat
+        self.is_available = bool(self.slots)
         self.last_error: Optional[str] = None
         self.error_count = 0
 
-    def generate(self, prompt: str) -> Optional[LLMResult]:
-        raise NotImplementedError
+    @property
+    def pool_size(self) -> int:
+        return len(self.slots)
+
+    def healthy_slots(self) -> List[KeySlot]:
+        return [s for s in self.slots if s.healthy and s.error_count < s.max_errors]
 
     def is_healthy(self) -> bool:
-        return self.is_available and self.error_count < self.max_errors
+        return self.is_available and bool(self.healthy_slots())
 
-    def record_error(self, error: Exception) -> None:
-        self.error_count += 1
-        self.last_error = str(error)
-        print(f"❌ {self.name} error #{self.error_count}: {error}")
+    def acquire_slot(self) -> Optional[KeySlot]:
+        """Pick the healthy slot with the lowest in-flight, tiebreak by LRU."""
+        healthy = self.healthy_slots()
+        if not healthy:
+            return None
+        return min(healthy, key=lambda s: (s.in_flight, s.last_used_at))
 
-
-class GeminiProvider(LLMProvider):
-    def __init__(self, api_key: str):
-        super().__init__("Gemini", api_key)
-        if self.is_available:
-            genai.configure(api_key=api_key)
-            self.model_name = "models/gemini-2.5-flash"
-            self.fallback_model = "models/gemini-2.0-flash"
+    def generate_with_slot(self, prompt: str, slot: KeySlot) -> Optional[LLMResult]:
+        """Subclasses implement this – call the LLM using the given key slot."""
+        raise NotImplementedError
 
     def generate(self, prompt: str) -> Optional[LLMResult]:
-        if not self.is_healthy():
+        """Legacy sync interface – picks a slot and calls it."""
+        slot = self.acquire_slot()
+        if not slot:
             return None
+        slot.in_flight += 1
+        slot.last_used_at = time.time()
+        try:
+            result = self.generate_with_slot(prompt, slot)
+            if result:
+                return result
+            return None
+        finally:
+            slot.in_flight = max(0, slot.in_flight - 1)
+
+    def _record_slot_error(self, slot: KeySlot, error: Exception) -> None:
+        err_str = str(error)
+        slot.error_count += 1
+        slot.last_error = err_str
+        self.last_error = err_str
+        self.error_count += 1
+        print(
+            f"❌ {self.name}[key#{slot.index}] error #{slot.error_count}: {error}")
+
+    def _disable_slot_for_session(self, slot: KeySlot, reason: str) -> None:
+        slot.healthy = False
+        slot.last_error = reason
+        self.last_error = reason
+        print(
+            f"🚫 {self.name}[key#{slot.index}] disabled for session: {reason}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Gemini provider
+# ═══════════════════════════════════════════════════════════════════════════
+
+class GeminiProvider(LLMProvider):
+    provider_name = "Gemini"
+
+    def __init__(self, keys: List[str]):
+        super().__init__(keys)
+        self.model_name = "models/gemini-2.5-flash"
+        self.fallback_model = "models/gemini-2.0-flash"
+        # Configure with the first key; per-slot we'll reconfigure as needed
+        if self.slots:
+            genai.configure(api_key=self.slots[0].key)
+
+    def generate_with_slot(self, prompt: str, slot: KeySlot) -> Optional[LLMResult]:
+        genai.configure(api_key=slot.key)
+        request_options = {"timeout": 180}
         try:
             model = genai.GenerativeModel(self.model_name)
-            resp = model.generate_content(prompt)
-            result = getattr(resp, "text", None) or str(resp)
+            resp = model.generate_content(
+                prompt, request_options=request_options)
+            result = _extract_gemini_text(resp)
+            finish_reason = _gemini_finish_reason(resp)
 
-            # Extract token usage from Gemini response
             usage_metadata = getattr(resp, "usage_metadata", None)
             input_tokens = getattr(
                 usage_metadata, "prompt_token_count", 0) if usage_metadata else 0
@@ -78,23 +157,34 @@ class GeminiProvider(LLMProvider):
             total_tokens = getattr(usage_metadata, "total_token_count", 0) if usage_metadata else (
                 input_tokens + output_tokens)
 
+            if finish_reason == 4:
+                print("⚠️  Gemini refused: RECITATION")
+                slot.last_error = "RECITATION"
+                slot.error_count += 1
+                return None
+            if finish_reason == 3:
+                print("⚠️  Gemini refused: SAFETY filter")
+                slot.last_error = "SAFETY"
+                slot.error_count += 1
+                return None
+
             if result and "quota" not in result.lower():
                 return LLMResult(
-                    content=result,
-                    model_name=self.model_name,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    total_tokens=total_tokens
+                    content=result, model_name=self.model_name,
+                    input_tokens=input_tokens, output_tokens=output_tokens,
+                    total_tokens=total_tokens,
                 )
+
         except Exception as primary_error:
-            if "quota" in str(primary_error).lower():
-                print("⚠️ Gemini quota exceeded, trying fallback model")
+            err_lower = str(primary_error).lower()
+            if "quota" in err_lower:
+                print(
+                    f"⚠️ Gemini[key#{slot.index}] quota exceeded, trying fallback model")
                 try:
                     model = genai.GenerativeModel(self.fallback_model)
-                    resp = model.generate_content(prompt)
-                    result = getattr(resp, "text", None) or str(resp)
-
-                    # Extract token usage from fallback response
+                    resp = model.generate_content(
+                        prompt, request_options=request_options)
+                    result = _extract_gemini_text(resp)
                     usage_metadata = getattr(resp, "usage_metadata", None)
                     input_tokens = getattr(
                         usage_metadata, "prompt_token_count", 0) if usage_metadata else 0
@@ -102,164 +192,244 @@ class GeminiProvider(LLMProvider):
                         usage_metadata, "candidates_token_count", 0) if usage_metadata else 0
                     total_tokens = getattr(usage_metadata, "total_token_count", 0) if usage_metadata else (
                         input_tokens + output_tokens)
-
-                    return LLMResult(
-                        content=result,
-                        model_name=self.fallback_model,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        total_tokens=total_tokens
-                    )
+                    if result:
+                        return LLMResult(
+                            content=result, model_name=self.fallback_model,
+                            input_tokens=input_tokens, output_tokens=output_tokens,
+                            total_tokens=total_tokens,
+                        )
                 except Exception as fallback_error:
-                    self.record_error(fallback_error)
+                    self._record_slot_error(slot, fallback_error)
                     return None
-            self.record_error(primary_error)
+            if _is_long_rate_limit(str(primary_error)):
+                self._disable_slot_for_session(slot, str(primary_error))
+                return None
+            self._record_slot_error(slot, primary_error)
             return None
         return None
 
 
-class GroqProvider(LLMProvider):
-    def __init__(self, api_key: str):
-        super().__init__("Groq", api_key)
-        if self.is_available:
-            self.client = Groq(api_key=api_key)
-            self.model_name = "llama-3.3-70b-versatile"
+# ═══════════════════════════════════════════════════════════════════════════
+# Groq provider
+# ═══════════════════════════════════════════════════════════════════════════
 
-    def generate(self, prompt: str) -> Optional[LLMResult]:
-        if not self.is_healthy():
-            return None
+class GroqProvider(LLMProvider):
+    provider_name = "Groq"
+
+    def __init__(self, keys: List[str]):
+        super().__init__(keys)
+        self.model_name = "llama-3.3-70b-versatile"
+        self._clients: Dict[int, Groq] = {}
+        for slot in self.slots:
+            self._clients[slot.index] = Groq(api_key=slot.key)
+
+    def generate_with_slot(self, prompt: str, slot: KeySlot) -> Optional[LLMResult]:
+        client = self._clients[slot.index]
         try:
-            response = self.client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=self.model_name,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=4000,
                 temperature=0.1,
             )
-
-            # Extract token usage from Groq response
             usage = response.usage
-            input_tokens = getattr(usage, "prompt_tokens", 0)
-            output_tokens = getattr(usage, "completion_tokens", 0)
-            total_tokens = getattr(usage, "total_tokens", 0) or (
-                input_tokens + output_tokens)
-
             return LLMResult(
                 content=response.choices[0].message.content,
                 model_name=self.model_name,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=total_tokens
+                input_tokens=getattr(usage, "prompt_tokens", 0),
+                output_tokens=getattr(usage, "completion_tokens", 0),
+                total_tokens=getattr(usage, "total_tokens", 0),
             )
         except Exception as error:
-            self.record_error(error)
+            if _is_long_rate_limit(str(error)):
+                self._disable_slot_for_session(slot, str(error))
+            else:
+                self._record_slot_error(slot, error)
             return None
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DeepSeek provider
+# ═══════════════════════════════════════════════════════════════════════════
 
 class DeepSeekProvider(LLMProvider):
-    def __init__(self, api_key: str):
-        super().__init__("DeepSeek", api_key)
-        if self.is_available:
-            self.client = openai.OpenAI(
-                api_key=api_key,
-                base_url="https://api.deepseek.com/v1",
-            )
-            self.model_name = "deepseek-chat"
+    provider_name = "DeepSeek"
 
-    def generate(self, prompt: str) -> Optional[LLMResult]:
-        if not self.is_healthy():
-            return None
+    def __init__(self, keys: List[str]):
+        super().__init__(keys)
+        self.model_name = "deepseek-chat"
+        self._clients: Dict[int, openai.OpenAI] = {}
+        for slot in self.slots:
+            self._clients[slot.index] = openai.OpenAI(
+                api_key=slot.key, base_url="https://api.deepseek.com/v1",
+            )
+
+    def generate_with_slot(self, prompt: str, slot: KeySlot) -> Optional[LLMResult]:
+        client = self._clients[slot.index]
         try:
-            response = self.client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=self.model_name,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=4000,
                 temperature=0.1,
             )
-
-            # Extract token usage from DeepSeek response
             usage = response.usage
-            input_tokens = getattr(usage, "prompt_tokens", 0)
-            output_tokens = getattr(usage, "completion_tokens", 0)
-            total_tokens = getattr(usage, "total_tokens", 0) or (
-                input_tokens + output_tokens)
-
             return LLMResult(
                 content=response.choices[0].message.content,
                 model_name=self.model_name,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=total_tokens
+                input_tokens=getattr(usage, "prompt_tokens", 0),
+                output_tokens=getattr(usage, "completion_tokens", 0),
+                total_tokens=getattr(usage, "total_tokens", 0),
             )
         except Exception as error:
-            self.record_error(error)
+            if _is_long_rate_limit(str(error)):
+                self._disable_slot_for_session(slot, str(error))
+            else:
+                self._record_slot_error(slot, error)
             return None
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# LLM Rotator — orchestrates providers + key pools
+# ═══════════════════════════════════════════════════════════════════════════
+
 class LLMRotator:
-    """Round-robin provider rotation with verbose logging."""
+    """Voice-locked multi-key rotation with per-section async support."""
+
+    PROVIDER_PRIORITY = ["gemini", "groq", "deepseek"]
 
     def __init__(self) -> None:
-        self.providers: List[LLMProvider] = []
-        self.current_index = 0
-        # Don't use AsyncLimiter - old codebase doesn't use rate limiting (like old codebase)
+        self.providers: Dict[str, LLMProvider] = {}
         self._setup()
 
     def _setup(self) -> None:
-        gemini_key = os.getenv("GEMINI_API_KEY")
-        groq_key = os.getenv("GROQ_API_KEY")
-        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+        gemini_keys = _parse_keys("GEMINI_API_KEY")
+        groq_keys = _parse_keys("GROQ_API_KEY")
+        deepseek_keys = _parse_keys("DEEPSEEK_API_KEY")
 
-        if gemini_key:
-            self.providers.append(GeminiProvider(gemini_key))
-            print("✅ Gemini provider initialized")
-        if groq_key:
-            self.providers.append(GroqProvider(groq_key))
-            print("✅ Groq provider initialized")
-        if deepseek_key:
-            self.providers.append(DeepSeekProvider(deepseek_key))
-            print("✅ DeepSeek provider initialized")
+        if gemini_keys:
+            self.providers["gemini"] = GeminiProvider(gemini_keys)
+            print(
+                f"✅ Gemini provider initialized ({len(gemini_keys)} key{'s' if len(gemini_keys) > 1 else ''})")
+        if groq_keys:
+            self.providers["groq"] = GroqProvider(groq_keys)
+            print(
+                f"✅ Groq provider initialized ({len(groq_keys)} key{'s' if len(groq_keys) > 1 else ''})")
+        if deepseek_keys:
+            self.providers["deepseek"] = DeepSeekProvider(deepseek_keys)
+            print(
+                f"✅ DeepSeek provider initialized ({len(deepseek_keys)} key{'s' if len(deepseek_keys) > 1 else ''})")
 
-        print(f"🚀 Initialized {len(self.providers)} LLM providers")
+        total = sum(p.pool_size for p in self.providers.values())
+        print(
+            f"🚀 Initialized {len(self.providers)} providers, {total} total key slots")
         if not self.providers:
             raise RuntimeError(
                 "No LLM providers available – configure at least one API key.")
 
-    def _healthy_providers(self) -> List[LLMProvider]:
-        return [provider for provider in self.providers if provider.is_healthy()]
+    def get_preferred_provider(self) -> Optional[LLMProvider]:
+        """Return the user's preferred provider (DOC_GENERATION_PROVIDER env),
+        falling back to the first healthy one in priority order."""
+        preferred = os.getenv("DOC_GENERATION_PROVIDER", "").lower().strip()
+        if preferred and preferred in self.providers:
+            p = self.providers[preferred]
+            if p.is_healthy():
+                return p
 
-    def get_next_provider(self) -> Optional[LLMProvider]:
-        healthy = self._healthy_providers()
-        if not healthy:
-            print("❌ No healthy providers available")
-            return None
-        provider = healthy[self.current_index % len(healthy)]
-        self.current_index += 1
-        return provider
+        for name in self.PROVIDER_PRIORITY:
+            if name in self.providers and self.providers[name].is_healthy():
+                return self.providers[name]
+        return None
 
-    def generate_with_rotation(self, prompt: str, max_attempts: int = 3) -> Optional[LLMResult]:
-        """Generate content using rotation across providers (like old codebase - no rate limiter)
+    # ── Async per-section generation ──────────────────────────────────
+    async def generate_with_pool(
+        self,
+        prompt: str,
+        provider: Optional[LLMProvider] = None,
+        max_retries: int = 3,
+    ) -> Optional[LLMResult]:
+        """Generate content using a specific provider's key pool.
 
-        Phase 6: Now returns LLMResult with token usage data instead of just string.
+        Acquires the least-loaded key slot, calls the LLM, retries on
+        transient errors using a DIFFERENT slot. Never compacts the prompt
+        (per-section prompts are small enough to never need compaction).
         """
-        attempts = 0
+        target = provider or self.get_preferred_provider()
+        if not target:
+            print("❌ No healthy provider available")
+            return None
 
-        while attempts < max_attempts:
-            provider = self.get_next_provider()
+        for attempt in range(1, max_retries + 1):
+            slot = target.acquire_slot()
+            if not slot:
+                # This provider's pool is exhausted; try next provider
+                print(f"⚠️  {target.name}: all key slots exhausted")
+                target = self._next_healthy_provider(exclude=target.name)
+                if not target:
+                    print("❌ No healthy providers remaining")
+                    return None
+                print(f"🔀 Falling back to {target.name}")
+                continue
+
+            slot.in_flight += 1
+            slot.last_used_at = time.time()
+            try:
+                print(f"🔄 {target.name}[key#{slot.index}] (attempt {attempt})")
+                # Run the blocking LLM call in a thread so we don't block the event loop
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None, target.generate_with_slot, prompt, slot
+                )
+                if result:
+                    print(
+                        f"✅ {target.name}[key#{slot.index}] | "
+                        f"Tokens: {result.input_tokens} in / {result.output_tokens} out"
+                    )
+                    return result
+
+                # Transient failure – wait briefly then retry on a different slot
+                if attempt < max_retries:
+                    wait = 3 if "504" in (slot.last_error or "") else 2
+                    print(f"⏳ Waiting {wait}s before retry...")
+                    await asyncio.sleep(wait)
+
+            finally:
+                slot.in_flight = max(0, slot.in_flight - 1)
+
+        print(f"❌ {target.name}: all retries exhausted")
+        return None
+
+    def _next_healthy_provider(self, exclude: str = "") -> Optional[LLMProvider]:
+        for name in self.PROVIDER_PRIORITY:
+            if name == exclude.lower():
+                continue
+            if name in self.providers and self.providers[name].is_healthy():
+                return self.providers[name]
+        return None
+
+    # ── Legacy sync interface (planning call, backward compat) ────────
+    def generate_with_rotation(self, prompt: str, max_attempts: int = 3) -> Optional[LLMResult]:
+        """Sync generation with provider rotation. Used for planning calls."""
+        for attempt in range(1, max_attempts + 1):
+            provider = self.get_preferred_provider()
             if not provider:
-                break
+                print("❌ No healthy providers available")
+                return None
 
-            print(f"🔄 Trying {provider.name} (attempt {attempts + 1})")
+            print(f"🔄 Trying {provider.name} (attempt {attempt})")
             result = provider.generate(prompt)
-
             if result:
                 print(
-                    f"✅ Success with {provider.name} | Tokens: {result.input_tokens} in / {result.output_tokens} out")
+                    f"✅ Success with {provider.name} | "
+                    f"Tokens: {result.input_tokens} in / {result.output_tokens} out"
+                )
                 return result
 
-            attempts += 1
-            if attempts < max_attempts:
-                print("⏳ Waiting 2 seconds before retry...")
-                time.sleep(2)
+            if attempt < max_attempts:
+                last_err = (provider.last_error or "").lower()
+                wait = 5 if "504" in last_err or "stream" in last_err else 2
+                print(f"⏳ Waiting {wait}s before retry...")
+                time.sleep(wait)
 
         print("❌ All providers failed")
         return None
@@ -267,19 +437,90 @@ class LLMRotator:
     def get_status(self) -> Dict[str, object]:
         return {
             "total_providers": len(self.providers),
-            "healthy_providers": len(self._healthy_providers()),
-            "providers": [
-                {
-                    "name": provider.name,
-                    "available": provider.is_available,
-                    "healthy": provider.is_healthy(),
-                    "error_count": provider.error_count,
-                    "last_error": provider.last_error,
+            "providers": {
+                name: {
+                    "healthy": p.is_healthy(),
+                    "pool_size": p.pool_size,
+                    "healthy_slots": len(p.healthy_slots()),
+                    "slots": [
+                        {"index": s.index, "healthy": s.healthy,
+                         "error_count": s.error_count, "in_flight": s.in_flight}
+                        for s in p.slots
+                    ],
                 }
-                for provider in self.providers
-            ],
+                for name, p in self.providers.items()
+            },
         }
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _parse_keys(env_var: str) -> List[str]:
+    """Parse comma-separated API keys from an env var."""
+    raw = os.getenv(env_var, "")
+    if not raw:
+        return []
+    return [k.strip() for k in raw.split(",") if k.strip()]
+
+
+def _extract_gemini_text(resp) -> str:
+    """Safely extract text from a Gemini response, tolerating refusals."""
+    try:
+        text = getattr(resp, "text", None)
+        if text:
+            return text
+    except Exception:
+        pass
+    try:
+        for cand in getattr(resp, "candidates", []) or []:
+            content = getattr(cand, "content", None)
+            for part in (getattr(content, "parts", None) or []):
+                ptext = getattr(part, "text", None)
+                if ptext:
+                    return ptext
+    except Exception:
+        pass
+    return ""
+
+
+def _gemini_finish_reason(resp) -> Optional[int]:
+    """Return the int finish_reason from the first candidate, or None."""
+    try:
+        candidates = getattr(resp, "candidates", None) or []
+        if not candidates:
+            return None
+        reason = getattr(candidates[0], "finish_reason", None)
+        if reason is None:
+            return None
+        value = getattr(reason, "value", None)
+        if value is not None:
+            return int(value)
+        return int(reason)
+    except Exception:
+        return None
+
+
+def _is_long_rate_limit(error_message: str) -> bool:
+    """Detect daily/long-duration rate limits where retrying is futile."""
+    if not error_message:
+        return False
+    lower = error_message.lower()
+    if "tokens per day" in lower or "tpd" in lower or "per day" in lower:
+        return True
+    m = re.search(r'try again in\s+(\d+)h', lower)
+    if m and int(m.group(1)) >= 1:
+        return True
+    m = re.search(r'try again in\s+(\d+)m', lower)
+    if m and int(m.group(1)) >= 2:
+        return True
+    return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Singleton + backward-compat API
+# ═══════════════════════════════════════════════════════════════════════════
 
 _rotator: Optional[LLMRotator] = None
 
@@ -292,23 +533,12 @@ def get_rotator() -> LLMRotator:
 
 
 def create_fallback_doc(filename: str, code: str, status: Dict[str, object]) -> str:
-    snippet = code[:1000]
-    if len(code) > 1000:
-        snippet += "..."
-    provider_lines = [
-        f"- {'✅' if info['healthy'] else '❌'} {info['name']} (errors: {info['error_count']})"
-        + (f"\n  - Last error: {info['last_error']}" if info['last_error'] else "")
-        for info in status.get("providers", [])
-    ]
-    provider_block = "\n".join(
-        provider_lines) if provider_lines else "No providers available"
+    snippet = code[:1000] + ("..." if len(code) > 1000 else "")
     return (
         f"# {filename}\n\n"
         "_Automatic documentation generation failed._\n\n"
         "## Provider Status\n"
-        f"Total providers: {status.get('total_providers', 0)}\n"
-        f"Healthy providers: {status.get('healthy_providers', 0)}\n"
-        f"{provider_block}\n\n"
+        f"```json\n{status}\n```\n\n"
         "## Code (truncated)\n"
         f"```\n{snippet}\n```\n"
         "\n## Manual Documentation Needed\n"
@@ -317,14 +547,14 @@ def create_fallback_doc(filename: str, code: str, status: Dict[str, object]) -> 
 
 
 def generate_doc_for_file(filename: str, code: str) -> str:
-    """Generate documentation for a file (backwards compatible - returns string)"""
+    """Generate documentation for a file (backwards compatible)"""
     prompt = make_prompt(filename, code)
     try:
         result = get_rotator().generate_with_rotation(prompt)
         if result:
             return result.content
         return create_fallback_doc(filename, code, get_rotator().get_status())
-    except Exception as error:  # pragma: no cover - defensive
+    except Exception as error:
         print(f"❌ LLM generation failed: {error}")
         return create_fallback_doc(filename, code, {"error": str(error)})
 

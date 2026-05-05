@@ -15,7 +15,7 @@ import httpx
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import get_db, async_session
 
 logger = logging.getLogger(__name__)
 
@@ -176,17 +176,11 @@ async def generate_documentation_v4(
             print(f"⚠️ Falling back to 'internal'")
             doc_persona = "internal"
 
-    # Map 'developer' to 'dev' for compatibility
-    if doc_persona == "developer":
-        doc_persona = "dev"
-        print(f"🔄 Mapped 'developer' to 'dev' for compatibility")
-
     print(f"📝 Using doc_persona: {doc_persona} for {repo_name}")
 
     # Create generator with validated persona
     generator = ManualDocGenerator(doc_persona=doc_persona)
     dual_app_helper = GitHubDualAppHelper()
-    publisher = DocbookPublisher(dual_app=dual_app_helper, db_session=db)
 
     message = commit_message or f"docs: Manual documentation generation for {source_repo}"
 
@@ -233,15 +227,47 @@ async def generate_documentation_v4(
         )
 
     try:
-        publish_result = await publisher.publish_to_docbook(
-            user_id=str(user.id) if isinstance(user.id, UUID) else user.id,
-            org_id=org_id,
-            source_repo_name=source_repo,
-            docs_dir=generation_result.docs_dir,
-            commit_message=message,
-            commit_sha=commit_sha,
-            installation_id=installation_id,
-        )
+        # Get a FRESH db session for publish — the original request session's
+        # connection goes stale during the 5-10 min doc generation.
+        # Retry up to 3 times for transient network errors (Neon serverless can be flaky).
+        publish_result = None
+        last_publish_error = None
+        for attempt in range(1, 4):
+            try:
+                async with async_session() as fresh_db:
+                    publisher = DocbookPublisher(
+                        dual_app=dual_app_helper, db_session=fresh_db)
+                    publish_result = await publisher.publish_to_docbook(
+                        user_id=str(user.id) if isinstance(
+                            user.id, UUID) else user.id,
+                        org_id=org_id,
+                        source_repo_name=source_repo,
+                        docs_dir=generation_result.docs_dir,
+                        commit_message=message,
+                        commit_sha=commit_sha,
+                        installation_id=installation_id,
+                    )
+                break  # success
+            except OSError as net_err:
+                last_publish_error = net_err
+                logger.warning(
+                    f"Publish attempt {attempt}/3 failed (network): {net_err}")
+                if attempt < 3:
+                    import asyncio as _aio
+                    await _aio.sleep(2 * attempt)  # 2s, 4s backoff
+            except Exception as db_err:
+                # Non-network error (e.g. stale connection) — retry once
+                last_publish_error = db_err
+                logger.warning(f"Publish attempt {attempt}/3 failed: {db_err}")
+                if attempt < 3:
+                    import asyncio as _aio
+                    await _aio.sleep(2)
+
+        if publish_result is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Docbook publication failed after 3 attempts: {last_publish_error}",
+            )
     finally:
         generation_result.cleanup()
 
@@ -257,19 +283,22 @@ async def generate_documentation_v4(
     # Record usage AFTER successful generation with token data
     if USAGE_SERVICE_AVAILABLE and UsageService is not None:
         try:
-            usage_service = UsageService(db)
-            await usage_service.record_usage(
-                user_id=str(user.id),
-                resource_type=ResourceType.DOCS_GENERATED,
-                amount=1,
-                resource_id=str(publish_result.get("commit_sha", source_repo)),
-                # Phase 6: Shadow token tracking
-                input_tokens=generation_result.input_tokens,
-                output_tokens=generation_result.output_tokens,
-                model_name=generation_result.model_name,
-            )
-            print(
-                f"✅ Recorded usage: {generation_result.input_tokens} input tokens, {generation_result.output_tokens} output tokens, model: {generation_result.model_name}")
+            async with async_session() as fresh_db_usage:
+                usage_service = UsageService(fresh_db_usage)
+                await usage_service.record_usage(
+                    user_id=str(user.id),
+                    resource_type=ResourceType.DOCS_GENERATED,
+                    amount=1,
+                    resource_id=str(publish_result.get(
+                        "commit_sha", source_repo)),
+                    # Phase 6: Shadow token tracking
+                    input_tokens=generation_result.input_tokens,
+                    output_tokens=generation_result.output_tokens,
+                    model_name=generation_result.model_name,
+                )
+                await fresh_db_usage.commit()
+                print(
+                    f"✅ Recorded usage: {generation_result.input_tokens} input tokens, {generation_result.output_tokens} output tokens, model: {generation_result.model_name}")
         except Exception as record_error:
             # Log but don't fail the request if usage recording fails
             print(
@@ -287,28 +316,29 @@ async def generate_documentation_v4(
     from app.services.repositories.service import RepositoryService
 
     try:
-        # Upsert repository record to ensure it exists
-        repo_service = RepositoryService(db)
-        await repo_service.upsert_tracked_branch(
-            repo_name,
-            tracked_branch="main",  # Default, will be overridden if already set
-            default_branch="main"
-        )
+        async with async_session() as fresh_db_repo:
+            # Upsert repository record to ensure it exists
+            repo_service = RepositoryService(fresh_db_repo)
+            await repo_service.upsert_tracked_branch(
+                repo_name,
+                tracked_branch="main",  # Default, will be overridden if already set
+                default_branch="main"
+            )
 
-        # Update the repository's last_documented_at field
-        stmt = (
-            update(Repository)
-            .where(Repository.full_name == repo_name)
-            .values(last_documented_at=datetime.now(timezone.utc))
-        )
-        result = await db.execute(stmt)
-        await db.commit()
+            # Update the repository's last_documented_at field
+            stmt = (
+                update(Repository)
+                .where(Repository.full_name == repo_name)
+                .values(last_documented_at=datetime.now(timezone.utc))
+            )
+            result = await fresh_db_repo.execute(stmt)
+            await fresh_db_repo.commit()
 
-        if result.rowcount > 0:
-            print(f"✅ Updated last_documented_at for {repo_name}")
-        else:
-            print(
-                f"⚠️ No repository found to update last_documented_at for {repo_name}")
+            if result.rowcount > 0:
+                print(f"✅ Updated last_documented_at for {repo_name}")
+            else:
+                print(
+                    f"⚠️ No repository found to update last_documented_at for {repo_name}")
     except Exception as e:
         print(f"⚠️ Failed to update last_documented_at: {e}")
         import traceback
