@@ -7,19 +7,13 @@ import { Layout } from "@/components/Layout";
 import { GenerateDocsButton } from "@/components/GenerateDocsButton";
 import { PublishToLiveButton } from "@/components/PublishToLiveButton";
 import PendingReviewsTab from "@/components/PendingReviewsTab";
-import { UsageStatsCard } from "@/components/UsageStatsCard";
 import { useAuth } from "@/contexts/AuthContext";
-import {
-	useDashboardData,
-	PLAN_CONFIG,
-	PlanName,
-} from "@/hooks/useDashboardData";
+import { usePendingReviews } from "@/hooks/usePendingReviews";
 import {
 	OnboardingSplash,
 	ONBOARDING_PROGRESS_MESSAGES,
 } from "@/components/OnboardingSplash";
 import { mapDocsRouteToRepoSlug } from "@/lib/docsPathMapper";
-import apiClient from "@/lib/apiClient";
 import {
 	BookOpen,
 	Calendar,
@@ -56,7 +50,7 @@ interface RepositorySummary {
 	html_url?: string | null;
 }
 
-/** DocIt staging repo per org (`DocIt-docbook-<org>`); omit from overview tiles. */
+/** DocIt staging repo per org (`d-<org>`); omit from overview tiles. */
 function isDocitManagedDocbookRepo(repo: RepositorySummary): boolean {
 	const full = (repo.full_name || repo.name || "").trim();
 	if (!full) return false;
@@ -94,6 +88,13 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 	const MAX_WRITER_POLL_ATTEMPTS = 12; // roughly 1 minute at 5s interval
 	const [pollingWriterApp, setPollingWriterApp] = useState(false);
 
+	// API base URL
+	const apiBase = useMemo(() => {
+		const normalized = BACKEND_URL.replace(/\/$/, "");
+		const hasApiSuffix = /\/api(\/v\d+)?$/i.test(normalized);
+		return hasApiSuffix ? normalized : `${normalized}/api/v1`;
+	}, []);
+
 	// Progress message animation
 	useEffect(() => {
 		if (!checkingOnboarding) return;
@@ -128,11 +129,18 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 				}
 
 				// 1. Fetch organizations
-				const orgsRes = await apiClient.get<{
-					organizations?: any[];
-				}>("/user/organizations");
+				const orgsRes = await fetch(`${apiBase}/user/organizations`, {
+					headers: {
+						Authorization: `Bearer ${token}`,
+					},
+				});
 
-				const orgIds: string[] = (orgsRes.data.organizations || [])
+				if (!orgsRes.ok) {
+					throw new Error("Failed to fetch organizations");
+				}
+
+				const data = await orgsRes.json();
+				const orgIds: string[] = (data.organizations || [])
 					.map((org: any) =>
 						typeof org === "string"
 							? org
@@ -154,78 +162,60 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 				setSelectedOrg((prev) => prev || primaryOrg);
 
 				// 2. Check each organization's setup status
-				const summaries: Record<
-					string,
-					{
-						org: string;
-						reader_app_installed?: boolean;
-						writer_app_installed?: boolean;
-						docbook_repo?: string;
-						writer_app_has_access?: boolean;
-					}
-				> = {};
+				const summaries: Record<string, any> = {};
 				await Promise.all(
 					orgIds.map(async (orgId) => {
-						const summary: {
-							org: string;
-							reader_app_installed?: boolean;
-							writer_app_installed?: boolean;
-							docbook_repo?: string;
-							writer_app_has_access?: boolean;
-						} = { org: orgId };
+						const summary: any = { org: orgId };
 
-						try {
-							// 2.1 Check GitHub Apps installation
-							const appsRes = await apiClient.get<{
-								reader_app?: { installed?: boolean };
-								writer_app?: { installed?: boolean };
-							}>(`/org/${orgId}/verify-apps`);
+						// 2.1 Check GitHub Apps installation
+						const appsRes = await fetch(`${apiBase}/org/${orgId}/verify-apps`, {
+							headers: {
+								Authorization: `Bearer ${token}`,
+							},
+						});
 
-							const appData = appsRes.data;
+						if (appsRes.ok) {
+							const appData = await appsRes.json();
 							summary.reader_app_installed =
-								appData?.reader_app?.installed ?? false;
+								appData.reader_app?.installed ?? false;
 							summary.writer_app_installed =
-								appData?.writer_app?.installed ?? false;
-						} catch (error) {
-							console.error(`Failed to load app status for ${orgId}`, error);
+								appData.writer_app?.installed ?? false;
 						}
 
-						try {
-							// 2.2 Check docbook repository
-							const docbookRes = await apiClient.get<{
-								exists: boolean;
-								docbook_repo?: string;
-							}>("/docbook/check-exists", {
-								params: { org_id: orgId },
-							});
+						// 2.2 Check docbook repository
+						const docbookRes = await fetch(
+							`${apiBase}/docbook/check-exists?org_id=${orgId}`,
+							{
+								headers: {
+									Authorization: `Bearer ${token}`,
+								},
+							},
+						);
 
-							const docbookData = docbookRes.data;
+						if (docbookRes.ok) {
+							const docbookData = await docbookRes.json();
 							if (docbookData.exists) {
 								summary.docbook_repo = docbookData.docbook_repo;
 							}
-						} catch (error) {
-							console.error(
-								`Failed to load docbook status for ${orgId}`,
-								error,
-							);
 						}
 
-						try {
-							// 2.3 Check writer app access to docbook repo
-							if (summary.docbook_repo) {
-								const accessRes = await apiClient.get<{
-									has_access?: boolean;
-								}>(`/org/${orgId}/verify-writer-app-access`, {
-									params: {
-										repo: summary.docbook_repo,
+						// 2.3 Check writer app access to docbook repo
+						if (summary.docbook_repo) {
+							const accessRes = await fetch(
+								`${apiBase}/org/${orgId}/verify-writer-app-access?repo=${encodeURIComponent(
+									summary.docbook_repo,
+								)}`,
+								{
+									headers: {
+										Authorization: `Bearer ${token}`,
 									},
-								});
+								},
+							);
 
-								const accessData = accessRes.data;
-								summary.writer_app_has_access = accessData?.has_access ?? false;
+							if (accessRes.ok) {
+								const accessData = await accessRes.json();
+								summary.writer_app_has_access = accessData.has_access ?? false;
 							}
-						} catch (error) {
-							console.error(`Failed to load writer access for ${orgId}`, error);
 						}
 
 						summaries[orgId] = summary;
@@ -262,7 +252,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 				}
 			}
 		},
-		[token],
+		[apiBase, token],
 	);
 
 	// Initial check when component mounts
@@ -320,35 +310,194 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 
 export default function DashboardPage() {
 	const router = useRouter();
-	const { user, loading, logout, isAuthenticated } = useAuth();
+	const { user, loading, logout, isAuthenticated, token } = useAuth();
 
-	const {
-		repositories,
-		loadingRepos,
-		repoSearchQuery,
-		setRepoSearchQuery,
-		connectedOrgs,
-		loadingOrgs,
-		selectedOrg,
-		setSelectedOrg,
-		errorMessage,
-		docbookRepo,
-		pendingReviewsDisabled,
-		pendingReviewsLoading,
-		pendingReviewsError,
-		pendingReviewsCount,
-		pendingReviewStatusMessage,
-		reloadPendingReviews,
-		documentedCount,
-		loadRepositories,
-		actualPlan,
-	} = useDashboardData();
+	const [repositories, setRepositories] = useState<RepositorySummary[]>([]);
+	const [loadingRepos, setLoadingRepos] = useState(false);
+	const [repoSearchQuery, setRepoSearchQuery] = useState("");
+	const [connectedOrgs, setConnectedOrgs] = useState<string[]>([]);
+	const [loadingOrgs, setLoadingOrgs] = useState(false);
+	const [selectedOrg, setSelectedOrg] = useState<string>("");
+	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const [docbookRepo, setDocbookRepo] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!loading && !isAuthenticated) {
 			router.replace("/login");
 		}
 	}, [isAuthenticated, loading, router]);
+
+	useEffect(() => {
+		if (!token) {
+			setConnectedOrgs([]);
+			setSelectedOrg("");
+			setDocbookRepo(null);
+			return;
+		}
+
+		const fetchOrganizations = async () => {
+			setLoadingOrgs(true);
+			try {
+				const response = await fetch(`${BACKEND_URL}/user/organizations`, {
+					headers: {
+						Authorization: `Bearer ${token}`,
+					},
+				});
+
+				if (!response.ok) {
+					throw new Error("Failed to load organizations");
+				}
+
+				const data = await response.json();
+				const orgs: string[] = (data.organizations || []).map(
+					(org: { login: string }) => org.login,
+				);
+				setConnectedOrgs(orgs);
+				setSelectedOrg((current) =>
+					current && orgs.includes(current) ? current : orgs[0] || "",
+				);
+			} catch (error) {
+				console.error("Error fetching organizations", error);
+				setConnectedOrgs([]);
+				setSelectedOrg("");
+				setDocbookRepo(null);
+			} finally {
+				setLoadingOrgs(false);
+			}
+		};
+
+		fetchOrganizations();
+	}, [token]);
+
+	const fetchDocbookRepo = useCallback(async () => {
+		if (!token || !selectedOrg) {
+			setDocbookRepo(null);
+			return;
+		}
+
+		try {
+			const response = await fetch(
+				`${getBackendApiV1Base()}/docbook/check-exists?org_id=${encodeURIComponent(selectedOrg)}`,
+				{
+					headers: {
+						Authorization: `Bearer ${token}`,
+					},
+				},
+			);
+
+			if (!response.ok) {
+				setDocbookRepo(null);
+				return;
+			}
+
+			const data = await response.json();
+			setDocbookRepo(data.exists ? (data.docbook_repo ?? null) : null);
+		} catch (error) {
+			console.error("Error fetching docbook repo", error);
+			setDocbookRepo(null);
+		}
+	}, [selectedOrg, token]);
+
+	const reviewApiBase = useMemo(() => {
+		const normalized = BACKEND_URL.replace(/\/$/, "");
+		const hasApiSuffix = /\/api(\/v\d+)?$/i.test(normalized);
+		return hasApiSuffix ? normalized : `${normalized}/api/v1`;
+	}, []);
+
+	const pendingReviewsDisabled = !selectedOrg || !token;
+
+	const {
+		reviews: pendingReviews,
+		isLoading: pendingReviewsLoading,
+		error: pendingReviewsError,
+		count: pendingReviewsCount,
+		reload: reloadPendingReviews,
+	} = usePendingReviews({
+		orgId: pendingReviewsDisabled ? null : selectedOrg,
+		token: token ?? null,
+		backendUrl: reviewApiBase,
+		disabled: pendingReviewsDisabled,
+	});
+
+	const loadRepositories = useCallback(async () => {
+		if (!token || !selectedOrg) {
+			setRepositories([]);
+			return;
+		}
+
+		setLoadingRepos(true);
+		setErrorMessage(null);
+
+		try {
+			const response = await fetch(
+				`${getBackendApiV1Base()}/org/${selectedOrg}/repositories/summary`,
+				{
+					headers: {
+						Authorization: `Bearer ${token}`,
+					},
+				},
+			);
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(errorText || "Failed to load repositories");
+			}
+
+			const data = await response.json();
+			const repos: RepositorySummary[] = Array.isArray(data.repositories)
+				? data.repositories
+				: [];
+			setRepositories(repos);
+		} catch (error) {
+			console.error("Error loading repositories", error);
+			setRepositories([]);
+			setErrorMessage(
+				error instanceof Error ? error.message : "Unable to load repositories",
+			);
+		} finally {
+			setLoadingRepos(false);
+		}
+	}, [selectedOrg, token]);
+
+	useEffect(() => {
+		loadRepositories();
+	}, [loadRepositories]);
+
+	useEffect(() => {
+		fetchDocbookRepo();
+	}, [fetchDocbookRepo]);
+
+	const userFacingRepositories = useMemo(
+		() => repositories.filter((repo) => !isDocitManagedDocbookRepo(repo)),
+		[repositories],
+	);
+
+	const activityRepoTargets = useMemo(
+		() =>
+			userFacingRepositories
+				.map((r) => {
+					const fn = (r.full_name || r.name || "").trim();
+					if (!fn.includes("/")) return null;
+					const branch =
+						r.tracked_branch ||
+						r.docbook_tracked_branch ||
+						r.default_branch ||
+						"main";
+					return { full_name: fn, branch };
+				})
+				.filter((x): x is { full_name: string; branch: string } => x !== null),
+		[userFacingRepositories],
+	);
+
+	const {
+		byRepo: activityByRepo,
+		loading: activityLoading,
+		error: activityBatchError,
+		newPushByRepo,
+	} = useRepositoriesRecentActivity(token, selectedOrg, activityRepoTargets, {
+		pollMs: 30000,
+		disabled: !selectedOrg || !token,
+	});
 
 	const filteredRepositories = useMemo(() => {
 		const query = repoSearchQuery.trim().toLowerCase();
@@ -363,16 +512,26 @@ export default function DashboardPage() {
 		});
 	}, [repoSearchQuery, userFacingRepositories]);
 
-	// Count of repositories that are actually displayed (excludes docbook repos)
-	const displayableRepoCount = useMemo(() => {
-		return repositories.filter((repo) => {
-			const fullName = (repo.full_name || repo.name || "").toLowerCase();
-			return (
-				!fullName.includes("/pustak-docbook-") &&
-				!fullName.includes("pustak-docbook")
-			);
-		}).length;
-	}, [repositories]);
+	const pendingReviewStatusMessage = useMemo(() => {
+		if (pendingReviewsDisabled) {
+			return "Connect an organization to start tracking documentation reviews.";
+		}
+		if (pendingReviewsLoading) {
+			return "Syncing review queue…";
+		}
+		if (pendingReviewsError) {
+			return "Unable to fetch the latest review status.";
+		}
+		if (pendingReviewsCount === 0) {
+			return "All caught up! Nothing waiting for approval.";
+		}
+		return "Awaiting approval across docs";
+	}, [
+		pendingReviewsDisabled,
+		pendingReviewsLoading,
+		pendingReviewsError,
+		pendingReviewsCount,
+	]);
 
 	const reviewButtonDisabled = pendingReviewsDisabled || !!pendingReviewsError;
 
@@ -413,17 +572,12 @@ export default function DashboardPage() {
 		return null;
 	}
 
-	const currentPlanKey = (actualPlan || user.plan) as PlanName;
-	const planLabel =
-		PLAN_CONFIG[currentPlanKey]?.label ??
-		(actualPlan || user.plan || "").toUpperCase();
-
 	return (
 		<OnboardingGuard>
 			<Layout>
 				<div className="min-h-screen bg-slate-950">
-					<div className="container mx-auto px-4 py-12 space-y-10">
-						<section className="relative overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/80 px-8 py-10 shadow-[0_35px_80px_-45px_rgba(59,130,246,0.6)]">
+					<div className="mx-auto px-6 py-8 space-y-8">
+						<section className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 px-5 py-6 shadow-[0_30px_70px_-40px_rgba(59,130,246,0.55)]">
 							<div
 								className="absolute inset-0 -translate-x-1/3 translate-y-1/4 scale-125 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.35),_transparent_55%)] blur-3xl opacity-70"
 								aria-hidden
@@ -432,50 +586,50 @@ export default function DashboardPage() {
 								className="absolute inset-0 translate-x-1/3 -translate-y-1/4 scale-125 bg-[radial-gradient(circle_at_bottom_right,_rgba(124,58,237,0.35),_transparent_55%)] blur-3xl opacity-70"
 								aria-hidden
 							/>
-							<div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-								<div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+							<div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+								<div className="flex flex-col gap-4 sm:flex-row sm:items-start">
 									<div className="relative shrink-0">
 										{user.avatar_url ? (
 											<img
 												src={user.avatar_url}
 												alt={user.name || user.username || "User avatar"}
-												className="h-24 w-24 rounded-2xl border-2 border-white/10 object-cover shadow-xl"
+												className="h-16 w-16 rounded-xl border-2 border-white/10 object-cover shadow-xl"
 											/>
 										) : (
-											<div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-purple-500 text-3xl font-bold text-white shadow-xl">
+											<div className="flex h-16 w-16 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 text-2xl font-bold text-white shadow-xl">
 												{(user.name || user.username || "U")[0].toUpperCase()}
 											</div>
 										)}
-										<div className="absolute -bottom-2 -right-2 rounded-full bg-emerald-500 px-2 py-1 text-xs font-semibold text-white shadow-lg">
+										<div className="absolute -bottom-1.5 -right-1.5 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-lg">
 											Active
 										</div>
 									</div>
-									<div className="space-y-4">
+									<div className="space-y-3">
 										<div>
-											<h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+											<h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
 												{user.name || user.username || "User"}
 											</h1>
-											<p className="text-sm text-slate-300">
+											<p className="text-xs text-slate-300">
 												{user.email || "No email provided"}
 											</p>
 										</div>
-										<div className="flex flex-wrap items-center gap-3">
-											<span className="inline-flex items-center gap-2 rounded-full border border-blue-400/40 bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-200">
-												<Settings className="h-3 w-3" />
-												{planLabel}
+										<div className="flex flex-wrap items-center gap-2">
+											<span className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/40 bg-blue-500/15 px-2.5 py-0.5 text-[10px] font-semibold text-blue-200">
+												<Settings className="h-2.5 w-2.5" />
+												{user.plan.toUpperCase()} PLAN
 											</span>
 											{user.username && (
 												<a
 													href={`https://github.com/${user.username}`}
 													target="_blank"
 													rel="noopener noreferrer"
-													className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/60 px-3 py-1 text-xs font-semibold text-slate-100 hover:border-blue-400 hover:text-white transition"
+													className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800/60 px-2.5 py-0.5 text-[10px] font-semibold text-slate-100 hover:border-blue-400 hover:text-white transition"
 												>
-													<Github className="h-3 w-3" />@{user.username}
+													<Github className="h-2.5 w-2.5" />@{user.username}
 												</a>
 											)}
 										</div>
-										<p className="max-w-xl text-sm text-slate-300">
+										<p className="max-w-xl text-xs text-slate-300">
 											Welcome back! Track repository coverage, monitor pending
 											doc reviews, and jump straight into actions tailored to
 											your organization.
@@ -483,36 +637,23 @@ export default function DashboardPage() {
 									</div>
 								</div>
 
-								<div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+								<div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
 									<button
 										onClick={() => router.push("/settings")}
-										className="group inline-flex items-center gap-2 rounded-full border border-blue-400/40 bg-blue-500/20 px-5 py-2 text-sm font-semibold text-blue-100 transition hover:bg-blue-500/30"
+										className="group inline-flex items-center gap-1.5 rounded-full border border-blue-400/40 bg-blue-500/20 px-4 py-1.5 text-xs font-semibold text-blue-100 transition hover:bg-blue-500/30"
 									>
-										<Settings className="h-4 w-4" />
+										<Settings className="h-3 w-3" />
 										Workspace settings
 									</button>
 									<button
 										onClick={logout}
-										className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-5 py-2 text-sm font-semibold text-slate-100 transition hover:border-rose-400 hover:text-rose-200"
+										className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/70 px-4 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-rose-400 hover:text-rose-200"
 									>
-										<LogOut className="h-4 w-4" />
+										<LogOut className="h-3 w-3" />
 										Logout
 									</button>
 								</div>
 							</div>
-						</section>
-
-						{/* ================================================================
-             PHASE 5: Usage & Limits Card - TOP PLACEMENT
-             ================================================================
-             Positioned prominently at the top to give users immediate
-             visibility into their usage, limits, and billing cycle.
-             ================================================================ */}
-						<section className="relative">
-							<UsageStatsCard
-								onUpgradeClick={() => router.push("/pricing")}
-								className="shadow-[0_35px_80px_-45px_rgba(147,51,234,0.6)]"
-							/>
 						</section>
 
 						<section className="grid grid-cols-1 gap-4 md:grid-cols-3">

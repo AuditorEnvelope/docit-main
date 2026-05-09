@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
 	AlertCircle,
@@ -22,7 +22,6 @@ import { Layout } from "@/components/Layout";
 import ConnectOrganizationModal from "@/components/ConnectOrganizationModal";
 import DocbookSetupModal from "@/components/DocbookSetupModal";
 import { useAuth } from "@/contexts/AuthContext";
-import apiClient from "@/lib/apiClient";
 
 interface OrgSummary {
 	org: string;
@@ -42,8 +41,8 @@ function formatPlanLabel(plan?: string | null) {
 const BACKEND_URL =
 	process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-const READER_APP_URL = "https://github.com/apps/pustak-analyser-ai-test";
-const WRITER_APP_URL = "https://github.com/apps/pustak-publisher-ai-test";
+const READER_APP_URL = "https://github.com/apps/DocIt-analyser-ai";
+const WRITER_APP_URL = "https://github.com/apps/DocIt-publisher-ai";
 
 const STATUS_TONE_CLASSES = {
 	success:
@@ -79,13 +78,6 @@ export default function SettingsPage() {
 		isAuthenticated,
 		logout,
 	} = useAuth();
-	const {
-		user,
-		token,
-		loading: authLoading,
-		isAuthenticated,
-		logout,
-	} = useAuth();
 	const [loading, setLoading] = useState(true);
 	const [organizations, setOrganizations] = useState<string[]>([]);
 	const [orgSummaries, setOrgSummaries] = useState<Record<string, OrgSummary>>(
@@ -95,6 +87,12 @@ export default function SettingsPage() {
 	const [showConnectModal, setShowConnectModal] = useState(false);
 	const [docbookOrg, setDocbookOrg] = useState<string | null>(null);
 
+	const apiBase = useMemo(() => {
+		const normalized = BACKEND_URL.replace(/\/$/, "");
+		const hasApiSuffix = /\/api(\/v\d+)?$/i.test(normalized);
+		return hasApiSuffix ? normalized : `${normalized}/api/v1`;
+	}, []);
+
 	const loadSettingsData = useCallback(async () => {
 		if (!token) return;
 
@@ -102,19 +100,20 @@ export default function SettingsPage() {
 		setFetchError(null);
 
 		try {
-			const orgsResponse = await apiClient.get<{
-				organizations?: { login?: string }[];
-			}>("/user/organizations");
-			const orgData = orgsResponse.data;
-			const orgsArray = Array.isArray(orgData.organizations)
-				? orgData.organizations
-				: [];
-			const orgIds: string[] = orgsArray
-				.map((org: { login?: string }) => org?.login)
-				.filter(
-					(login): login is string =>
-						typeof login === "string" && login.length > 0,
-				);
+			const orgsResponse = await fetch(`${apiBase}/user/organizations`, {
+				headers: {
+					Authorization: `Bearer ${token}`,
+				},
+			});
+
+			if (!orgsResponse.ok) {
+				throw new Error("Failed to load organizations");
+			}
+
+			const orgData = await orgsResponse.json();
+			const orgIds: string[] = (orgData.organizations || [])
+				.map((org: { login?: string }) => org.login)
+				.filter(Boolean);
 
 			setOrganizations(orgIds);
 
@@ -138,51 +137,47 @@ export default function SettingsPage() {
 					};
 
 					try {
-						// Apps installation status
-						try {
-							const appsRes = await apiClient.get<{
-								reader_app?: { installed?: boolean };
-								writer_app?: { installed?: boolean };
-							}>(`/org/${orgId}/verify-apps`);
-							const appData = appsRes.data;
+						const [appsRes, docbookRes] = await Promise.all([
+							fetch(`${apiBase}/org/${orgId}/verify-apps`, {
+								headers: {
+									Authorization: `Bearer ${token}`,
+								},
+							}),
+							fetch(`${apiBase}/docbook/check-exists?org_id=${orgId}`, {
+								headers: {
+									Authorization: `Bearer ${token}`,
+								},
+							}),
+						]);
+
+						if (appsRes.ok) {
+							const appData = await appsRes.json();
 							summary.readerInstalled = appData?.reader_app?.installed ?? false;
 							summary.writerInstalled = appData?.writer_app?.installed ?? false;
-						} catch (err) {
-							console.error(`Failed to load app status for ${orgId}`, err);
 						}
 
-						// Docbook and writer access
-						try {
-							const docbookRes = await apiClient.get<{
-								exists: boolean;
-								docbook_repo?: string;
-							}>("/docbook/check-exists", {
-								params: { org_id: orgId },
-							});
-							const docbookData = docbookRes.data;
+						if (docbookRes.ok) {
+							const docbookData = await docbookRes.json();
 							if (docbookData.exists) {
 								summary.docbookRepo = docbookData.docbook_repo;
 								summary.docbookLinked = true;
 
-								try {
-									const accessRes = await apiClient.get<{
-										has_access?: boolean;
-									}>(`/org/${orgId}/verify-writer-app-access`, {
-										params: {
-											repo: docbookData.docbook_repo,
+								const accessRes = await fetch(
+									`${apiBase}/org/${orgId}/verify-writer-app-access?repo=${encodeURIComponent(
+										docbookData.docbook_repo,
+									)}`,
+									{
+										headers: {
+											Authorization: `Bearer ${token}`,
 										},
-									});
-									const accessData = accessRes.data;
+									},
+								);
+
+								if (accessRes.ok) {
+									const accessData = await accessRes.json();
 									summary.writerHasAccess = accessData?.has_access ?? false;
-								} catch (err) {
-									console.error(
-										`Failed to load writer access for ${orgId}`,
-										err,
-									);
 								}
 							}
-						} catch (err) {
-							console.error(`Failed to load docbook status for ${orgId}`, err);
 						}
 					} catch (err) {
 						console.error(`Failed to load status for ${orgId}`, err);
@@ -202,7 +197,7 @@ export default function SettingsPage() {
 		} finally {
 			setLoading(false);
 		}
-	}, [token]);
+	}, [apiBase, token]);
 
 	useEffect(() => {
 		if (token) {
@@ -583,12 +578,9 @@ export default function SettingsPage() {
 																{summary?.docbookLinked
 																	? "Manage docbook"
 																	: "Link docbook"}
-																{summary?.docbookLinked
-																	? "Manage docbook"
-																	: "Link docbook"}
 															</button>
 															<a
-																href="https://github.com/apps/pustak-analyser-ai-test"
+																href="https://github.com/apps/DocIt-analyser-ai"
 																target="_blank"
 																rel="noopener noreferrer"
 																className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700/70 bg-slate-900/60 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-indigo-400 hover:text-white"
@@ -669,11 +661,7 @@ export default function SettingsPage() {
 															<ul className="mt-4 space-y-3 text-sm text-slate-300">
 																<li className="flex items-center gap-2">
 																	<CheckCircle2
-																		className={`h-4 w-4 ${
-																			summary?.readerInstalled
-																				? "text-emerald-400"
-																				: "text-amber-400"
-																		}`}
+																		className={`h-4 w-4 ${summary?.readerInstalled ? "text-emerald-400" : "text-amber-400"}`}
 																	/>
 																	GitHub Reader App{" "}
 																	{summary?.readerInstalled
@@ -682,11 +670,7 @@ export default function SettingsPage() {
 																</li>
 																<li className="flex items-center gap-2">
 																	<CheckCircle2
-																		className={`h-4 w-4 ${
-																			summary?.writerInstalled
-																				? "text-emerald-400"
-																				: "text-amber-400"
-																		}`}
+																		className={`h-4 w-4 ${summary?.writerInstalled ? "text-emerald-400" : "text-amber-400"}`}
 																	/>
 																	Writer App{" "}
 																	{summary?.writerInstalled
@@ -695,11 +679,7 @@ export default function SettingsPage() {
 																</li>
 																<li className="flex items-center gap-2">
 																	<CheckCircle2
-																		className={`h-4 w-4 ${
-																			summary?.docbookLinked
-																				? "text-emerald-400"
-																				: "text-amber-400"
-																		}`}
+																		className={`h-4 w-4 ${summary?.docbookLinked ? "text-emerald-400" : "text-amber-400"}`}
 																	/>
 																	Docbook{" "}
 																	{summary?.docbookLinked
