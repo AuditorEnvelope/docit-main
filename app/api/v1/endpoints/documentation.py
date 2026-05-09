@@ -20,8 +20,11 @@ from app.models.user import User
 from app.services.documentation.manual_generation import ManualDocGenerator
 from app.services.docbook.publisher import DocbookPublisher
 from app.utils.github_dual_app import GitHubDualAppHelper
+from app.services.usage import UsageService
+from app.models.usage import ResourceType
 
 router = APIRouter()
+
 
 @router.get("", response_model=List[DocumentationResponse])
 async def list_documentation(
@@ -32,6 +35,7 @@ async def list_documentation(
     """List all documentation publications with optional filtering"""
     service = DocumentationService(db)
     return await service.list_publications(repo_name=repo_name, status=status)
+
 
 @router.get("/{doc_id}", response_model=DocumentationResponse)
 async def get_documentation(
@@ -45,6 +49,7 @@ async def get_documentation(
         raise HTTPException(status_code=404, detail="Documentation not found")
     return doc
 
+
 @router.post("", response_model=DocumentationResponse, status_code=status.HTTP_201_CREATED)
 async def create_documentation(
     doc_in: DocumentationCreate,
@@ -53,6 +58,7 @@ async def create_documentation(
     """Create a new documentation entry"""
     service = DocumentationService(db)
     return await service.create_publication(doc_in)
+
 
 @router.post("/publish/{doc_id}", response_model=DocumentationResponse)
 async def publish_documentation(
@@ -63,24 +69,28 @@ async def publish_documentation(
     service = DocumentationService(db)
     doc = await service.publish_documentation(doc_id)
     if not doc:
-        raise HTTPException(status_code=404, detail="Documentation not found or already published")
+        raise HTTPException(
+            status_code=404, detail="Documentation not found or already published")
     return doc
 
 
 def _require_github_token(user: User) -> str:
     token = user.github_access_token
     if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="GitHub token not found for user")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="GitHub token not found for user")
     return token
 
 
 def _parse_repo_full_name(repo_full_name: str) -> tuple[str, str]:
     repo_full_name = repo_full_name.strip()
     if "/" not in repo_full_name:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="repo_full_name must be in the form org/repo")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="repo_full_name must be in the form org/repo")
     org, repo = repo_full_name.split("/", 1)
     if not org or not repo:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid repo_full_name provided")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Invalid repo_full_name provided")
     return org, repo
 
 
@@ -90,7 +100,61 @@ async def manual_generate_documentation(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Manually generate documentation and publish to docbook staging."""
+    """Manually generate documentation and publish to docbook staging.
+
+    Phase 3 Integration: Usage Limits Enforcement
+    --------------------------------------------
+    This endpoint now enforces doc generation limits using the ledger-based
+    billing system. The flow is:
+
+    1. CHECK LIMIT (The Guard) - Fail fast if quota exceeded
+    2. GENERATE - Do the expensive work
+    3. RECORD USAGE (The Ledger) - Append to immutable usage log
+
+    If the user has exceeded their plan's limits, this returns HTTP 403
+    with a clear message about upgrading or waiting for cycle reset.
+    """
+
+    # ========================================================================
+    # PHASE 3 INTEGRATION: Step A - THE GUARD (Enforce Limit)
+    # ========================================================================
+    # Check usage limit BEFORE expensive doc generation
+    # This fails fast with HTTP 403 if user has exceeded quota
+    usage_service = UsageService(db)
+
+    try:
+        await usage_service.enforce_limit(
+            user_id=str(user.id),
+            resource_type=ResourceType.DOCS_GENERATED,
+        )
+    except HTTPException as limit_error:
+        # Re-raise with enhanced message for frontend
+        if limit_error.status_code == 403:
+            # Get detailed limit info for error message
+            try:
+                limit_check = await usage_service.check_limit(
+                    user_id=str(user.id),
+                    resource_type=ResourceType.DOCS_GENERATED,
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": "usage_limit_exceeded",
+                        "message": f"Document generation limit reached. You've used {limit_check['used']} of {limit_check['limit']} docs.",
+                        "plan": limit_check["plan"],
+                        "used": limit_check["used"],
+                        "limit": limit_check["limit"],
+                        "cycle_end": limit_check["cycle_end"],
+                        "action": "upgrade_or_wait",
+                    }
+                )
+            except:
+                # Fallback to simple error if detailed check fails
+                raise limit_error
+        else:
+            # Re-raise other errors as-is
+            raise
+    # ========================================================================
 
     github_token = _require_github_token(user)
     org_id, repo_name = _parse_repo_full_name(payload.repo_full_name)
@@ -116,11 +180,42 @@ async def manual_generate_documentation(
         generation_result.cleanup()
 
     if publish_result.get("status") == "error":
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=publish_result.get("message", "Docbook publication failed"))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=publish_result.get("message", "Docbook publication failed"))
+
+    # ========================================================================
+    # PHASE 3 INTEGRATION: Step B - THE LEDGER (Record Usage)
+    # ========================================================================
+    # Record usage AFTER successful generation
+    # This creates an immutable audit trail in subscription_usage table
+    #
+    # Phase 6 Enhancement: Now records token usage for shadow metrics
+    try:
+        await usage_service.record_usage(
+            user_id=str(user.id),
+            resource_type=ResourceType.DOCS_GENERATED,
+            amount=1,
+            # Use commit SHA as resource_id for audit
+            resource_id=str(publish_result.get("commit_sha", repo_name)),
+            # Phase 6: Shadow token tracking
+            input_tokens=generation_result.input_tokens,
+            output_tokens=generation_result.output_tokens,
+            model_name=generation_result.model_name,
+        )
+        print(
+            f"✅ Recorded usage: {generation_result.input_tokens} input tokens, {generation_result.output_tokens} output tokens, model: {generation_result.model_name}")
+    except Exception as record_error:
+        # Log but don't fail the request if usage recording fails
+        # (The doc was already generated successfully)
+        print(f"⚠️ Failed to record usage for user {user.id}: {record_error}")
+        import traceback
+        traceback.print_exc()
+    # ========================================================================
 
     return ManualGenerationResponse(
         status=publish_result.get("status", "published_to_staging"),
-        message=publish_result.get("message", "Manual documentation published"),
+        message=publish_result.get(
+            "message", "Manual documentation published"),
         docbook_repo=publish_result.get("docbook_repo"),
         branch=publish_result.get("branch"),
         review_url=publish_result.get("review_url"),

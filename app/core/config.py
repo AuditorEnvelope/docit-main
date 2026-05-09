@@ -52,12 +52,12 @@ class Settings(BaseSettings):
     GITHUB_APP_ID: Optional[str] = None
 
     # GitHub App Configuration (Reader App)
-    GITHUB_READER_APP_ID: str = "2072879"
+    GITHUB_READER_APP_ID: str = "2298324"
     GITHUB_READER_PRIVATE_KEY: str = ""
     GITHUB_READER_INSTALLATION_ID: Optional[int] = None
     
     # GitHub App Configuration (Writer App)
-    GITHUB_WRITER_APP_ID: str = "2229202"
+    GITHUB_WRITER_APP_ID: str = "2314230"
     GITHUB_WRITER_PRIVATE_KEY: str = ""
     GITHUB_WRITER_INSTALLATION_ID: Optional[int] = None
     

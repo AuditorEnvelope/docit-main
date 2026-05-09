@@ -49,7 +49,8 @@ class DocbookPublisher:
         """Publish documentation artefacts to the staging branch."""
 
         if not docs_dir.exists():
-            raise FileNotFoundError(f"Docs directory does not exist: {docs_dir}")
+            raise FileNotFoundError(
+                f"Docs directory does not exist: {docs_dir}")
 
         user_uuid, user_label = self._normalize_user_id(user_id)
 
@@ -71,11 +72,13 @@ class DocbookPublisher:
             docbook_url = f"https://github.com/{docbook_full_name}"
             staging_branch = DEFAULT_STAGING_BRANCH
             main_branch = DEFAULT_MAIN_BRANCH
-            print(f"ℹ️  Using default docbook repo naming: {docbook_full_name}")
+            print(
+                f"ℹ️  Using default docbook repo naming: {docbook_full_name}")
 
         if not writer_token:
             token_source = "provided installation" if installation_id else "database"
-            print(f"🔑 Writer token not provided. Resolving via {token_source}...")
+            print(
+                f"🔑 Writer token not provided. Resolving via {token_source}...")
             installation_id = installation_id or await self._get_installation_id(org_id)
             if not installation_id:
                 # Don't raise - make it non-blocking, just log and return error status
@@ -104,12 +107,14 @@ class DocbookPublisher:
 
         tmp_dir = Path(tempfile.mkdtemp(prefix="docai_docbook_"))
         print(f"📁 Working directory: {tmp_dir}")
-        
+
         # Check if repository exists
         repo_exists = await self._check_repo_exists(org_id, f"docit-docbook-{org_id}", writer_token)
         if not repo_exists:
-            print(f"❌ Error publishing to docbook: Repository {docbook_full_name} not found")
-            print("ℹ️ You may need to create this repository first or check the organization name")
+            print(
+                f"❌ Error publishing to docbook: Repository {docbook_full_name} not found")
+            print(
+                "ℹ️ You may need to create this repository first or check the organization name")
             print(f"ℹ️ Expected repository name: {docbook_full_name}")
             return {
                 "status": "error",
@@ -124,8 +129,10 @@ class DocbookPublisher:
             except RuntimeError as e:
                 error_msg = str(e)
                 if "Repository not found" in error_msg:
-                    print(f"❌ Error publishing to docbook: Repository {docbook_full_name} not found")
-                    print("ℹ️ You may need to create this repository first or check the organization name")
+                    print(
+                        f"❌ Error publishing to docbook: Repository {docbook_full_name} not found")
+                    print(
+                        "ℹ️ You may need to create this repository first or check the organization name")
                     return {
                         "status": "error",
                         "message": f"Repository {docbook_full_name} not found. Please create it first.",
@@ -134,9 +141,10 @@ class DocbookPublisher:
                     }
                 else:
                     raise
-                    
+
             self._configure_git_identity(tmp_dir)
-            self._checkout_staging(tmp_dir, staging_branch, main_branch, writer_token, docbook_full_name)
+            self._checkout_staging(
+                tmp_dir, staging_branch, main_branch, writer_token, docbook_full_name)
             self._sync_docs(tmp_dir, source_repo_name, docs_dir)
 
             if not self._has_changes(tmp_dir):
@@ -150,7 +158,8 @@ class DocbookPublisher:
 
             full_commit_msg = f"{commit_message} ({source_repo_name})"
             self._commit_changes(tmp_dir, full_commit_msg)
-            self._push_changes(tmp_dir, docbook_full_name, staging_branch, writer_token)
+            self._push_changes(tmp_dir, docbook_full_name,
+                               staging_branch, writer_token)
 
             metadata = {
                 "source_repo": source_repo_name,
@@ -366,7 +375,7 @@ class DocbookPublisher:
         Uses AppInstallationService to query app_installations table
         """
         from app.services.github.app_installation_service import AppInstallationService
-        
+
         writer_app_id = self._writer_app_id()
         if not writer_app_id:
             return None
@@ -374,7 +383,7 @@ class DocbookPublisher:
         try:
             writer_app_id_int = int(writer_app_id)
         except (TypeError, ValueError):
-                return None
+            return None
 
         # Use AppInstallationService like old codebase does
         # This is the correct way - matches old codebase behavior
@@ -383,7 +392,8 @@ class DocbookPublisher:
                 service = AppInstallationService(db_pool=self.db_pool)
                 installation_id = await service.get_app_installation_id(org_id, writer_app_id_int)
                 if installation_id:
-                    print(f"✅ Resolved writer installation ID {installation_id} for org {org_id} (app {writer_app_id_int})")
+                    print(
+                        f"✅ Resolved writer installation ID {installation_id} for org {org_id} (app {writer_app_id_int})")
                     return installation_id
             except Exception as e:
                 print(f"⚠️  Error using AppInstallationService: {e}")
@@ -393,7 +403,8 @@ class DocbookPublisher:
                 service = AppInstallationService(db_session=self.db_session)
                 installation_id = await service.get_app_installation_id(org_id, writer_app_id_int)
                 if installation_id:
-                    print(f"✅ Resolved writer installation ID {installation_id} for org {org_id} (app {writer_app_id_int})")
+                    print(
+                        f"✅ Resolved writer installation ID {installation_id} for org {org_id} (app {writer_app_id_int})")
                     return installation_id
             except Exception as e:
                 print(f"⚠️  Error using AppInstallationService: {e}")
@@ -416,7 +427,8 @@ class DocbookPublisher:
             except Exception as e:
                 print(f"⚠️  Error looking up legacy installation: {e}")
 
-        print(f"⚠️  No installation found for org {org_id}, app {writer_app_id_int}")
+        print(
+            f"⚠️  No installation found for org {org_id}, app {writer_app_id_int}")
         return None
 
     async def _get_writer_token(self, installation_id: int) -> Optional[str]:
@@ -447,14 +459,15 @@ class DocbookPublisher:
         except RuntimeError:
             # If fetch fails, repo might be empty
             pass
-        
+
         # Check if repo is empty (like old codebase)
         try:
-            branches = self._run_git(["git", "branch", "-r"], cwd=repo_dir, capture_output=True).strip()
+            branches = self._run_git(
+                ["git", "branch", "-r"], cwd=repo_dir, capture_output=True).strip()
             is_empty = not branches or "origin/" not in branches
         except RuntimeError:
             is_empty = True
-        
+
         if is_empty:
             # Repo is empty - create initial commit on main, then staging (like old codebase)
             print(f"📝 Repo is empty, creating initial commit...")
@@ -469,7 +482,7 @@ class DocbookPublisher:
             )
             print(f"✅ Created staging branch")
             return
-        
+
         # Repo has content - try to checkout staging (like old codebase)
         try:
             self._run_git(["git", "checkout", staging_branch], cwd=repo_dir)
@@ -488,14 +501,17 @@ class DocbookPublisher:
                 except RuntimeError:
                     # Try to checkout from remote
                     try:
-                        self._run_git(["git", "checkout", "-b", main_branch, f"origin/{main_branch}"], cwd=repo_dir)
+                        self._run_git(
+                            ["git", "checkout", "-b", main_branch, f"origin/{main_branch}"], cwd=repo_dir)
                     except RuntimeError:
                         # Last resort - try master from remote
-                        self._run_git(["git", "checkout", "-b", "master", "origin/master"], cwd=repo_dir)
+                        self._run_git(
+                            ["git", "checkout", "-b", "master", "origin/master"], cwd=repo_dir)
                         main_branch = "master"
-            
+
             # Now create staging from main (like old codebase)
-            self._run_git(["git", "checkout", "-b", staging_branch], cwd=repo_dir)
+            self._run_git(["git", "checkout", "-b",
+                          staging_branch], cwd=repo_dir)
             print(f"✅ Created staging branch from {main_branch}")
 
     def _determine_base_ref(
@@ -547,7 +563,8 @@ class DocbookPublisher:
             f"ℹ️  Repository {repo_full_name} has no default branch. Initializing {main_branch}."
         )
 
-        self._run_git(["git", "checkout", "--orphan", main_branch], cwd=repo_dir)
+        self._run_git(["git", "checkout", "--orphan",
+                      main_branch], cwd=repo_dir)
 
         placeholder = repo_dir / "README.md"
         if not placeholder.exists():
@@ -577,19 +594,20 @@ class DocbookPublisher:
         # Create target repo directory if it doesn't exist
         target_dir = repo_dir / source_repo_name
         target_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create docs directory inside target repo directory
         target_docs_dir = target_dir / "docs"
         target_docs_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Check if we're dealing with legacy structure (no internal/dev folders)
-        is_legacy = not any((docs_dir / persona).exists() for persona in ["internal", "dev"])
-        
+        is_legacy = not any((docs_dir / persona).exists()
+                            for persona in ["internal", "dev"])
+
         if is_legacy:
             # Legacy mode: Copy everything to internal folder
             internal_target_dir = target_docs_dir / "internal"
             internal_target_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Copy all files from docs_dir to internal_target_dir
             for item in docs_dir.glob("**/*"):
                 if item.is_file():
@@ -597,12 +615,13 @@ class DocbookPublisher:
                     dest_path = internal_target_dir / rel_path
                     dest_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(item, dest_path)
-                    
+
             # Create minimal dev folder with README
             dev_target_dir = target_docs_dir / "dev"
             dev_target_dir.mkdir(parents=True, exist_ok=True)
             with open(dev_target_dir / "README.md", "w") as f:
-                f.write(f"# {source_repo_name}\n\nPublic documentation is not available for this repository.")
+                f.write(
+                    f"# {source_repo_name}\n\nPublic documentation is not available for this repository.")
         else:
             # New structure: Find which persona folder has been modified
             # We'll determine this by looking for a SUMMARY.md file
@@ -611,30 +630,32 @@ class DocbookPublisher:
                 source_persona_dir = docs_dir / persona
                 if source_persona_dir.exists() and (source_persona_dir / "SUMMARY.md").exists():
                     modified_personas.append(persona)
-            
-            print(f"📝 Modified personas: {', '.join(modified_personas) or 'none'}")
-            
+
+            print(
+                f"📝 Modified personas: {', '.join(modified_personas) or 'none'}")
+
             # Only copy the modified persona folders
             for persona in modified_personas:
                 source_persona_dir = docs_dir / persona
                 print(f"📋 Copying {persona} documentation")
                 target_persona_dir = target_docs_dir / persona
-                
+
                 # Remove existing content in this persona folder
                 if target_persona_dir.exists():
                     shutil.rmtree(target_persona_dir)
-                    
+
                 # Copy the updated persona folder
                 shutil.copytree(source_persona_dir, target_persona_dir)
-                
+
             # Ensure both persona folders exist in the target
             for persona in ["internal", "dev"]:
                 target_persona_dir = target_docs_dir / persona
                 if not target_persona_dir.exists():
                     target_persona_dir.mkdir(exist_ok=True)
                     with open(target_persona_dir / "README.md", "w") as f:
-                        f.write(f"# {source_repo_name} {persona.capitalize()} Documentation\n\nThis persona documentation is not available yet.")
-        
+                        f.write(
+                            f"# {source_repo_name} {persona.capitalize()} Documentation\n\nThis persona documentation is not available yet.")
+
         # Add all changes
         self._run_git(["git", "add", f"{source_repo_name}/"], cwd=repo_dir)
 
@@ -656,7 +677,8 @@ class DocbookPublisher:
         staging_branch: str,
         writer_token: str,
     ) -> None:
-        push_url, masked_url = self._tokenized_urls(repo_full_name, writer_token)
+        push_url, masked_url = self._tokenized_urls(
+            repo_full_name, writer_token)
         print(f"🚀 Pushing updates to {masked_url} ({staging_branch})")
         self._run_git(
             ["git", "push", push_url, f"HEAD:{staging_branch}"],
@@ -703,7 +725,8 @@ class DocbookPublisher:
                 await self.db_session.flush()
                 return
             except Exception as exc:
-                print(f"⚠️  Failed to record pending review via SQLAlchemy: {exc}")
+                print(
+                    f"⚠️  Failed to record pending review via SQLAlchemy: {exc}")
                 # Fall back to asyncpg pool if available
 
         if not self.db_pool:
@@ -751,8 +774,8 @@ class DocbookPublisher:
 
     def _writer_identity(self) -> Tuple[str, str]:
         helper = self._get_dual_app_helper()
-        app_id = helper.writer_app_id or helper.github_app_id or "docit-bot"
-        slug = "docit-publisher-ai"
+        app_id = helper.writer_app_id or helper.github_app_id or "pustak-bot"
+        slug = "pustak-publisher-ai-test"
         bot_name = f"{slug}[bot]"
         bot_email = f"{app_id}+{slug}[bot]@users.noreply.github.com"
         return bot_name, bot_email
@@ -761,7 +784,7 @@ class DocbookPublisher:
         url = f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
         masked = f"https://x-access-token:***MASKED***@github.com/{repo_full_name}.git"
         return url, masked
-        
+
     def _clone_repo(self, repo_full_name: str, token: str, target_dir: Path) -> None:
         clone_url, masked_url = self._tokenized_urls(repo_full_name, token)
         print(f"📚 Cloning docbook repository: {masked_url}")
@@ -799,8 +822,10 @@ class DocbookPublisher:
             stderr = self._mask(proc.stderr, mask_tokens)
             stdout = self._mask(proc.stdout, mask_tokens)
             cmd_str = " ".join(cmd)
-            print(f"❌ Command failed: {cmd_str}\nstdout: {stdout}\nstderr: {stderr}")
-            raise RuntimeError(stderr or stdout or f"Command failed: {cmd_str}")
+            print(
+                f"❌ Command failed: {cmd_str}\nstdout: {stdout}\nstderr: {stderr}")
+            raise RuntimeError(
+                stderr or stdout or f"Command failed: {cmd_str}")
 
         output = proc.stdout if capture_output else ""
         return self._mask(output, mask_tokens)
@@ -816,7 +841,7 @@ class DocbookPublisher:
         if not self._dual_app:
             self._dual_app = GitHubDualAppHelper()
         return self._dual_app
-        
+
     async def _check_repo_exists(self, org_id: str, repo_name: str, token: str) -> bool:
         """Check if a repository exists on GitHub."""
         try:
