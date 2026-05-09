@@ -38,16 +38,6 @@ from app.services.auth import get_current_user
 from app.services.event.service import EventService
 from app.services.event.processor import EventProcessor
 
-
-@app.get("/")
-async def root():
-    return {"status": "ok"}
-
-
-@app.get("/healthz")
-async def healthz():
-    return {"healthy": True}
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -253,6 +243,14 @@ def create_application() -> FastAPI:
         lifespan=lifespan
     )
 
+    @application.get("/")
+    async def root():
+        return {"status": "ok"}
+
+    @application.get("/healthz")
+    async def healthz():
+        return {"healthy": True}
+
     # Add middleware
     application.add_middleware(LoggingMiddleware)
     application = add_middleware(application)  # Rate limiting
@@ -352,6 +350,7 @@ def create_application() -> FastAPI:
 
 # Create the FastAPI application
 app = create_application()
+
 
 if __name__ == "__main__":
     import uvicorn
