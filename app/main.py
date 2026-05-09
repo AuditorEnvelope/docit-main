@@ -38,6 +38,16 @@ from app.services.auth import get_current_user
 from app.services.event.service import EventService
 from app.services.event.processor import EventProcessor
 
+
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"healthy": True}
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -179,7 +189,7 @@ async def lifespan(app: FastAPI):
     """Handle application startup and shutdown events"""
     # Startup
     logger.info("Starting application...")
-    # await init_models()
+    await init_models()
 
     # Start the event processing loop if enabled
     if settings.ENABLE_EVENT_PROCESSOR and settings.DEBUG:
