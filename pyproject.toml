@@ -31,7 +31,6 @@ dependencies = [
     "openai>=0.28.0",
     "google-generativeai>=0.3.0",
     "groq>=0.3.0",
-    "sentence-transformers>=2.2.2",
     "python-dateutil>=2.8.2",
     "aiolimiter>=1.1.0",
 ]
