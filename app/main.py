@@ -254,6 +254,8 @@ def create_application() -> FastAPI:
         "http://localhost:8000",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:8000",
+        "https://www.docit.in",
+        "https://docit.in",
     ]
 
     # Add configured origins if any (filter out wildcard patterns — handled via regex below)
