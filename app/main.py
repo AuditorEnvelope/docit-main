@@ -243,14 +243,6 @@ def create_application() -> FastAPI:
         lifespan=lifespan
     )
 
-    @application.get("/")
-    async def root():
-        return {"status": "ok"}
-
-    @application.get("/healthz")
-    async def healthz():
-        return {"healthy": True}
-
     # Add middleware
     application.add_middleware(LoggingMiddleware)
     application = add_middleware(application)  # Rate limiting
@@ -301,15 +293,22 @@ def create_application() -> FastAPI:
     application.include_router(legacy_auth_router)
 
     # Add security headers middleware
+    # @application.middleware("http")
+    # async def add_security_headers(request: Request, call_next):
+    #     response = await call_next(request)
+    #     response.headers["X-Content-Type-Options"] = "nosniff"
+    #     response.headers["X-Frame-Options"] = "DENY"
+    #     response.headers["X-XSS-Protection"] = "1; mode=block"
+    #     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    #     response.headers["Content-Security-Policy"] = "default-src 'self'"
+    #     return response
     @application.middleware("http")
-    async def add_security_headers(request: Request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Content-Security-Policy"] = "default-src 'self'"
-        return response
+    async def catch_all_errors(request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as e:
+            logger.error("UNHANDLED REQUEST ERROR: %s", str(e), exc_info=True)
+            return JSONResponse(status_code=500, content={"detail": str(e)})
 
     # Health check endpoint
     @application.get("/health", include_in_schema=False)
