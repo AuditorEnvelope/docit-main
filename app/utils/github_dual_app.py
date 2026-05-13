@@ -34,14 +34,14 @@ class GitHubDualAppHelper:
         self.writer_private_key = self._load_private_key(
             env_key_var="WRITER_PRIVATE_KEY",
             path_env_var="WRITER_PRIVATE_KEY_PATH",
-            default_filename="docit-publisher-ai.private-key.pem"
+            default_filename="docit-publisher.private-key.pem"
         )
         # Also check GITHUB_WRITER_PRIVATE_KEY if WRITER_PRIVATE_KEY not found
         if not self.writer_private_key:
             self.writer_private_key = self._load_private_key(
                 env_key_var="GITHUB_WRITER_PRIVATE_KEY",
                 path_env_var="GITHUB_WRITER_PRIVATE_KEY_PATH",
-                default_filename="docit-publisher-ai.private-key.pem"
+                default_filename="docit-publisher.private-key.pem"
             )
 
         # Fallback to old single app (for backward compatibility)
