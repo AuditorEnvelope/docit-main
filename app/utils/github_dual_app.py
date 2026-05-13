@@ -56,21 +56,6 @@ class GitHubDualAppHelper:
         self.dual_app_mode = bool(self.reader_app_id and self.reader_private_key and
                                   self.writer_app_id and self.writer_private_key)
 
-        print("========== GITHUB CONFIG DEBUG ==========")
-
-        print("reader_app_id:", repr(self.reader_app_id))
-        print("reader_private_key exists:", bool(self.reader_private_key))
-
-        print("writer_app_id:", repr(self.writer_app_id))
-        print("writer_private_key exists:", bool(self.writer_private_key))
-
-        print("github_app_id:", repr(self.github_app_id))
-        print("github_private_key exists:", bool(self.github_private_key))
-
-        print("dual_app_mode:", self.dual_app_mode)
-
-        print("=========================================")
-
         if not self.dual_app_mode and not (self.github_app_id and self.github_private_key):
             raise ValueError(
                 "Either dual app configuration or single app configuration must be provided")
