@@ -60,17 +60,29 @@ class GitHubDualAppHelper:
             raise ValueError(
                 "Either dual app configuration or single app configuration must be provided")
 
-    def _load_private_key(self, env_key_var: str, path_env_var: str, default_filename: str) -> Optional[str]:
+    def _load_private_key(
+        self,
+        env_key_var: str,
+        path_env_var: str,
+        default_filename: str
+    ) -> Optional[str]:
         """Load private key from environment or file"""
-        # Try to get from environment variable first
+
         key = os.getenv(env_key_var)
+
         if key:
+            # Remove wrapping quotes if present
+            key = key.strip().strip('"').strip("'")
+
+            # Convert escaped newlines into real newlines
+            key = key.replace("\\n", "\n")
+
             return key
 
-        # Try to load from file
         key_path = os.getenv(path_env_var, default_filename)
+
         if os.path.exists(key_path):
-            with open(key_path, 'r') as f:
+            with open(key_path, "r") as f:
                 return f.read()
 
         return None
@@ -92,7 +104,12 @@ class GitHubDualAppHelper:
             "iss": app_id  # GitHub App ID
         }
 
-        return jwt.encode(payload, private_key, algorithm="RS256")
+        try:
+            return jwt.encode(payload, private_key, algorithm="RS256")
+        except Exception as e:
+            print("JWT CREATION FAILED")
+            print(repr(e))
+            raise
 
     async def get_reader_token(self, installation_id: int) -> Optional[str]:
         """Get installation access token for reader app"""
@@ -162,5 +179,6 @@ class GitHubDualAppHelper:
                         print(f"Failed to get installation token: {error}")
                         return None
         except Exception as e:
-            print(f"Error getting installation token: {e}")
-            return None
+            import traceback
+            traceback.print_exc()
+            raise
