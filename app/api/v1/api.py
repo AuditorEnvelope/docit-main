@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+import logging
+from fastapi import APIRouter, Depends
 
 # Import all endpoint routers
 from .endpoints import (
@@ -14,8 +15,10 @@ from .endpoints import (
     docs,
     webhooks,
     workspace,
+    usage,
 )
 from app.webhooks.github import router as github_webhook_router
+from app.webhooks.razorpay import router as razorpay_webhook_router
 
 # Create main API router
 api_router = APIRouter()
@@ -49,6 +52,9 @@ api_router.include_router(
 )
 
 # Legacy docs endpoints (requires auth)
+logger = logging.getLogger(__name__)
+logger.info("Registering docs router with routes: %s",
+            [r.path for r in docs.router.routes])
 api_router.include_router(
     docs.router,
     prefix="/docs",
@@ -72,6 +78,18 @@ api_router.include_router(
     responses={404: {"description": "Not found"}},
 )
 
+# Usage endpoints (ledger-based billing)
+api_router.include_router(
+    usage.router,
+    prefix="/usage",
+    tags=["Usage"],
+    responses={
+        200: {"description": "Success"},
+        401: {"description": "Unauthorized"},
+        404: {"description": "Not found"},
+    },
+)
+
 # Webhook endpoints (registration + GitHub delivery)
 api_router.include_router(
     webhooks.router,
@@ -89,6 +107,17 @@ api_router.include_router(
     tags=["Webhooks"],
     responses={
         202: {"description": "Webhook accepted for processing"},
+        400: {"description": "Invalid request"},
+        401: {"description": "Unauthorized"},
+        500: {"description": "Internal server error"}
+    },
+)
+api_router.include_router(
+    razorpay_webhook_router,
+    prefix="/razorpay",
+    tags=["Webhooks"],
+    responses={
+        200: {"description": "Webhook processed"},
         400: {"description": "Invalid request"},
         401: {"description": "Unauthorized"},
         500: {"description": "Internal server error"}

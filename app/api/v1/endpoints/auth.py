@@ -23,19 +23,19 @@ async def start_github_oauth(
 ):
     """
     Start GitHub OAuth flow
-    
+
     Returns GitHub OAuth URL for user to authorize
     """
     # Create temporary auth service (no DB needed for URL generation)
     auth_service = AuthService.__new__(AuthService)
     auth_service.github_api_base = "https://api.github.com"
-    
+
     if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET:
         raise HTTPException(
             status_code=500,
             detail="GitHub OAuth not configured"
         )
-    
+
     oauth_url = auth_service.get_oauth_url(redirect_uri, scope=scope)
     return {"url": oauth_url}
 
@@ -48,27 +48,27 @@ async def handle_github_callback(
 ):
     """
     Handle GitHub OAuth callback
-    
+
     Exchanges code for access token and creates user session
     """
     auth_service = AuthService(db)
-    
+
     try:
         # Exchange code for GitHub token
         github_token = await auth_service.exchange_code_for_token(code)
-        
+
         # Get GitHub user data
         github_user = await auth_service.get_github_user(github_token)
-        
+
         # Get or create user (persist token)
         user = await auth_service.get_or_create_user(
             github_user,
             github_token=github_token,
         )
-        
+
         # Create JWT token
         access_token = auth_service.create_jwt_token(user.id)
-        
+
         # Create session
         ip_address = request.client.host if request else None
         user_agent = request.headers.get("user-agent") if request else None
@@ -78,7 +78,7 @@ async def handle_github_callback(
             ip_address,
             user_agent
         )
-        
+
         return {
             "access_token": access_token,
             "refresh_token": session.refresh_token,
@@ -92,7 +92,7 @@ async def handle_github_callback(
                 "plan": user.plan.value if hasattr(user.plan, 'value') else str(user.plan)
             }
         }
-    
+
     except Exception as e:
         import traceback
         error_msg = f"Failed to authenticate: {str(e)}"
@@ -139,8 +139,8 @@ async def install_reader_app() -> dict[str, str]:
 
     return {
         "status": "redirect",
-        "url": "https://github.com/apps/docit-analyser-ai/installations/new",
-        "app_name": "DocIt Analyser AI",
+        "url": "https://github.com/apps/docit-analyser/installations/new",
+        "app_name": "DocIt Analyser",
         "app_id": reader_app_id,
         "message": "Redirecting to GitHub App installation page"
     }
@@ -158,8 +158,8 @@ async def install_writer_app() -> dict[str, str]:
 
     return {
         "status": "redirect",
-        "url": "https://github.com/apps/docit-publisher-ai/installations/new",
-        "app_name": "DocIt Publisher AI",
+        "url": "https://github.com/apps/docit-publisher/installations/new",
+        "app_name": "DocIt Publisher",
         "app_id": writer_app_id,
         "message": "Redirecting to GitHub App installation page"
     }
@@ -172,10 +172,10 @@ async def login_access_token(
 ) -> Any:
     """
     OAuth2 compatible token login, get an access token for future requests
-    
+
     NOTE: This is a placeholder for password-based auth if needed.
     Primary auth method is GitHub OAuth via /auth/github
-    
+
     """
     raise HTTPException(
         status_code=501,

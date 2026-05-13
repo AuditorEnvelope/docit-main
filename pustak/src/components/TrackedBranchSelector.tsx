@@ -1,7 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GitBranch, Loader2, RefreshCw, Save, AlertCircle, CheckCircle2, ChevronDown } from "lucide-react";
+import {
+  GitBranch,
+  Loader2,
+  RefreshCw,
+  Save,
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+} from "lucide-react";
+import apiClient from "@/lib/apiClient";
 
 interface TrackedBranchSelectorProps {
   repoId: string;
@@ -57,31 +66,6 @@ export function TrackedBranchSelector({
   
   const encodedRepoId = useMemo(() => encodeURIComponent(normalizedRepoId), [normalizedRepoId]);
 
-  const apiBase = useMemo(() => {
-    const normalized = backendUrl.replace(/\/$/, "");
-    const hasApiSuffix = /\/api(\/v\d+)?$/i.test(normalized);
-    return hasApiSuffix ? normalized : `${normalized}/api/v1`;
-  }, [backendUrl]);
-
-  const authedFetch = useCallback(
-    async (path: string, init?: RequestInit) => {
-      if (!userToken) {
-        throw new Error("Missing authentication token");
-      }
-
-      const response = await fetch(`${apiBase}${path}`, {
-        ...init,
-        headers: {
-          Authorization: `Bearer ${userToken}`,
-          ...(init?.headers ?? {}),
-        },
-      });
-
-      return response;
-    },
-    [apiBase, userToken]
-  );
-
   useEffect(() => {
     if (!userToken) return;
 
@@ -89,13 +73,11 @@ export function TrackedBranchSelector({
       setLoadingInfo(true);
       setError(null);
       try {
-        const response = await authedFetch(`/repositories/${encodedRepoId}/tracked-branch`);
+        const response = await apiClient.get<TrackedBranchResponse>(
+          `/repositories/${encodedRepoId}/tracked-branch`
+        );
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch tracked branch");
-        }
-
-        const data: TrackedBranchResponse = await response.json();
+        const data = response.data;
         setTrackedInfo(data);
         setSelectedBranch(data.tracked_branch || "");
         setUseCustomBranch(false);
@@ -116,14 +98,14 @@ export function TrackedBranchSelector({
     const fetchBranches = async () => {
       setLoadingBranches(true);
       try {
-        const response = await authedFetch(`/repositories/${encodedRepoId}/branches`);
+        const response = await apiClient.get<{
+          branches?: string[];
+        }>(`/repositories/${encodedRepoId}/branches`);
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch branches");
-        }
-
-        const data = await response.json();
-        const fetchedBranches: string[] = Array.isArray(data?.branches) ? data.branches : [];
+        const data = response.data;
+        const fetchedBranches: string[] = Array.isArray(data?.branches)
+          ? data.branches
+          : [];
 
         const unique = Array.from(new Set(fetchedBranches.filter(Boolean)));
         unique.sort((a, b) => a.localeCompare(b));
@@ -162,27 +144,22 @@ export function TrackedBranchSelector({
     setSuccess(false);
 
     try {
-      const response = await authedFetch(`/repositories/${encodedRepoId}/tracked-branch`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ tracked_branch: branchValue }),
-      });
+      const response = await apiClient.post<TrackedBranchResponse>(
+        `/repositories/${encodedRepoId}/tracked-branch`,
+        { tracked_branch: branchValue }
+      );
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.detail || "Failed to update tracked branch");
-      }
-
-      const data: TrackedBranchResponse = await response.json();
+      const data = response.data;
       setTrackedInfo(data);
       setSelectedBranch(data.tracked_branch || branchValue);
       setSuccess(true);
       onSave?.(data.tracked_branch);
       setTimeout(() => setSuccess(false), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update tracked branch");
+    } catch (err: any) {
+      const detail =
+        err?.response?.data?.detail ||
+        (err instanceof Error ? err.message : undefined);
+      setError(detail || "Failed to update tracked branch");
     } finally {
       setSaving(false);
     }

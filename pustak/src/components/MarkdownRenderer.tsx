@@ -68,65 +68,17 @@ export function MarkdownRenderer({
     const match = /language-(\w+)/.exec(className || "");
     const language = match ? match[1] : "";
 
-    // Extract text content properly from children
-    const getTextContent = (child: any): string => {
-      if (typeof child === 'string') return child;
-      if (Array.isArray(child)) return child.map(getTextContent).join('');
-      if (child?.props?.children) return getTextContent(child.props.children);
-      return String(child || '');
-    };
-
-    const codeContent = getTextContent(children);
-
-    const handleCopy = async () => {
-      try {
-        await navigator.clipboard.writeText(codeContent);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      } catch (error) {
-        console.error("Failed to copy code", error);
-      }
-    };
-
     if (!inline && language) {
       return (
-        <div
-          className={`group relative overflow-hidden rounded-2xl border ${
-            isDark
-              ? "border-slate-800 bg-slate-900/60"
-              : "border-slate-200 bg-slate-50"
-          }`}
+        <SyntaxHighlighter
+          style={theme === "dark" ? tomorrowNight : tomorrow}
+          language={language}
+          PreTag="div"
+          className="rounded-lg !mt-4 !mb-4"
+          {...props}
         >
-          <div
-            className={`flex items-center justify-between border-b px-4 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.35em] ${
-              isDark
-                ? "border-slate-800 text-slate-400"
-                : "border-slate-200 text-slate-500"
-            }`}
-          >
-            <span>{language}</span>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className={`flex items-center gap-2 rounded-full border px-3 py-1 text-[0.6rem] tracking-[0.25em] transition ${
-                isDark
-                  ? "border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white"
-                  : "border-slate-300 text-slate-500 hover:border-slate-400 hover:text-slate-900"
-              }`}
-            >
-              {copied ? "COPIED" : "COPY"}
-            </button>
-          </div>
-          <SyntaxHighlighter
-            style={isDark ? tomorrowNight : tomorrow}
-            language={language}
-            PreTag="div"
-            className="!m-0 !bg-transparent px-4 py-4 text-sm"
-            {...props}
-          >
-            {codeContent.replace(/\n$/, "")}
-          </SyntaxHighlighter>
-        </div>
+          {String(children).replace(/\n$/, "")}
+        </SyntaxHighlighter>
       );
     }
 
@@ -137,8 +89,11 @@ export function MarkdownRenderer({
     const inlineClasses = `${inlineClass} px-1 py-0.5 rounded text-[0.85rem] font-mono`;
 
     return (
-      <code className={inlineClasses} {...props}>
-        {codeContent}
+      <code
+        className="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-1 py-0.5 rounded text-sm font-mono"
+        {...props}
+      >
+        {children}
       </code>
     );
   };

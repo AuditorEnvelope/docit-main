@@ -242,3 +242,4 @@ test_output/
 docai-env
 venv
 .venv
+Miniconda3-latest-Linux-x86_64.sh

@@ -5,6 +5,7 @@ from .repository import Repository, CommitEvent, DocPersona
 from .docbook import DocbookRepo, DocbookReview, DocbookStatus
 from .org_member import OrgMember
 from .subscription import Subscription, SubscriptionPlanConfig, SubscriptionStatus, SubscriptionPlan
+from .usage import SubscriptionUsage, ResourceType
 from .overlay import Overlay, QualityScore
 
 __all__ = [
@@ -37,6 +38,9 @@ __all__ = [
     'SubscriptionPlanConfig',
     'SubscriptionStatus',
     'SubscriptionPlan',
+    # Usage (Ledger)
+    'SubscriptionUsage',
+    'ResourceType',
     # Overlays & Quality
     'Overlay',
     'QualityScore',

@@ -7,12 +7,14 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
+
 class GitHubDualAppHelper:
     """Manages authentication for both Reader and Writer GitHub Apps"""
-    
+
     def __init__(self):
         # Reader App Config - Check both READER_APP_ID and GITHUB_READER_APP_ID
-        self.reader_app_id = os.getenv("READER_APP_ID") or os.getenv("GITHUB_READER_APP_ID")
+        self.reader_app_id = os.getenv(
+            "READER_APP_ID") or os.getenv("GITHUB_READER_APP_ID")
         self.reader_private_key = self._load_private_key(
             env_key_var="READER_PRIVATE_KEY",
             path_env_var="READER_PRIVATE_KEY_PATH",
@@ -23,11 +25,12 @@ class GitHubDualAppHelper:
             self.reader_private_key = self._load_private_key(
                 env_key_var="GITHUB_READER_PRIVATE_KEY",
                 path_env_var="GITHUB_READER_PRIVATE_KEY_PATH",
-            default_filename="docit-reader.private-key.pem"
-        )
-        
+                default_filename="docit-reader.private-key.pem"
+            )
+
         # Writer App Config - Check both WRITER_APP_ID and GITHUB_WRITER_APP_ID
-        self.writer_app_id = os.getenv("WRITER_APP_ID") or os.getenv("GITHUB_WRITER_APP_ID")
+        self.writer_app_id = os.getenv(
+            "WRITER_APP_ID") or os.getenv("GITHUB_WRITER_APP_ID")
         self.writer_private_key = self._load_private_key(
             env_key_var="WRITER_PRIVATE_KEY",
             path_env_var="WRITER_PRIVATE_KEY_PATH",
@@ -38,9 +41,9 @@ class GitHubDualAppHelper:
             self.writer_private_key = self._load_private_key(
                 env_key_var="GITHUB_WRITER_PRIVATE_KEY",
                 path_env_var="GITHUB_WRITER_PRIVATE_KEY_PATH",
-            default_filename="docit-publisher-ai.private-key.pem"
-        )
-        
+                default_filename="docit-publisher-ai.private-key.pem"
+            )
+
         # Fallback to old single app (for backward compatibility)
         self.github_app_id = os.getenv("GITHUB_APP_ID")
         self.github_private_key = self._load_private_key(
@@ -48,13 +51,14 @@ class GitHubDualAppHelper:
             path_env_var="GITHUB_PRIVATE_KEY_PATH",
             default_filename="docit-github-app.private-key.pem"
         )
-        
+
         # Determine which mode we're in
-        self.dual_app_mode = bool(self.reader_app_id and self.reader_private_key and 
-                                 self.writer_app_id and self.writer_private_key)
-        
+        self.dual_app_mode = bool(self.reader_app_id and self.reader_private_key and
+                                  self.writer_app_id and self.writer_private_key)
+
         if not self.dual_app_mode and not (self.github_app_id and self.github_private_key):
-            raise ValueError("Either dual app configuration or single app configuration must be provided")
+            raise ValueError(
+                "Either dual app configuration or single app configuration must be provided")
 
     def _load_private_key(self, env_key_var: str, path_env_var: str, default_filename: str) -> Optional[str]:
         """Load private key from environment or file"""
@@ -62,24 +66,32 @@ class GitHubDualAppHelper:
         key = os.getenv(env_key_var)
         if key:
             return key
-            
+
         # Try to load from file
         key_path = os.getenv(path_env_var, default_filename)
         if os.path.exists(key_path):
             with open(key_path, 'r') as f:
                 return f.read()
-                
+
         return None
 
     def _create_jwt(self, app_id: str, private_key: str) -> str:
-        """Create a JWT for GitHub App authentication"""
+        """Create a JWT for GitHub App authentication
+
+        GitHub requires:
+        - iat (issued at): Can be up to 60 seconds in the past (clock skew tolerance)
+        - exp (expiration): MUST be within 10 minutes from iat (not from 'now')
+        """
         now = int(time.time())
+        # Set iat 60 seconds in the past to handle clock skew
+        iat = now - 60
         payload = {
-            "iat": now - 60,  # Issued at time (60 seconds in the past to avoid clock skew)
-            "exp": now + (10 * 60),  # JWT expiration time (10 minutes)
+            "iat": iat,
+            # CRITICAL FIX: exp must be at most 10 minutes from iat (not from now)
+            "exp": iat + (10 * 60),  # 10 minutes from iat, NOT from now
             "iss": app_id  # GitHub App ID
         }
-        
+
         return jwt.encode(payload, private_key, algorithm="RS256")
 
     async def get_reader_token(self, installation_id: int) -> Optional[str]:
@@ -123,18 +135,18 @@ class GitHubDualAppHelper:
     ) -> Optional[str]:
         """Get installation access token"""
         import aiohttp
-        
+
         if not app_id or not private_key:
             return None
-            
+
         jwt_token = self._create_jwt(app_id, private_key)
         url = f"https://api.github.com/app/installations/{installation_id}/access_tokens"
-        
+
         headers = {
             "Authorization": f"Bearer {jwt_token}",
             "Accept": "application/vnd.github.v3+json"
         }
-        
+
         try:
             body: Dict[str, Any] = {}
             if permissions:

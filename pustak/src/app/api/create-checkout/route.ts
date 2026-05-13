@@ -1,46 +1,57 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const rawBackendUrl =
+	process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1";
+
+// Normalize the URL to remove duplicate /api/v1 segments
+const BACKEND_URL = rawBackendUrl.replace(/(\/api\/v1)+$/, "/api/v1");
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { plan, userId, userEmail } = body;
-    
-    if (!plan || !userId || !userEmail) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-    
-    // Call backend to create Stripe checkout session
-    const response = await fetch(`${BACKEND_URL}/stripe/create-checkout`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        user_id: userId,
-        user_email: userEmail,
-        plan: plan,
-        success_url: `${request.nextUrl.origin}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${request.nextUrl.origin}/pricing`,
-      }),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to create checkout session');
-    }
-    
-    const data = await response.json();
-    return NextResponse.json(data);
-    
-  } catch (error) {
-    console.error('Checkout error:', error);
-    return NextResponse.json(
-      { error: 'Failed to create checkout session' },
-      { status: 500 }
-    );
-  }
+	try {
+		const body = await request.json();
+		const { plan } = body;
+		// orgName is optional - backend will auto-generate from user email
+
+		if (!plan) {
+			return NextResponse.json(
+				{ error: "Missing required field: plan" },
+				{ status: 400 }
+			);
+		}
+
+		// Get auth token from cookie or header
+		const authHeader =
+			request.headers.get("authorization") ||
+			request.headers.get("Authorization");
+		const token =
+			request.cookies.get("auth_token")?.value ||
+			authHeader?.replace(/^Bearer\s+/i, "");
+
+		if (!token) {
+			return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+		}
+
+		// Call backend to create Razorpay order
+		const response = await fetch(`${BACKEND_URL}/subscriptions/upgrade?plan=${plan}`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${token}`,
+			},
+		});
+
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}));
+			throw new Error(errorData.detail || "Failed to create checkout session");
+		}
+
+		const data = await response.json();
+		return NextResponse.json(data);
+	} catch (error: any) {
+		console.error("Checkout error:", error);
+		return NextResponse.json(
+			{ error: error.message || "Failed to create checkout session" },
+			{ status: 500 }
+		);
+	}
 }
