@@ -25,7 +25,7 @@ class GitHubDualAppHelper:
             self.reader_private_key = self._load_private_key(
                 env_key_var="GITHUB_READER_PRIVATE_KEY",
                 path_env_var="GITHUB_READER_PRIVATE_KEY_PATH",
-                default_filename="pustak-reader.private-key.pem"
+                default_filename="docit-reader.private-key.pem"
             )
 
         # Writer App Config - Check both WRITER_APP_ID and GITHUB_WRITER_APP_ID
@@ -41,7 +41,7 @@ class GitHubDualAppHelper:
             self.writer_private_key = self._load_private_key(
                 env_key_var="GITHUB_WRITER_PRIVATE_KEY",
                 path_env_var="GITHUB_WRITER_PRIVATE_KEY_PATH",
-                default_filename="pustak-publisher-ai.private-key.pem"
+                default_filename="docit-publisher-ai.private-key.pem"
             )
 
         # Fallback to old single app (for backward compatibility)

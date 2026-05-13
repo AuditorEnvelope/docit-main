@@ -569,12 +569,12 @@ class DocbookPublisher:
         placeholder = repo_dir / "README.md"
         if not placeholder.exists():
             placeholder.write_text(
-                f"# {repo_full_name}\n\nInitial commit for docbook repository."
+                f"# {repo_full_name}\n\nInitial commit for DocIt repository."
             )
 
         self._run_git(["git", "add", "README.md"], cwd=repo_dir)
         self._run_git(
-            ["git", "commit", "-m", "chore: initialize docbook main branch"],
+            ["git", "commit", "-m", "chore: initialize DocIt main branch"],
             cwd=repo_dir,
         )
 
@@ -774,8 +774,8 @@ class DocbookPublisher:
 
     def _writer_identity(self) -> Tuple[str, str]:
         helper = self._get_dual_app_helper()
-        app_id = helper.writer_app_id or helper.github_app_id or "pustak-bot"
-        slug = "pustak-publisher-ai-test"
+        app_id = helper.writer_app_id or helper.github_app_id or "docit-bot"
+        slug = "docit-publisher"
         bot_name = f"{slug}[bot]"
         bot_email = f"{app_id}+{slug}[bot]@users.noreply.github.com"
         return bot_name, bot_email
