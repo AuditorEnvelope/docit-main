@@ -263,9 +263,6 @@ export default function RepoPage({ params }: RepoPageProps) {
 	const personaLabel = persona
 		? `${persona.charAt(0).toUpperCase()}${persona.slice(1)}`
 		: "";
-	const personaLabel = persona
-		? `${persona.charAt(0).toUpperCase()}${persona.slice(1)}`
-		: "";
 	const lastUpdated = new Date();
 
 	const getDocIcon = useCallback((type: string) => {

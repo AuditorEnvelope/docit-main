@@ -8,6 +8,7 @@ import {
 	AlertCircle,
 	ExternalLink,
 } from "lucide-react";
+import apiClient from "@/lib/apiClient";
 
 const BACKEND_URL =
 	process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
