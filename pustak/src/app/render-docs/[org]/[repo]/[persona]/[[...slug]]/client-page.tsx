@@ -1207,14 +1207,14 @@ export default function LiveDocsPage({
         isLight ? "bg-white text-slate-900" : "bg-slate-950 text-slate-100"
       }`}
     >
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
+      {/* <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
         <button
           onClick={() => setShowDebugPanel((prev) => !prev)}
           className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-500"
         >
           {showDebugPanel ? "Hide Debug" : "Show Debug"}
         </button>
-      </div>
+      </div> */}
 
       {showDebugPanel && (
         <div className="fixed inset-x-0 bottom-0 z-40 max-h-80 overflow-y-auto border-t border-slate-700/60 bg-slate-900/90 p-4 text-sm text-slate-100 backdrop-blur">
