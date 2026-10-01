@@ -65,7 +65,7 @@ class GeminiProvider(LLMProvider):
         if self.is_available:
             genai.configure(api_key=api_key)
             self.model_name = "models/gemini-3.8-flash"
-            self.fallback_model = "models/gemini-2.0-flash"
+            self.fallback_model = "models/gemini-3.1-flash-lite"
 
     async def generate(self, prompt: str, **kwargs) -> str:
         if not self.is_available:

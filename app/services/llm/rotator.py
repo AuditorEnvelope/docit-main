@@ -134,7 +134,7 @@ class GeminiProvider(LLMProvider):
     def __init__(self, keys: List[str]):
         super().__init__(keys)
         self.model_name = "models/gemini-3.8-flash"
-        self.fallback_model = "models/gemini-2.0-flash"
+        self.fallback_model = "models/gemini-3.1-flash-lite"
         # Configure with the first key; per-slot we'll reconfigure as needed
         if self.slots:
             genai.configure(api_key=self.slots[0].key)
