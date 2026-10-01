@@ -24,7 +24,6 @@ interface MarkdownRendererProps {
 	isLight?: boolean;
 	onHeadingsChange?: (headings: HeadingItem[]) => void;
 }
-const { theme } = useTheme();
 
 export function MarkdownRenderer({
 	content,
@@ -32,6 +31,7 @@ export function MarkdownRenderer({
 	isLight = false,
 	onHeadingsChange,
 }: MarkdownRendererProps) {
+	const { theme } = useTheme();
 	const isDark = !isLight;
 	const headingStore = useRef<HeadingItem[]>([]);
 	const slugCountsRef = useRef<Record<string, number>>({});
