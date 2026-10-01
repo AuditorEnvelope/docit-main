@@ -19,6 +19,7 @@ from app.services.docbook.service import DocbookService
 from app.services.auth import AuthService
 from app.services.org_members import OrgMembershipService
 from app.utils.github_dual_app import GitHubDualAppHelper
+from app.utils.docs_host_aliases import get_public_docs_url
 
 logger = logging.getLogger(__name__)
 
@@ -1117,8 +1118,8 @@ async def publish_docs_live(
         db.add(publish_event)
         
         # Update docbook repo with live info
-        # live_url = f"https://{request.org_id}.docbook.site/{request.repo_id}"
-        live_url = f"https://{request.org_id}.docit.in/{request.repo_id}"
+        # Branded orgs (e.g. auditorenvelope) resolve to docs.docit.in
+        live_url = get_public_docs_url(request.org_id, request.repo_id)
 
         docbook_repo.last_published_at = publish_event.completed_at
         docbook_repo.last_published_commit = main_commit

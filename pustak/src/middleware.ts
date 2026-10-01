@@ -2,6 +2,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { mapPublicRouteToRepoPath } from "@/lib/docsPathMapper";
+import {
+  DOCS_HOST_ALIASES,
+  ORG_CUSTOM_DOCS_HOSTS,
+  resolveOrgFromHostname,
+} from "@/lib/docsHostAliases";
 
 const RAW_BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "https://cd17ff078a8e.ngrok-free.app";
@@ -84,47 +89,65 @@ export async function middleware(request: NextRequest) {
   let org: string | null = null;
 
   // 2. SUBDOMAIN EXTRACTION LOGIC
+  // Hardcoded branded hosts (e.g. docs.docit.in → auditorenvelope) win first.
+  const aliasedOrg = resolveOrgFromHostname(hostname);
+  const subdomain = hostParts[0]?.toLowerCase() || "";
 
-  // if (hostname.includes("docbook.site")) {
-  if (hostname.includes("docit.in")) {
-
-    // Production: fakeorg.docbook.site -> ["fakeorg", "docbook", "site"]
-    // We want to verify we actually HAVE a subdomain (length >= 3)
+  if (aliasedOrg && DOCS_HOST_ALIASES[subdomain]) {
+    org = aliasedOrg;
+    console.log(
+      `[Middleware] 🏷️ Branded docs host '${hostname}' mapped to org '${org}'`,
+    );
+  } else if (hostname.includes("docit.in")) {
+    // Production: fakeorg.docit.in -> ["fakeorg", "docit", "in"]
     // Special case: www subdomain should be treated as the main portal, not an org
     if (hostParts.length >= 3 && hostParts[0] !== "www") {
       org = hostParts[0];
     } else if (hostParts.length >= 3 && hostParts[0] === "www") {
-      // www subdomain - treat as main portal
       console.log(
         `[Middleware] 🌐 www subdomain detected - treating as main portal`,
       );
-      // No org extraction needed - this is the main portal
     }
   } else if (hostname.includes("localhost") || hostname.includes("127.0.0.1")) {
     // Local: org.localhost -> ["org", "localhost"]
     if (hostParts.length >= 2 && hostParts[0] !== "www") {
-      org = hostParts[0];
+      org = DOCS_HOST_ALIASES[subdomain] || hostParts[0];
     } else if (hostParts.length >= 2 && hostParts[0] === "www") {
-      // www subdomain - treat as main portal
       console.log(
         `[Middleware] 🌐 www subdomain detected on localhost - treating as main portal`,
       );
-      // No org extraction needed - this is the main portal
     }
   } else {
     // Custom domain handling (future proofing)
     if (hostParts.length >= 2 && hostParts[0] !== "www") {
-      org = hostParts[0];
+      org = DOCS_HOST_ALIASES[subdomain] || hostParts[0];
     } else if (hostParts.length >= 2 && hostParts[0] === "www") {
-      // www subdomain - treat as main portal
       console.log(
         `[Middleware] 🌐 www subdomain detected on custom domain - treating as main portal`,
       );
-      // No org extraction needed - this is the main portal
     }
   }
 
   console.log(`[Middleware] Extracted Org: ${org}`);
+
+  // Canonicalize parent org onto branded docs host (optional hardcode).
+  // auditorenvelope.docit.in/* → docs.docit.in/*
+  if (
+    org &&
+    ORG_CUSTOM_DOCS_HOSTS[org.toLowerCase()] &&
+    !DOCS_HOST_ALIASES[subdomain] &&
+    hostname.includes("docit.in")
+  ) {
+    const canonicalHost = ORG_CUSTOM_DOCS_HOSTS[org.toLowerCase()];
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.hostname = canonicalHost;
+    redirectUrl.port = "";
+    redirectUrl.protocol = "https:";
+    console.log(
+      `[Middleware] 🔁 Redirecting '${hostname}' → '${canonicalHost}${pathname}'`,
+    );
+    return NextResponse.redirect(redirectUrl, 308);
+  }
 
   // 3. VALIDATION LOGIC
   const isHtmlRequest =

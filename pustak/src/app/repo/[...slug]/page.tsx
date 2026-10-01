@@ -29,6 +29,7 @@ import {
 	Layers,
 } from "lucide-react";
 import Link from "next/link";
+import { getPublicDocsUrl } from "@/lib/docsHostAliases";
 
 interface RepoPageProps {
 	params: Promise<{
@@ -178,8 +179,7 @@ export default function RepoPage({ params }: RepoPageProps) {
 				setSourceRepo(repoFolder);
 				setPersona(personaSegment);
 				if (orgSegment && repoFolder) {
-					// setPublicUrl(`https://${orgSegment}.docbook.site/${repoFolder}`);
-					setPublicUrl(`https://${orgSegment}.docit.in/${repoFolder}`);
+					setPublicUrl(getPublicDocsUrl(orgSegment, repoFolder));
 				} else {
 					setPublicUrl("");
 				}

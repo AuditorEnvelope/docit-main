@@ -29,10 +29,11 @@ export async function GET(request: NextRequest) {
   
   // Extract org from hostname if not in query params
   if (!org) {
-    const hostname = headers.host || '';
-    const subdomain = hostname.split('.')[0];
-    if (subdomain && subdomain !== 'www' && subdomain !== 'localhost') {
-      org = subdomain;
+    const hostname = headers.host || "";
+    const subdomain = hostname.split(".")[0]?.toLowerCase();
+    if (subdomain && subdomain !== "www" && subdomain !== "localhost") {
+      // Hardcoded branded host: docs.docit.in → auditorenvelope
+      org = subdomain === "docs" ? "auditorenvelope" : subdomain;
       console.log(`[DOCS_PROXY] 📡 Extracted org from hostname:`, org);
     }
   }
