@@ -62,15 +62,14 @@ function normalizeRepoPath(
   const remainder = segments.slice(1);
 
   if (segments.length === 0) {
-    return [repo, "docs", persona, "SUMMARY.md"];
+    return [repo, "docs", persona, "introduction.md"];
   }
 
   if (segments.length === 1) {
-    if (
-      lowerFirst === "introduction" ||
-      lowerFirst === "summary" ||
-      lowerFirst === "readme"
-    ) {
+    if (lowerFirst === "introduction") {
+      return [repo, "docs", persona, "introduction.md"];
+    }
+    if (lowerFirst === "summary" || lowerFirst === "readme") {
       return [repo, "docs", persona, "SUMMARY.md"];
     }
 

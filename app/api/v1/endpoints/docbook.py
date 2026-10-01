@@ -526,6 +526,68 @@ def _normalize_sidebar_items(
     return sidebar
 
 
+def _sort_sidebar_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Order live docs navigation for readable product docs (not raw GitHub tree order)."""
+
+    hidden_files = {"summary", "readme"}
+
+    folder_rank = {
+        "getting-started": 20,
+        "how-it-works": 30,
+        "workspace": 40,
+        "concepts": 50,
+        "account": 60,
+    }
+
+    def rank(item: Dict[str, Any]) -> tuple:
+        name = (item.get("name") or "").lower().replace(".md", "")
+        if item.get("type") == "file":
+            if name in hidden_files:
+                return (5000, name)
+            if name == "introduction":
+                return (-100, name)
+            if name == "troubleshooting":
+                return (9000, name)
+            return (200, name)
+        if item.get("type") == "folder":
+            return (folder_rank.get(name, 100), name)
+        return (300, name)
+
+    sorted_items: List[Dict[str, Any]] = []
+    for entry in sorted(items, key=rank):
+        if entry.get("type") == "file" and (entry.get("name") or "").lower().replace(
+            ".md", ""
+        ) in hidden_files:
+            continue
+        if entry.get("type") == "folder" and entry.get("children"):
+            children = _sort_sidebar_items(entry["children"])
+            entry = {**entry, "children": children}
+        sorted_items.append(entry)
+
+    return sorted_items
+
+
+def _resolve_home_doc_paths(slug: List[str], persona: str) -> List[str]:
+    """Map slug segments to markdown paths; empty slug tries introduction then SUMMARY."""
+
+    working = [segment for segment in slug if segment]
+    if len(working) >= 2 and working[0] == persona:
+        working = working[1:]
+
+    if not working:
+        return ["introduction.md", "SUMMARY.md", "README.md"]
+
+    relative = "/".join(part.strip("/") for part in working if part)
+    if relative.upper() == "SUMMARY":
+        relative = "SUMMARY.md"
+    elif relative.lower() == "introduction":
+        relative = "introduction.md"
+    elif not relative.lower().endswith(".md"):
+        relative = f"{relative}.md"
+
+    return [relative]
+
+
 @router.get("/docbook/check-github-repo")
 async def check_docbook_repo_on_github(
     org_id: str,
@@ -1299,7 +1361,9 @@ async def _build_live_manifest(
             detail=f"No published documentation found for repo {repo_id}",
         )
 
-    sidebar_items = _normalize_sidebar_items(folder_tree, repo_id, persona=persona)
+    sidebar_items = _sort_sidebar_items(
+        _normalize_sidebar_items(folder_tree, repo_id, persona=persona)
+    )
 
     def flatten_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         flat: List[Dict[str, Any]] = []
@@ -1441,37 +1505,40 @@ async def _fetch_live_page(
     else:
         token = await _resolve_app_installation_token(db=db, org_id=org_id)
     
-    # Special case for persona/file.md pattern - remove redundant persona prefix
-    if len(slug) >= 2 and slug[0] == persona:
-        print(f"🔍 Detected persona/{slug[1]} pattern - fixing path by removing redundant persona")
-        slug = slug[1:] # Remove the persona prefix
-    
-    relative_path = "/".join(part.strip("/") for part in slug if part)
-    if not relative_path:
-        relative_path = "README.md"
-
-    if not relative_path.lower().endswith(".md"):
-        relative_path = f"{relative_path}.md"
-
-    # Include persona in the path
-    repo_path = f"{repo_id}/docs/{persona}/{relative_path}" if repo_id else f"docs/{persona}/{relative_path}"
-    
-    print(f"📄 Accessing content at path: {repo_path} with persona: {persona}")
+    relative_paths = _resolve_home_doc_paths(slug, persona)
+    print(f"📄 Resolved doc path candidates: {relative_paths} (persona={persona})")
 
     # IMPORTANT: Always use 'main' branch for live docs to show latest content
-    # This ensures published site reflects current state, not a frozen snapshot
     ref_to_use = "main"
     print(f"📌 Using branch: {ref_to_use} (always use main for live content)")
-    
+
+    file_data: Optional[Dict[str, Any]] = None
+    repo_path = ""
+    relative_path = relative_paths[-1]
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            file_data = await _fetch_github_file(
-                client=client,
-                repo_full_name=docbook_repo.docbook_full_name,
-                path=repo_path,
-                ref=ref_to_use,
-                token=token,
-            )
+            for candidate in relative_paths:
+                relative_path = candidate
+                repo_path = (
+                    f"{repo_id}/docs/{persona}/{relative_path}"
+                    if repo_id
+                    else f"docs/{persona}/{relative_path}"
+                )
+                print(f"📄 Trying content at path: {repo_path}")
+                try:
+                    file_data = await _fetch_github_file(
+                        client=client,
+                        repo_full_name=docbook_repo.docbook_full_name,
+                        path=repo_path,
+                        ref=ref_to_use,
+                        token=token,
+                    )
+                    break
+                except HTTPException as fetch_error:
+                    if fetch_error.status_code == 404 and candidate != relative_paths[-1]:
+                        continue
+                    raise
     except HTTPException as e:
         if e.status_code == 404:
             # Check if the persona folder exists
@@ -1511,6 +1578,12 @@ async def _fetch_live_page(
         else:
             # Other error
             raise e
+
+    if not file_data:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Content not found under docs/{persona}",
+        )
 
     content = file_data.get("content", "")
     if file_data.get("encoding") == "base64" and content:
@@ -1789,9 +1862,13 @@ async def get_live_content_public(
     if cleaned_slug:
         if cleaned_slug[0].upper() == "SUMMARY":
             cleaned_slug[0] = "SUMMARY.md"
+        elif cleaned_slug[0].lower() == "introduction":
+            cleaned_slug[0] = "introduction.md"
     else:
-        cleaned_slug = ["SUMMARY.md"]
-        print("🧭 Empty slug after normalization – defaulting to SUMMARY.md")
+        cleaned_slug = []
+        print(
+            "🧭 Empty slug after normalization – defaulting via introduction.md → SUMMARY.md"
+        )
 
     if cleaned_slug != original_slug:
         print(f"🔧 Normalized slug from {original_slug} -> {cleaned_slug}")

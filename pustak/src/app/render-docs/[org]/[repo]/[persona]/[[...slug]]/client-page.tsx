@@ -257,7 +257,11 @@ export default function LiveDocsPage({
   }, [org, persona, rawSlug, repo]);
 
   const initialCanonicalSlug = routeMapping.docsMap.canonicalSlug;
-  const initialApiSlug = routeMapping.docsMap.docPath.slice(2);
+  const docPathKey = routeMapping.docsMap.docPath.join("|");
+  const initialApiSlug = useMemo(
+    () => routeMapping.docsMap.docPath.slice(3),
+    [docPathKey],
+  );
   const slugKey = initialApiSlug.join("/");
 
   const [currentCanonicalSlug, setCurrentCanonicalSlug] =
@@ -409,6 +413,9 @@ export default function LiveDocsPage({
   const fetchManifest = useCallback(
     async (options: { force?: boolean } = {}) => {
       const currentKey = manifestKey;
+      if (options.force) {
+        fetchedManifestKeyRef.current = null;
+      }
       if (!options.force && fetchedManifestKeyRef.current === currentKey) {
         console.log(
           "[Page] 🟢 Manifest fetch skipped (duplicate key)",
@@ -503,7 +510,6 @@ export default function LiveDocsPage({
         });
       } catch (err) {
         console.error("Error fetching manifest:", err);
-        fetchedManifestKeyRef.current = null;
         setError(
           err instanceof Error ? err.message : "Failed to load documentation",
         );
@@ -598,9 +604,8 @@ export default function LiveDocsPage({
   }, [
     appendDebugLog,
     authLoading,
-    fetchManifest,
-    initialCanonicalSlug,
     isInternalPersona,
+    manifestKey,
     org,
     persona,
     repo,
@@ -660,6 +665,9 @@ export default function LiveDocsPage({
         const contentKey = `${manifestKey}::${
           segmentsToUse.length ? segmentsToUse.join("/") : "SUMMARY.md"
         }`;
+        if (options.force) {
+          fetchedContentKeyRef.current = null;
+        }
         if (!options.force && fetchedContentKeyRef.current === contentKey) {
           console.log(
             "[Page] 🟢 Content fetch skipped (duplicate key)",
@@ -788,7 +796,6 @@ export default function LiveDocsPage({
         });
       } catch (err) {
         console.error("Error fetching content:", err);
-        fetchedContentKeyRef.current = null;
         setError(err instanceof Error ? err.message : "Failed to load content");
         appendDebugLog("Content fetch failed", {
           level: "error",
@@ -818,29 +825,48 @@ export default function LiveDocsPage({
   useEffect(() => {
     if (!manifest) return;
 
-    const loadIntroduction = () => {
-      const flattened = manifest.sidebar.flatMap((item) =>
-        item.type === "folder" && item.children ? item.children : [item],
+    const flattenSidebarFiles = (items: SidebarItem[]): SidebarItem[] => {
+      const files: SidebarItem[] = [];
+      for (const item of items) {
+        if (item.type === "file") {
+          files.push(item);
+        }
+        if (item.type === "folder" && item.children?.length) {
+          files.push(...flattenSidebarFiles(item.children as SidebarItem[]));
+        }
+      }
+      return files;
+    };
+
+    const loadDefaultHomePage = () => {
+      const flattened = flattenSidebarFiles(manifest.sidebar);
+      const introductionItem = flattened.find(
+        (item) =>
+          item.type === "file" &&
+          item.name.toLowerCase().replace(/\.md$/i, "") === "introduction",
       );
       const summaryItem = flattened.find(
-        (item) => item.type === "file" && item.name.toLowerCase() === "summary",
+        (item) =>
+          item.type === "file" &&
+          item.name.toLowerCase().replace(/\.md$/i, "") === "summary",
       );
-      const sourceSegments = summaryItem?.source_path
-        ? summaryItem.source_path.split("/").filter(Boolean).slice(1)
-        : [persona, "SUMMARY.md"];
-      fetchContent(sourceSegments, summaryItem?.path, sourceSegments).catch(
+      const homeItem = introductionItem ?? summaryItem;
+      const sourceSegments = homeItem?.source_path
+        ? homeItem.source_path.split("/").filter(Boolean).slice(1)
+        : ["introduction.md"];
+      fetchContent(sourceSegments, homeItem?.path, sourceSegments).catch(
         (err) => console.error("[Page] 🟥 Default content fetch failed:", err),
       );
     };
 
-    if (initialApiSlug.length) {
+    if (slugKey.length) {
       fetchContent(initialApiSlug).catch((err) =>
         console.error("[Page] 🟥 Content fetch failed:", err),
       );
     } else {
-      loadIntroduction();
+      loadDefaultHomePage();
     }
-  }, [fetchContent, manifest, initialApiSlug, persona]);
+  }, [fetchContent, initialApiSlug, manifest, persona, slugKey]);
 
   useEffect(() => {
     if (!mounted) {
